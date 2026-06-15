@@ -1,0 +1,41 @@
+server:
+  port: ${SERVER_PORT:8083}
+
+spring:
+  application:
+    name: chat-service
+  webflux:
+    base-path: /api/chat
+  flyway:
+    enabled: true
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:streaming-platform}
+    user: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:123456a}
+    schemas: chat
+    locations: classpath:db/migration
+  r2dbc:
+    url: "r2dbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:streaming-platform}?options=search_path%3Dchat"
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:123456a}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+    instance-id: "${spring.application.name}:${server.port}"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CompilerConfiguration">
+    <annotationProcessing>
+      <profile name="Gradle Imported" enabled="true">
+        <outputRelativeToContentRoot value="true" />
+        <processorPath useClasspath="false">
+          <entry name="$USER_HOME$/.gradle/caches/modules-2/files-2.1/org.projectlombok/lombok/1.18.36/5a30490a6e14977d97d9c73c924c1f1b5311ea95/lombok-1.18.36.jar" />
+        </processorPath>
+        <module name="streaming-backend.auth-service.main" />
+        <module name="streaming-backend.chat-service.main" />
+      </profile>
+    </annotationProcessing>
+    <bytecodeTargetLevel target="21" />
+  </component>
+  <component name="JavacSettings">
+    <option name="ADDITIONAL_OPTIONS_OVERRIDE">
+      <module name="streaming-backend.auth-service" options="-parameters" />
+      <module name="streaming-backend.auth-service.main" options="-parameters" />
+      <module name="streaming-backend.auth-service.test" options="-parameters" />
+      <module name="streaming-backend.chat-service" options="-parameters" />
+      <module name="streaming-backend.chat-service.main" options="-parameters" />
+      <module name="streaming-backend.chat-service.test" options="-parameters" />
+      <module name="streaming-backend.discovery-service" options="-parameters" />
+      <module name="streaming-backend.discovery-service.main" options="-parameters" />
+      <module name="streaming-backend.discovery-service.test" options="-parameters" />
+      <module name="streaming-backend.gateway-service" options="-parameters" />
+      <module name="streaming-backend.gateway-service.main" options="-parameters" />
+      <module name="streaming-backend.gateway-service.test" options="-parameters" />
+      <module name="streaming-backend.notification-service" options="-parameters" />
+      <module name="streaming-backend.notification-service.main" options="-parameters" />
+      <module name="streaming-backend.notification-service.test" options="-parameters" />
+      <module name="streaming-backend.stream-service" options="-parameters" />
+      <module name="streaming-backend.stream-service.main" options="-parameters" />
+      <module name="streaming-backend.stream-service.test" options="-parameters" />
+    </option>
+  </component>
+</project>

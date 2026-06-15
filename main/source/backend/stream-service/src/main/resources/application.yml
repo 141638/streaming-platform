@@ -1,0 +1,44 @@
+server:
+  port: ${SERVER_PORT:8082}
+
+spring:
+  application:
+    name: stream-service
+  main:
+    web-application-type: REACTIVE
+  webflux:
+    base-path: /api/streams
+  flyway:
+    enabled: true
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:streaming-platform}
+    user: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:123456a}
+    schemas: stream
+    locations: classpath:db/migration
+  r2dbc:
+    url: "r2dbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:streaming-platform}?options=search_path%3Dstream"
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:123456a}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+    instance-id: "${spring.application.name}:${server.port}"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always

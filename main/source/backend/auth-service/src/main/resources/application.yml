@@ -1,0 +1,74 @@
+server:
+  port: ${SERVER_PORT:8081}
+  servlet:
+    context-path: /api/auth
+
+spring:
+  application:
+    name: auth-service
+  security:
+    user:
+      name: ${AUTH_INTERNAL_USER:admin}
+      password: ${AUTH_INTERNAL_PASSWORD:dev-internal-only}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        default_schema: auth
+  mail:
+    host: smtp.gmail.com
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:ogsugoi@gmail.com}
+    password: ${MAIL_PASSWORD:vzlc wapx wxrt onfn}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+          starttls:
+            enable: true
+            required: true
+        transport:
+          protocol: smtp
+  flyway:
+    enabled: true
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:streaming-platform}
+    user: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:123456a}
+    schemas: auth
+    locations: classpath:db/migration
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:streaming-platform}
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:123456a}
+    driver-class-name: org.postgresql.Driver
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+    instance-id: "${spring.application.name}:${server.port}"
+
+streaming:
+  jwt:
+    issuer: ${JWT_ISSUER:https://auth.streaming.local}
+    audience: ${JWT_AUDIENCE:streaming-control-plane}
+    access-token-ttl-seconds: ${JWT_ACCESS_TTL_SECONDS:900}
+    refresh-token-ttl-seconds: ${JWT_REFRESH_TTL_SECONDS:604800}
+    reset-token-ttl-seconds: ${JWT_RESET_TTL_SECONDS:300}
+    hmac-secret: ${JWT_HMAC_SECRET:MNH6CwQ7H4xAf69hpn0sc2Rn+wxT/d+I9QWELikQqgM=}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always

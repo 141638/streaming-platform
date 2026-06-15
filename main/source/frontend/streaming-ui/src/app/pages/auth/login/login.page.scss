@@ -1,0 +1,39 @@
+:host {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #0a0a0f 0%, #14141f 40%, #1a1025 100%);
+}
+
+.login-panel {
+  background: oklch(15% 0.005 270 / 70%);
+  backdrop-filter: blur(16px);
+  border: 1px solid oklch(28% 0.01 270);
+  border-radius: 1rem;
+}
+
+:host ::ng-deep .login-input.p-inputtext {
+  background: oklch(18% 0.005 270);
+  border-color: oklch(24% 0.01 270);
+  color: oklch(90% 0.005 270);
+
+  &:focus {
+    border-color: oklch(72% 0.18 265);
+    box-shadow: 0 0 0 3px oklch(72% 0.18 265 / 15%);
+  }
+
+  &::placeholder {
+    color: oklch(40% 0.005 270);
+  }
+}
+
+:host ::ng-deep .login-submit.p-button {
+  background: oklch(72% 0.18 265);
+  border-color: oklch(72% 0.18 265);
+
+  &:hover {
+    background: oklch(66% 0.19 265);
+    box-shadow: 0 4px 20px oklch(72% 0.18 265 / 25%);
+  }
+}

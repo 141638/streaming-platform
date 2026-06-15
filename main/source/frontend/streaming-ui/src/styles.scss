@@ -1,0 +1,17 @@
+@use 'primeflex/primeflex' as *;
+
+@import 'primeicons/primeicons.css';
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #0a0a0f;
+}
+
+.app-shell-brand-icon {
+  color: oklch(72% 0.18 265);
+}
+
+.app-shell-main {
+  padding: 0;
+}

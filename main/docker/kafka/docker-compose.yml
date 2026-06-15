@@ -1,0 +1,59 @@
+version: "2.4"
+services:
+  # broker 1
+  kafka-kraft-1:
+    extends:
+      file: compose-config/broker1.yml
+      service: kafka-kraft-1
+    environment:
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka-kraft-1:9093,2@kafka-kraft-2:9093,3@kafka-kraft-3:9093
+    volumes:
+      - broker_1_data:/bitnami/kafka
+  
+  # broker 2
+  kafka-kraft-2:
+    extends:
+      file: compose-config/broker2.yml
+      service: kafka-kraft-2
+    environment:
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka-kraft-1:9093,2@kafka-kraft-2:9093,3@kafka-kraft-3:9093
+    volumes:
+      - broker_2_data:/bitnami/kafka
+  
+  # broker 3
+  kafka-kraft-3:
+    extends:
+      file: compose-config/broker3.yml
+      service: kafka-kraft-3
+    environment:
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka-kraft-1:9093,2@kafka-kraft-2:9093,3@kafka-kraft-3:9093
+    volumes:
+      - broker_3_data:/bitnami/kafka
+
+  # kafka ui
+  kafka-ui:
+    image: provectuslabs/kafka-ui
+    container_name: kafka-kraft-ui
+    hostname: kafka-kraft-ui
+    depends_on:
+      - kafka-kraft-1
+      - kafka-kraft-2
+      - kafka-kraft-3
+    ports:
+      - 9999:8080
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=kafka-cluster-1
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka-kraft-1:9099,kafka-kraft-2:9099,kafka-kraft-3:9099
+    networks:
+      - hieuht1_kafka_network
+networks:
+  hieuht1_kafka_network:
+    driver: bridge
+
+volumes:
+  broker_1_data:
+    driver: local
+  broker_2_data:
+    driver: local
+  broker_3_data:
+    driver: local

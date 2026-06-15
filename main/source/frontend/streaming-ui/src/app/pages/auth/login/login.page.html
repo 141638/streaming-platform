@@ -1,0 +1,100 @@
+<div class="w-full max-w-28rem px-4">
+  <div class="login-panel p-5">
+    <!-- Brand -->
+    <div class="flex align-items-center gap-2 mb-4">
+      <span class="pi pi-play-circle text-3xl" style="color: oklch(72% 0.18 265)"></span>
+      <span class="text-lg font-semibold" style="color: oklch(90% 0.005 270); letter-spacing: -0.01em">
+        Streaming Platform
+      </span>
+    </div>
+
+    <h1 class="text-2xl font-bold mt-0 mb-1" style="color: oklch(95% 0 0); letter-spacing: -0.02em">
+      Sign in
+    </h1>
+    <p class="text-sm mt-0 mb-4" style="color: oklch(62% 0.01 270)">
+      Enter your credentials to continue
+    </p>
+
+    <!-- Error -->
+    @if (errorText(); as errMsg) {
+      <p-message severity="error" styleClass="w-full mb-3">
+        {{ errMsg }}
+      </p-message>
+    }
+
+    <!-- Form -->
+    <form [formGroup]="form" (ngSubmit)="submit()">
+      <div class="flex flex-column gap-3">
+        <div class="flex flex-column gap-1">
+          <label
+            for="login-username"
+            class="text-xs font-medium uppercase"
+            style="color: oklch(68% 0.01 270); letter-spacing: 0.04em"
+          >
+            Username
+          </label>
+          <input
+            id="login-username"
+            pInputText
+            formControlName="username"
+            autocomplete="username"
+            class="w-full login-input"
+          />
+        </div>
+
+        <div class="flex flex-column gap-1">
+          <label
+            for="login-password"
+            class="text-xs font-medium uppercase"
+            style="color: oklch(68% 0.01 270); letter-spacing: 0.04em"
+          >
+            Password
+          </label>
+          <input
+            id="login-password"
+            pInputText
+            type="password"
+            formControlName="password"
+            autocomplete="current-password"
+            class="w-full login-input"
+          />
+        </div>
+
+        <div class="flex justify-content-end">
+          <a
+            routerLink="/forgot-password"
+            class="text-xs no-underline cursor-pointer"
+            style="color: oklch(62% 0.12 265)"
+          >
+            Forgot password?
+          </a>
+        </div>
+
+        <p-button
+          type="submit"
+          label="Sign in"
+          icon="pi pi-sign-in"
+          [loading]="loading()"
+          [disabled]="form.invalid || loading()"
+          styleClass="w-full login-submit"
+        />
+      </div>
+    </form>
+
+    <!-- Divider -->
+    <div class="flex align-items-center gap-2 my-4">
+      <div class="flex-1 border-top-1 surface-border"></div>
+      <span class="text-xs" style="color: oklch(42% 0.005 270)">or</span>
+      <div class="flex-1 border-top-1 surface-border"></div>
+    </div>
+
+    <!-- Google sign-in placeholder -->
+    <p-button
+      label="Sign in with Google"
+      icon="pi pi-google"
+      severity="secondary"
+      styleClass="w-full"
+      [outlined]="true"
+    />
+  </div>
+</div>

@@ -1,0 +1,32 @@
+version: "2.4"
+services:
+  kafka-kraft-3:
+    image: docker.io/bitnami/kafka:3.7
+    container_name: kafka-kraft-3
+    hostname: kafka-kraft-3
+    ports:
+      - "19093:9092"
+    environment:
+      # KRaft settings
+      KAFKA_CFG_NODE_ID: 3
+      KAFKA_CFG_PROCESS_ROLES: broker,controller
+      KAFKA_KRAFT_CLUSTER_ID: 'abcdefgh12345678'
+
+      # Listners
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: BROKER
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_LISTENERS: BROKER://kafka-kraft-3:9099,CONTROLLER://kafka-kraft-3:9093,EXTERNAL://0.0.0.0:9092
+      KAFKA_CFG_ADVERTISED_LISTENERS: BROKER://kafka-kraft-3:9099,EXTERNAL://10.6.200.96:19093
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,BROKER:PLAINTEXT,EXTERNAL:PLAINTEXT
+
+      # Topic/offset config
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+
+      # Logs
+      KAFKA_CFG_LOG4J_ROOT_LOGLEVEL: DEBUG
+      KAFKA_CFG_LOG4J_LOGGERS: "kraft=DEBUG"
+    networks:
+      - hieuht1_kafka_network
+

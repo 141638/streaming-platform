@@ -1,0 +1,43 @@
+server:
+  port: ${SERVER_PORT:8084}
+
+spring:
+  application:
+    name: notification-service
+  webflux:
+    base-path: /api/notifications
+  flyway:
+    enabled: true
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:streaming-platform}
+    user: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:123456a}
+    schemas: notification
+    locations: classpath:db/migration
+  r2dbc:
+    url: "r2dbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:streaming-platform}?options=search_path%3Dnotification"
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:123456a}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
+    consumer:
+      group-id: ${KAFKA_GROUP_NOTIFICATION:notification-service}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+    instance-id: "${spring.application.name}:${server.port}"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always

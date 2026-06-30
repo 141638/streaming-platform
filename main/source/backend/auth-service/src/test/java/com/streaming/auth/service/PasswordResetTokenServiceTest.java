@@ -28,7 +28,8 @@ class PasswordResetTokenServiceTest {
     @BeforeEach
     void setUp() {
         JwtIssuerProperties properties =
-                new JwtIssuerProperties(TEST_ISSUER, "aud", 900, 604800, TTL_SECONDS, TEST_SECRET);
+                new JwtIssuerProperties(TEST_ISSUER, "aud", 900, 604800, TTL_SECONDS, TEST_SECRET,
+                        "stream-service-internal", 3600);
         byte[] secretBytes = TEST_SECRET.getBytes(StandardCharsets.UTF_8);
         SecretKey signingKey = Keys.hmacShaKeyFor(secretBytes);
         tokenService = new PasswordResetTokenService(signingKey, properties);

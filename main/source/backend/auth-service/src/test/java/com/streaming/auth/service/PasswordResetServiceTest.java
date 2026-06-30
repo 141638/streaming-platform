@@ -14,6 +14,7 @@ import com.streaming.auth.exception.PasswordValidationException;
 import com.streaming.auth.persistence.entity.UserAccountEntity;
 import com.streaming.auth.persistence.repository.RefreshTokenRepository;
 import com.streaming.auth.persistence.repository.UserAccountRepository;
+import com.streaming.auth.service.MailCommonService;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 import java.util.UUID;
@@ -43,6 +44,9 @@ class PasswordResetServiceTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private MailCommonService mailCommonService;
+
     private PasswordResetService passwordResetService;
 
     @BeforeEach
@@ -51,7 +55,8 @@ class PasswordResetServiceTest {
                 userAccountRepository,
                 refreshTokenRepository,
                 passwordResetTokenService,
-                passwordEncoder);
+                passwordEncoder,
+                mailCommonService);
     }
 
     @Nested

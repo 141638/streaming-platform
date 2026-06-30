@@ -63,6 +63,8 @@ streaming:
     refresh-token-ttl-seconds: ${JWT_REFRESH_TTL_SECONDS:604800}
     reset-token-ttl-seconds: ${JWT_RESET_TTL_SECONDS:300}
     hmac-secret: ${JWT_HMAC_SECRET:MNH6CwQ7H4xAf69hpn0sc2Rn+wxT/d+I9QWELikQqgM=}
+    service-audience: ${JWT_SERVICE_AUDIENCE:stream-service-internal}
+    service-token-ttl-seconds: ${JWT_SERVICE_TTL_SECONDS:3600}
 
 management:
   endpoints:

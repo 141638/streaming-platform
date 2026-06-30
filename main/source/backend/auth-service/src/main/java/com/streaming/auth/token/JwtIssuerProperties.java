@@ -10,6 +10,8 @@ public record JwtIssuerProperties(
         @DefaultValue("900") int accessTokenTtlSeconds,
         @DefaultValue("604800") int refreshTokenTtlSeconds,
         @DefaultValue("300") int resetTokenTtlSeconds,
-        String hmacSecret
+        String hmacSecret,
+        @DefaultValue("stream-service-internal") String serviceAudience,
+        @DefaultValue("3600") int serviceTokenTtlSeconds
 ) {
 }

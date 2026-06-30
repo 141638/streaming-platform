@@ -39,3 +39,8 @@ management:
   endpoint:
     health:
       show-details: always
+
+streaming:
+  jwt:
+    issuer: ${JWT_ISSUER:https://auth.streaming.local}
+    hmac-secret: ${JWT_HMAC_SECRET:MNH6CwQ7H4xAf69hpn0sc2Rn+wxT/d+I9QWELikQqgM=}

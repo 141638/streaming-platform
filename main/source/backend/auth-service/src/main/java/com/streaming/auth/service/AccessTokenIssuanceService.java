@@ -1,6 +1,7 @@
 package com.streaming.auth.service;
 
 import com.streaming.auth.authorization.EntitlementGrammarVersion;
+import com.streaming.auth.persistence.repository.CatalogSubjectAttributeRepository;
 import com.streaming.auth.persistence.repository.PolicyAttachmentRepository;
 import com.streaming.auth.persistence.entity.PolicyEntity;
 import com.streaming.auth.persistence.repository.PolicyRepository;
@@ -30,7 +31,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Issues HS256-signed access JWTs carrying PBAC claims ({@code ent}, {@code pv}, {@code ver}, {@code attr})
- * for a user UUID by resolving attached policies via DB (roles + USER attachments).
+ * for user principals (via {@link #issueForUser(UUID)}) and service-account principals
+ * (via {@link #issueForServiceAccount(String)}).
  */
 @Service
 @RequiredArgsConstructor
@@ -41,6 +43,7 @@ public class AccessTokenIssuanceService {
     private final PolicyAttachmentRepository policyAttachmentRepository;
     private final PolicyRepository policyRepository;
     private final EntitlementLinesMaterializer entitlementLinesMaterializer;
+    private final SubjectAttributeResolver subjectAttributeResolver;
     private final JwtIssuerProperties jwtIssuerProperties;
     private final SecretKey accessTokenSigningKey;
 
@@ -87,7 +90,7 @@ public class AccessTokenIssuanceService {
         Date expiresAt = new Date(expiresAtMs);
         String jti = UUID.randomUUID().toString();
 
-        Map<String, Object> attr = Map.of("roles", new ArrayList<>(roleSlugs));
+        Map<String, Object> attr = subjectAttributeResolver.resolveForUser(user, roleSlugs);
 
         String compact =
                 Jwts.builder()
@@ -110,6 +113,80 @@ public class AccessTokenIssuanceService {
                         .compact();
 
         return new IssuedAccessToken(compact, jwtIssuerProperties.accessTokenTtlSeconds(), policyVersion);
+    }
+
+    /**
+     * Issues a service-account access token whose {@code sub} is the principal subject slug
+     * (e.g. {@code svc:srs-webhook}) and {@code aud} is the service-internal audience.
+     * <p>
+     * Only policies attached via {@code principal_type = 'SERVICE_ACCOUNT'} are resolved.
+     * The token carries no {@code attr} claim (no user attributes).
+     *
+     * @param principalSubject the service-account principal subject (must match a
+     *                         {@code policy_attachment.principal_subject})
+     * @throws IllegalArgumentException when no enabled policies are attached for the given principal
+     */
+    @Transactional
+    public IssuedAccessToken issueForServiceAccount(String principalSubject) {
+        if (principalSubject == null || principalSubject.isBlank()) {
+            throw new IllegalArgumentException("principalSubject must not be blank");
+        }
+
+        LinkedHashSet<UUID> policyIds = new LinkedHashSet<>(
+                policyAttachmentRepository.findDistinctPolicyIdsByPrincipalSubject(principalSubject.trim())
+        );
+
+        if (policyIds.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "No policy attachments found for service account: " + principalSubject.trim());
+        }
+
+        List<PolicyEntity> policies = new ArrayList<>(policyRepository.findAllByIdInAndEnabledTrue(policyIds));
+        if (policies.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "No enabled policies found for service account: " + principalSubject.trim());
+        }
+        policies.sort(
+                Comparator.comparing(PolicyEntity::getPolicyKey).thenComparingInt(PolicyEntity::getVersion));
+
+        List<String> definitions =
+                policies.stream().map(PolicyEntity::getDefinition).toList();
+        List<String> entLines = entitlementLinesMaterializer.linesFromPolicies(definitions);
+
+        OffsetDateTime policyVersionInstant =
+                policies.stream()
+                        .map(PolicyEntity::getUpdatedAt)
+                        .max(Comparator.naturalOrder())
+                        .orElse(OffsetDateTime.now(ZoneOffset.UTC));
+        String policyVersion = policyVersionInstant.toString();
+
+        long issuedAtMs = System.currentTimeMillis();
+        long ttlMs = jwtIssuerProperties.serviceTokenTtlSeconds() * 1000L;
+        long expiresAtMs = issuedAtMs + ttlMs;
+        Date issuedAt = new Date(issuedAtMs);
+        Date expiresAt = new Date(expiresAtMs);
+        String jti = UUID.randomUUID().toString();
+
+        String compact =
+                Jwts.builder()
+                        .header()
+                        .type("at+jwt")
+                        .and()
+                        .issuer(jwtIssuerProperties.issuer())
+                        .subject(principalSubject.trim())
+                        .audience()
+                        .add(jwtIssuerProperties.serviceAudience())
+                        .and()
+                        .issuedAt(issuedAt)
+                        .expiration(expiresAt)
+                        .id(jti)
+                        .claim("ver", EntitlementGrammarVersion.current().numericClaim())
+                        .claim("pv", policyVersion)
+                        .claim("ent", entLines)
+                        .signWith(accessTokenSigningKey, Jwts.SIG.HS256)
+                        .compact();
+
+        return new IssuedAccessToken(compact, jwtIssuerProperties.serviceTokenTtlSeconds(), policyVersion);
     }
 
     /** Dev convenience: subject string suitable for {@code sub} without DB. */

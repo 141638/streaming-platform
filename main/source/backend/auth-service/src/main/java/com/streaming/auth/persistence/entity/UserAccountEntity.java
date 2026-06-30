@@ -47,4 +47,10 @@ public class UserAccountEntity {
     @Column(name = "delete_flg", nullable = false)
     private boolean deleteFlag;
 
+    @Column(name = "tier_code", length = 32)
+    private String tierCode;
+
+    @Column(name = "verified_streamer", nullable = false)
+    private boolean verifiedStreamer;
+
 }

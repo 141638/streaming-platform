@@ -1,0 +1,9 @@
+package com.streaming.chat.config;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
+@ConfigurationProperties(prefix = "streaming.jwt")
+public record JwtProperties(
+        String issuer,
+        String hmacSecret
+) {}

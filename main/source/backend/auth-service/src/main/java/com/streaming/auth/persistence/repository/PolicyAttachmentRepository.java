@@ -22,4 +22,10 @@ public interface PolicyAttachmentRepository extends JpaRepository<PolicyAttachme
             where pa.principalType = 'ROLE' and pa.principalSubject in :roleSlugs
             """)
     List<UUID> findDistinctPolicyIdsByRoleSlugs(@Param("roleSlugs") Collection<String> roleSlugs);
+
+    @Query("""
+            select distinct pa.policyId from PolicyAttachmentEntity pa
+            where pa.principalType = 'SERVICE_ACCOUNT' and pa.principalSubject = :principalSubject
+            """)
+    List<UUID> findDistinctPolicyIdsByPrincipalSubject(@Param("principalSubject") String principalSubject);
 }

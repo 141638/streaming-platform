@@ -157,16 +157,27 @@ This combines **PBAC in token** with **resource-level ABAC** in the service (rec
 
 ### 5.4 Service-to-service (SRS webhook, internal jobs)
 
-Do **not** reuse end-user JWT for SRS. Use:
+Implemented via `POST /v1/internal/service-tokens` (HTTP Basic auth, auth-service only — not exposed through gateway).
 
-- **`sub`:** `svc:srs-webhook` (or workload identity)
-- **`aud`:** `stream-service-internal`
-- **`ent`:** narrow, e.g. `allow stream:publish-key:* validate_publish`
-- **Transport:** mTLS or HMAC + IP allowlist + replay protection
+Do **not** reuse end-user JWT for SRS. Service tokens differ from user tokens:
+
+| Claim | User token | Service token (SRS) |
+|-------|-----------|---------------------|
+| `sub` | User UUID | `svc:srs-webhook` (principal subject) |
+| `aud` | `streaming-control-plane` | `stream-service-internal` |
+| `attr` | `{roles, tier, verified_streamer}` | absent |
+| `ent` | All user policies | Only SERVICE_ACCOUNT policies |
+| `exp` | 15 min (configurable) | 60 min (configurable) |
+
+Service tokens are issued by `AccessTokenIssuanceService.issueForServiceAccount(principalSubject)`, which resolves policies attached via `principal_type = 'SERVICE_ACCOUNT'`.
+
+Additional transport security (mTLS, IP allowlist) should be layered at the network/reverse-proxy level for production.
 
 ---
 
 ## 6. Enforcement matrix (by module / rough business logic)
+
+> **Status:** Enforcement is currently **gateway-only** — the gateway validates JWT signature, expiry, and issuer for all routes (§6.5). Per-service `ent` parsing and ownership resolution (§6.1–6.4, §7) is designed but **not yet implemented**. Services currently trust the gateway's authentication and expose `sub` from the validated JWT to controllers. See §11 for implementation roadmap.
 
 Map each API or future route to **`(resource, action)`**. Services reject if no **allow** matches after pattern + condition evaluation.
 
@@ -228,17 +239,47 @@ Map each API or future route to **`(resource, action)`**. Services reject if no 
 
 ---
 
-## 8. Persistence sketch (Auth / policy store)
+## 8. Persistence (Auth schema — implemented)
 
-Suggested tables in **`auth`** schema (names indicative):
+All tables live under the **`auth`** schema in PostgreSQL and are managed via Flyway migrations (V1–V8).
 
-| Table | Role |
-|-------|------|
-| `policy` | Stable `policy_id`, version, serialized rules (YAML/JSON) or Rego bundle ref. |
-| `policy_attachment` | Map `policy_id` → `principal` (`user`, `group`, `role`, `svc_account`). |
-| `entitlement_materialization_cache` | Optional: `sub`, `pv`, `ent` blob, `expires_at` for issuance path. |
+### 8.1 Policy tables
 
-**Issuance:** On login / refresh / policy change webhook, Auth computes **`ent`** for `sub` + `pv` and puts into JWT access token.
+| Table | Role | Key columns |
+|-------|------|-------------|
+| `policy` | Named, versioned policy documents | `policy_key` (unique per version), `version`, `definition` (JSON with `statements[]`), `definition_format` (JSON/YAML/REGO_BUNDLE), `enabled` |
+| `policy_attachment` | Maps policies to principals | `policy_id` FK, `principal_type` (USER/ROLE/GROUP/SERVICE_ACCOUNT), `principal_user_id` (nullable), `principal_subject` (nullable) |
+| `entitlement_materialization_cache` | Optional JWT issuance hot-path cache | `subject_claim`, `policy_version`, `ent_lines` (TEXT[]), `expires_at` _(table exists but unused in code — TTL managed at app layer)_ |
+
+### 8.2 User & role tables
+
+| Table | Role | Key columns |
+|-------|------|-------------|
+| `user_account` | Core user store | `username`, `email`, `password_hash`, `tier_code` FK→`catalog_tier`, `verified_streamer`, `delete_flg` (soft-delete) |
+| `user_account_role` | Many-to-many: user ↔ role | Composite PK (`user_account_id`, `role_slug`), `granted_at`, `granted_by` |
+| `refresh_token` | Rotating refresh credentials | `token_hash` (SHA-256), `token_family_id`, `expires_at`, `revoked_at` |
+
+### 8.3 Catalog tables (system-defined seed data)
+
+| Table | Role | Seed values |
+|-------|------|-------------|
+| `catalog_role` | Platform role slugs | `viewer`, `streamer`, `moderator`, `admin`, `service` |
+| `catalog_tier` | Subscription tiers | `FREE`, `PRO`, `ENTERPRISE` |
+| `catalog_subject_attribute` | Allowed keys for JWT `attr` + their JSON types | `roles` (STRING_ARRAY), `tier` (STRING), `verified_streamer` (BOOLEAN) |
+
+### 8.4 Seed policies (V3 migration)
+
+Five policies pre-seeded with role/service attachments:
+
+| Policy key | Attached to | Grants |
+|-----------|-------------|--------|
+| `policy.viewer.base` | ROLE `viewer`, ROLE `streamer` | read playback, chat, own notifications & identity |
+| `policy.streamer.live` | ROLE `streamer` | create/manage own stream sessions, issue publish keys, chat send |
+| `policy.moderator.chat` | ROLE `moderator` | moderate chat rooms, extended message operations |
+| `policy.service.srs-webhook` | SERVICE_ACCOUNT `svc:srs-webhook` | validate_publish on publish keys |
+| `policy.admin.platform` | ROLE `admin` | wide admin surface including impersonate |
+
+**Issuance:** On login / refresh, Auth: (1) loads user + role slugs from `user_account_role`, (2) resolves policies via `policy_attachment` (USER + ROLE types), (3) materializes `ent` lines from enabled policy definitions via `EntitlementLinesMaterializer`, (4) resolves `attr` dynamically from `catalog_subject_attribute` via `SubjectAttributeResolver`, (5) signs HS256 JWT.
 
 ---
 
@@ -272,11 +313,53 @@ sequenceDiagram
 
 ---
 
-## 11. Next implementation steps (non-binding)
+## 11. Implementation Status & Roadmap
 
-1. Fix **route → (resource, action)** tables in code (Spring Security `AuthorizationManager` or custom filters).  
-2. Implement **Auth token issuer** with `ent` materialization from DB policies.  
-3. Add **SRS webhook** service token path separate from user JWT.  
-4. Add **policy version** `pv` to monitoring and force **token refresh** on policy publish.
+### Completed ✅
 
-This document is the contract for **PBAC + JWT** across your microservices; adjust `ent` grammar in lockstep with `ver` when you extend actions or resource patterns.
+| Feature | Location |
+|---------|----------|
+| Policy storage (DB schema, versioned rows, JSON definitions) | `auth` schema, Flyway V2–V3 |
+| Role catalog + user-role assignment | `auth` schema, Flyway V3, V5 |
+| Tier catalog + user tier assignment | `auth` schema, Flyway V3, V8 |
+| PBAC domain model (enums, resource patterns, grammar) | `auth-service/.../authorization/` |
+| Entitlement materialization (policy JSON → `ent` strings) | `EntitlementLinesMaterializer` |
+| Dynamic `attr` construction from catalog | `SubjectAttributeResolver` |
+| JWT issuance with PBAC claims (user tokens) | `AccessTokenIssuanceService.issueForUser()` |
+| Service-account token issuance (SRS webhook) | `AccessTokenIssuanceService.issueForServiceAccount()` |
+| Internal token endpoints (HTTP Basic protected) | `InternalAccessTokenController` |
+| Refresh token rotation (opaque, hashed, family-based) | `RefreshTokenService` |
+| Gateway JWT validation (HS256 signature + issuer + expiry) | `gateway-service/SecurityConfig` |
+| Frontend auth layer (login, password reset, guards, interceptor) | `streaming-ui/` |
+
+### In Progress 🔧
+
+| Feature | Status |
+|---------|--------|
+| JWT guardrail in domain services (stream, chat, notification) | Each service now validates JWT and exposes `sub`; `ent` enforcement deferred |
+
+### Planned 📋
+
+| Feature | Priority | Notes |
+|---------|----------|-------|
+| Per-service `ent` enforcement + ownership resolution | High | §6–§7 designed, needs implementation in each service |
+| Shared PBAC library (extract from auth-service) | High | Enums, parser, resource patterns — avoid duplication |
+| Admin UI for policy CRUD | Medium | Schema supports it; API layer needed |
+| `entitlement_materialization_cache` usage | Low | Table exists; wire up cache-aside for token hot path |
+| `jti` blocklist in Redis for instant revocation | Medium | §9 design; needed before production |
+| gRPC inter-service auth (JWT in metadata) | Medium | Phase 2 JWT guardrail is prerequisite — each service already has decoder |
+
+### Flyway Migrations Reference
+
+| Migration | Schema | What |
+|-----------|--------|------|
+| V1 | `auth` | `user_account` table |
+| V2 | `auth` | `policy`, `policy_attachment`, `entitlement_materialization_cache` |
+| V3 | `auth` | `catalog_subject_attribute`, `catalog_role`, `catalog_tier`, seed policies + attachments |
+| V4 | `auth` | `created_by`, `updated_by`, `delete_flg` on `user_account` |
+| V5 | `auth` | `user_account_role` table |
+| V6 | `auth` | `refresh_token` table |
+| V7 | `auth` | `email` on `user_account`, password reset support |
+| V8 | `auth` | `tier_code`, `verified_streamer` on `user_account` |
+
+Adjust `ent` grammar in lockstep with `ver` when you extend actions or resource patterns.

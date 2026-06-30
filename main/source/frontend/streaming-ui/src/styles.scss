@@ -2,14 +2,46 @@
 
 @import 'primeicons/primeicons.css';
 
+:root {
+  /* ── Surface ── */
+  --color-surface-0: #0a0a0f;
+  --color-surface-1: oklch(15% 0.005 270 / 70%);
+  --color-surface-2: oklch(18% 0.005 270);
+
+  /* ── Border ── */
+  --color-border-1: oklch(28% 0.01 270);
+  --color-border-2: oklch(24% 0.01 270);
+
+  /* ── Brand / Accent ── */
+  --color-brand: oklch(72% 0.18 265);
+  --color-brand-hover: oklch(66% 0.19 265);
+  --color-brand-muted: oklch(62% 0.12 265);
+  --color-brand-ring: oklch(72% 0.18 265 / 15%);
+  --color-brand-shadow: oklch(72% 0.18 265 / 25%);
+
+  /* ── Text ── */
+  --color-text-primary: oklch(95% 0 0);
+  --color-text-secondary: oklch(90% 0.005 270);
+  --color-text-tertiary: oklch(68% 0.01 270);
+  --color-text-muted: oklch(62% 0.01 270);
+  --color-text-dim: oklch(42% 0.005 270);
+  --color-text-placeholder: oklch(40% 0.005 270);
+
+  /* ── Feedback ── */
+  --color-error: oklch(63% 0.19 15);
+
+  /* ── Gradient stops ── */
+  --gradient-auth: linear-gradient(135deg, #0a0a0f 0%, #14141f 40%, #1a1025 100%);
+}
+
 body {
   margin: 0;
   font-family: system-ui, -apple-system, sans-serif;
-  background: #0a0a0f;
+  background: var(--color-surface-0);
 }
 
 .app-shell-brand-icon {
-  color: oklch(72% 0.18 265);
+  color: var(--color-brand);
 }
 
 .app-shell-main {

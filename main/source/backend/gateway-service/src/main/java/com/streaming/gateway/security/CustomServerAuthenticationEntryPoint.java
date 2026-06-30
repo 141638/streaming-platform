@@ -24,11 +24,21 @@ public class CustomServerAuthenticationEntryPoint implements ServerAuthenticatio
 
     private static final Logger log = LoggerFactory.getLogger(CustomServerAuthenticationEntryPoint.class);
 
-    private static final String BODY_EXPIRED =
-            "{\"error\":\"Unauthorized\",\"error_code\":\"token_expired\",\"message\":\"Access token has expired\"}";
+    private static final String BODY_EXPIRED = """
+            {
+              "error": "Unauthorized",
+              "error_code": "token_expired",
+              "message": "Access token has expired"
+            }
+            """;
 
-    private static final String BODY_INVALID =
-            "{\"error\":\"Unauthorized\",\"error_code\":\"invalid_token\",\"message\":\"A valid Bearer token is required\"}";
+    private static final String BODY_INVALID = """
+            {
+              "error": "Unauthorized",
+              "error_code": "invalid_token",
+              "message": "A valid Bearer token is required"
+            }
+            """;
 
     @Override
     public Mono<Void> commence(ServerWebExchange exchange, AuthenticationException ex) {
@@ -38,10 +48,14 @@ public class CustomServerAuthenticationEntryPoint implements ServerAuthenticatio
                 isExpired(ex) ? "expired" : "invalid",
                 exchange.getRequest().getMethod(),
                 exchange.getRequest().getURI().getPath(),
-                ex.getMessage());
+                ex == null ? null : ex.getMessage()
+        );
 
         exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
         exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        // Suppress any WWW-Authenticate header so the browser does not
+        // pop its native login dialog over the Angular SPA.
+        exchange.getResponse().getHeaders().remove("WWW-Authenticate");
         DataBuffer buffer = exchange.getResponse()
                 .bufferFactory()
                 .wrap(body.getBytes(StandardCharsets.UTF_8));

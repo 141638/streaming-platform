@@ -343,7 +343,7 @@ sequenceDiagram
 | Feature | Priority | Notes |
 |---------|----------|-------|
 | Per-service `ent` enforcement + ownership resolution | High | §6–§7 designed, needs implementation in each service |
-| Shared PBAC library (extract from auth-service) | High | Enums, parser, resource patterns — avoid duplication |
+| Shared PBAC library (extract from auth-service) | High | Enums, parser, resource patterns — avoid duplication. **Full extraction plan in §12.** |
 | Admin UI for policy CRUD | Medium | Schema supports it; API layer needed |
 | `entitlement_materialization_cache` usage | Low | Table exists; wire up cache-aside for token hot path |
 | `jti` blocklist in Redis for instant revocation | Medium | §9 design; needed before production |
@@ -363,3 +363,104 @@ sequenceDiagram
 | V8 | `auth` | `tier_code`, `verified_streamer` on `user_account` |
 
 Adjust `ent` grammar in lockstep with `ver` when you extend actions or resource patterns.
+
+---
+
+## 12. Shared PBAC Library — Extraction Plan
+
+When per-service `ent` enforcement begins, extract the following from `auth-service` into a shared `pbac-common` Gradle subproject to eliminate duplication.
+
+### 12.1 Currently duplicated (3× copies — extract immediately)
+
+Each of stream/chat/notification has identical copies:
+
+| Class | Purpose |
+|-------|---------|
+| `JwtProperties` | `@ConfigurationProperties` record (`streaming.jwt.issuer`, `hmac-secret`) |
+| `ReactiveJwtDecoder` bean factory | 10-line method in each `SecurityConfig` — `SecretKeySpec` + `NimbusReactiveJwtDecoder` + issuer validator |
+
+**Benefit:** 6 files collapse to 1. Service `SecurityConfig` shrinks from ~35 lines to ~6.
+
+### 12.2 Auth-service enums (extract to share)
+
+Currently only in `auth-service/.../authorization/`. Every service needs them for `ent` matching and route → (resource, action) mapping:
+
+| Class | Wire values |
+|-------|-------------|
+| `AuthAction` | create, read, read_sensitive, update, delete, issue_key, validate_publish, lifecycle, send, read_history, moderate, subscribe_topics, manage_outbox, impersonate |
+| `AuthResourceDomain` | identity, stream, media, chat, notification, platform |
+| `AuthResourceKind` | user, credential, session, publish-key, archive, playback, room, message, moderation, subscription, outbox, admin |
+| `AuthorizationResource` | Builds `domain:kind:scope` patterns |
+| `EntitlementStatements` | Formats/parses `"allow <resource> <actions>"` lines |
+| `EntitlementGrammarVersion` | `ver` claim — V1=1 |
+
+### 12.3 JWT payload types (share for type safety)
+
+Currently services access claims as raw `jwt.getClaim("ent")` casts:
+
+| Class | Enables |
+|-------|---------|
+| `StreamingAccessTokenPayload` | `from(Jwt)` — typed, validated access to all PBAC claims |
+| `SubjectAttributes` | `payload.attributes().roles()` instead of unchecked map casts |
+
+### 12.4 Enforcement primitives (build once, use everywhere)
+
+Do not exist yet — correspond to PBAC doc §7 evaluation algorithm:
+
+| Class | Responsibility |
+|-------|---------------|
+| `EntitlementMatcher` | `match(entLines, resource, action, sub) → boolean` — pattern matching, action membership, `self` scope resolution |
+| `JwtClaimAccessors` | Type-safe static helpers: `sub(jwt)`, `ent(jwt)`, `attr(jwt)`, `pv(jwt)` |
+
+### 12.5 Spring Boot autoconfiguration
+
+A `PbacAutoConfiguration` that:
+- Creates `ReactiveJwtDecoder` bean automatically when `streaming.jwt.*` is configured
+- Enables `@ConfigurationProperties` for `JwtProperties`
+- Services add the dependency and configure `application.yml` — no other boilerplate
+
+### 12.6 What stays in auth-service (NOT shared)
+
+| Class | Why |
+|-------|-----|
+| `PolicyEntity`, `PolicyAttachmentEntity` | Persistence — only auth talks to policy DB |
+| `AccessTokenIssuanceService` | Token creation — only auth signs JWTs |
+| `EntitlementLinesMaterializer` | Only auth materializes policies → ent |
+| `SubjectAttributeResolver` | Only auth resolves per-user attributes |
+| `PolicyStatementsDocument` | Only auth deserializes policy definitions |
+| `JwtSigningKey`, `JwtIssuerProperties` | Only auth holds the signing key |
+
+### 12.7 Target library structure
+
+```
+pbac-common/
+├── build.gradle.kts
+└── src/main/java/com/streaming/pbac/
+    ├── authorization/
+    │   ├── AuthAction.java
+    │   ├── AuthResourceDomain.java
+    │   ├── AuthResourceKind.java
+    │   ├── AuthorizationResource.java
+    │   ├── EntitlementGrammarVersion.java
+    │   └── EntitlementStatements.java
+    ├── jwt/
+    │   ├── StreamingAccessTokenPayload.java
+    │   └── SubjectAttributes.java
+    ├── enforcement/
+    │   ├── EntitlementMatcher.java
+    │   └── JwtClaimAccessors.java
+    ├── config/
+    │   ├── JwtProperties.java
+    │   └── PbacAutoConfiguration.java
+    └── package-info.java
+```
+
+### 12.8 Migration steps (when ready)
+
+1. Create `pbac-common` Gradle subproject, add to `settings.gradle.kts`
+2. Move enums + resource patterns from auth-service → pbac-common (update auth-service imports)
+3. Move `JwtProperties` → pbac-common, delete duplicates from stream/chat/notification
+4. Create `PbacAutoConfiguration`, delete `jwtDecoder()` beans from each service
+5. Move `StreamingAccessTokenPayload` + `SubjectAttributes` → pbac-common
+6. Build `EntitlementMatcher` + `JwtClaimAccessors`
+7. Wire enforcement into one service as pilot, then roll out to all

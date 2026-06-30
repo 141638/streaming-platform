@@ -12,6 +12,10 @@ public record JwtIssuerProperties(
         @DefaultValue("300") int resetTokenTtlSeconds,
         String hmacSecret,
         @DefaultValue("stream-service-internal") String serviceAudience,
-        @DefaultValue("3600") int serviceTokenTtlSeconds
+        @DefaultValue("3600") int serviceTokenTtlSeconds,
+        @DefaultValue("true") boolean cookieHttpOnly,
+        @DefaultValue("false") boolean cookieSecure,
+        @DefaultValue("Lax") String cookieSameSite,
+        @DefaultValue("/api/auth") String cookiePath
 ) {
 }

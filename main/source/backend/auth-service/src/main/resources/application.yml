@@ -65,6 +65,10 @@ streaming:
     hmac-secret: ${JWT_HMAC_SECRET:MNH6CwQ7H4xAf69hpn0sc2Rn+wxT/d+I9QWELikQqgM=}
     service-audience: ${JWT_SERVICE_AUDIENCE:stream-service-internal}
     service-token-ttl-seconds: ${JWT_SERVICE_TTL_SECONDS:3600}
+    cookie-http-only: ${JWT_COOKIE_HTTP_ONLY:true}
+    cookie-secure: ${JWT_COOKIE_SECURE:false}
+    cookie-same-site: ${JWT_COOKIE_SAME_SITE:Lax}
+    cookie-path: ${JWT_COOKIE_PATH:/api/auth}
 
 management:
   endpoints:

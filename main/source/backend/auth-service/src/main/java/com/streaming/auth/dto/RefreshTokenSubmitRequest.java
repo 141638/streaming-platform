@@ -1,5 +1,5 @@
 package com.streaming.auth.dto;
 
-import jakarta.validation.constraints.NotBlank;
+import jakarta.annotation.Nullable;
 
-public record RefreshTokenSubmitRequest(@NotBlank String refreshToken) {}
+public record RefreshTokenSubmitRequest(@Nullable String refreshToken) {}

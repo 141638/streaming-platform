@@ -1,5 +1,12 @@
 package com.streaming.gateway.config;
 
+import com.nimbusds.jose.JOSEObjectType;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.jwk.source.ImmutableSecret;
+import com.nimbusds.jose.proc.DefaultJOSEObjectTypeVerifier;
+import com.nimbusds.jose.proc.JWSVerificationKeySelector;
+import com.nimbusds.jose.proc.SecurityContext;
+import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 import com.streaming.gateway.security.CustomServerAuthenticationEntryPoint;
 
 import java.nio.charset.StandardCharsets;
@@ -18,6 +25,7 @@ import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusReactiveJwtDecoder;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.security.web.server.SecurityWebFilterChain;
+import reactor.core.publisher.Mono;
 
 @Configuration
 @EnableWebFluxSecurity
@@ -76,7 +84,16 @@ public class SecurityConfig {
         }
         SecretKey secretKey = new SecretKeySpec(secretBytes, "HmacSHA256");
 
-        NimbusReactiveJwtDecoder decoder = NimbusReactiveJwtDecoder.withSecretKey(secretKey).build();
+        DefaultJWTProcessor<SecurityContext> jwtProcessor = new DefaultJWTProcessor<>();
+        jwtProcessor.setJWSKeySelector(
+                new JWSVerificationKeySelector<>(JWSAlgorithm.HS256,
+                        new ImmutableSecret<>(secretKey)));
+        // Accept both standard "JWT" and RFC 9068 "at+jwt" types
+        jwtProcessor.setJWSTypeVerifier(
+                new DefaultJOSEObjectTypeVerifier<>(JOSEObjectType.JWT, new JOSEObjectType("at+jwt")));
+
+        NimbusReactiveJwtDecoder decoder = new NimbusReactiveJwtDecoder(
+                jwt -> Mono.fromCallable(() -> jwtProcessor.process(jwt, null)));
         decoder.setJwtValidator(JwtValidators.createDefaultWithIssuer(jwtProperties.issuer()));
 
         log.info("Configured ReactiveJwtDecoder with issuer={} (secret length={} bytes)",

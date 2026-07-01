@@ -77,6 +77,25 @@ public class RefreshTokenService {
         return new IssuedSessionTokens(access, nextPlaintext, jwtIssuerProperties.refreshTokenTtlSeconds());
     }
 
+    /**
+     * Revoke all active tokens in the family identified by the given refresh token.
+     * Used during explicit logout — quietly succeeds if the token is not found or
+     * already revoked (idempotent).
+     *
+     * <p>No transaction annotation: the lookup and the revocation each run in
+     * their own transaction so the {@code REQUIRES_NEW} inner transaction in
+     * {@link RefreshTokenMaintenanceService#revokeAllActiveInFamily} is not
+     * blocked by a lingering pessimistic lock from the lookup.
+     */
+    public void revokeTokensByRefreshToken(String plaintextRefreshToken) {
+        if (plaintextRefreshToken == null || plaintextRefreshToken.isBlank()) {
+            return;
+        }
+        byte[] hash = OpaqueTokenHasher.sha256Utf8(plaintextRefreshToken.trim());
+        refreshTokenRepository.findByTokenHash(hash).ifPresent(stored ->
+                refreshTokenMaintenanceService.revokeAllActiveInFamily(stored.getTokenFamilyId()));
+    }
+
     private String persistNewRefresh(UUID userAccountId, UUID tokenFamilyId) {
         String plaintext = OpaqueTokenGenerator.newRefreshSecret();
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);

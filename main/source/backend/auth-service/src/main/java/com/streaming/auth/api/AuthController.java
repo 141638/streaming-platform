@@ -61,4 +61,15 @@ public class AuthController {
                 issued.refreshExpiresInSeconds()
         ));
     }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(@Valid @RequestBody RefreshTokenSubmitRequest request) {
+        String plaintext = cookieService.getRefreshToken()
+                .orElse(request.refreshToken());
+        if (plaintext != null && !plaintext.isBlank()) {
+            refreshTokenService.revokeTokensByRefreshToken(plaintext);
+        }
+        cookieService.deleteRefreshToken();
+        return ResponseEntity.noContent().build();
+    }
 }

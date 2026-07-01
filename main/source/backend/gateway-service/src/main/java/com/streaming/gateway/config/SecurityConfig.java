@@ -55,6 +55,7 @@ public class SecurityConfig {
                         .pathMatchers("/actuator/**").permitAll()
                         .pathMatchers(HttpMethod.POST, "/api/auth/v1/login").permitAll()
                         .pathMatchers(HttpMethod.POST, "/api/auth/v1/token/refresh").permitAll()
+                        .pathMatchers(HttpMethod.POST, "/api/auth/v1/logout").permitAll()
                         .pathMatchers(HttpMethod.POST, "/api/auth/v1/password-reset/request").permitAll()
                         .pathMatchers(HttpMethod.POST, "/api/auth/v1/password-reset/confirm").permitAll()
                         .anyExchange().authenticated()

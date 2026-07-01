@@ -18,6 +18,9 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshTokenEntity
     @Query("SELECT r FROM RefreshTokenEntity r WHERE r.tokenHash = :tokenHash")
     Optional<RefreshTokenEntity> lockByTokenHash(@Param("tokenHash") byte[] tokenHash);
 
+    /** Non-locking lookup for idempotent operations (e.g. logout) where concurrency is not a concern. */
+    Optional<RefreshTokenEntity> findByTokenHash(byte[] tokenHash);
+
     @Modifying
     @Query(
             "UPDATE RefreshTokenEntity r SET r.revokedAt = :now WHERE r.tokenFamilyId = :familyId "

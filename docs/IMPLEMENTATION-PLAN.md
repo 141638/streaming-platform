@@ -1,0 +1,376 @@
+# Implementation Plan
+
+**Last updated:** 2026-07-01
+**Current phase:** 2 — Stream Lifecycle
+
+## End Goal
+
+A dual-plane streaming platform:
+
+- **Control plane:** identities, stream metadata lifecycle, chat, notifications, orchestration signals — synchronous REST APIs + event-driven integration (Kafka) + shared state (PostgreSQL, Redis)
+- **Data plane:** real-time media ingestion, packaging, and delivery (OBS → SRS → HLS-capable playback)
+
+```
+Streamer signs in → creates stream → gets publish key → OBS publishes to SRS
+→ SRS validates key → stream goes live → viewers watch HLS + chat in real-time
+→ notifications fire on stream events
+```
+
+---
+
+## Phase Overview
+
+```
+Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 ──► Phase 6
+(Auth)      (Stream)    (Chat)      (Viewer)    (Notify)    (Harden)
+  ✅          ⚡           ○           ○           ○           ○
+```
+
+| Phase | Status | Goal |
+|-------|--------|------|
+| [1 — Auth & Foundation](#phase-1--auth--foundation) | ✅ Done | Login, token rotation, PBAC JWT, gateway, frontend auth |
+| [2 — Stream Lifecycle](#phase-2--stream-lifecycle) | ⚡ Current | Stream CRUD with PBAC, state machine, SRS webhook, frontend dashboard |
+| [3 — Real-time Chat](#phase-3--real-time-chat) | ○ Planned | PG-backed chat with Redis cache-aside, room lifecycle from stream events |
+| [4 — Viewer Experience](#phase-4--viewer-experience) | ○ Planned | Stream discovery, HLS player, embedded chat, viewer presence |
+| [5 — Notifications](#phase-5--notifications) | ○ Planned | Email notifications, subscription management, Kafka-driven dispatch |
+| [6 — Production Hardening](#phase-6--production-hardening) | ○ Planned | Idempotency, shared pbac-common, rate limiting, WebSocket, observability |
+
+---
+
+## Phase 1 — Auth & Foundation ✅
+
+**Status:** Complete
+
+### Deliverables
+
+| # | Item | Artifacts |
+|---|------|-----------|
+| 1.1 | Auth service with PBAC JWT issuance | `AuthController`, `AccessTokenIssuanceService`, PBAC claims (`ent`, `pv`, `ver`, `attr`) |
+| 1.2 | Refresh token rotation with family-based replay detection | `RefreshTokenService`, `OpaqueTokenHasher`, `PESSIMISTIC_WRITE` lock |
+| 1.3 | HttpOnly cookie for refresh token (web) + body fallback (mobile) | `CookieService`, `JwtIssuerProperties` |
+| 1.4 | Gateway JWT validation + distinguishable 401 error codes | `CustomServerAuthenticationEntryPoint` (`token_expired` vs `invalid_token`) |
+| 1.5 | WWW-Authenticate suppression (browser native login dialog fix) | `SecurityConfig.exceptionHandling().authenticationEntryPoint()` |
+| 1.6 | Frontend login / logout / forgot password / password reset flows | `LoginPage`, `ForgotPasswordPage`, `PasswordResetPage` |
+| 1.7 | Auth interceptor with RxJS single-flight token refresh | `auth.interceptor.ts`, `AuthService.refresh()` |
+| 1.8 | Route guards (auth + guest) with `CanMatch` | `auth.guard.ts`, `guest.guard.ts` |
+| 1.9 | App shell with toolbar and router outlet | `AppShellComponent`, `HomePage` (placeholder) |
+| 1.10 | Eureka discovery, gateway routing to all services | `discovery-service`, gateway `application.yml` routes |
+| 1.11 | Docker Compose infrastructure (PostgreSQL, Redis, Kafka, SRS) | `compose.yaml` |
+
+### Reference Docs
+
+- [ARCHITECTURE.md](ARCHITECTURE.md)
+- [SERVICE-ARCHITECTURE.md](SERVICE-ARCHITECTURE.md)
+- [PBAC-AUTHORIZATION.md](PBAC-AUTHORIZATION.md)
+- [REFRESH-TOKEN-ROTATION.md](REFRESH-TOKEN-ROTATION.md)
+- [RXJS-SINGLE-FLIGHT-PATTERN.md](RXJS-SINGLE-FLIGHT-PATTERN.md)
+- [AUTH-INTERCEPTOR-PATTERN.md](AUTH-INTERCEPTOR-PATTERN.md)
+- [IDEMPOTENCY-PATTERN.md](IDEMPOTENCY-PATTERN.md)
+
+---
+
+## Phase 2 — Stream Lifecycle ⚡
+
+**Status:** Current — stream service has CRUD skeletons but no PBAC enforcement, no state machine, no SRS integration
+
+**Goal:** A streamer can create, configure, start, and end a stream. End-to-end: login → create stream → get publish key → OBS publishes → SRS validates key → stream goes live.
+
+### Work Items
+
+#### 2.1 Gateway Route Path Rewriting
+
+**Why:** Gateway routes `/api/streams/**` to stream-service, but stream-service controllers are mapped to `/v1/...` without the `/api/streams` prefix. No request can reach the stream service through the gateway.
+
+**What:**
+- Add `RewritePath` or `StripPrefix` filters to gateway route configuration
+- Apply consistently across all service routes (`/api/auth/**`, `/api/streams/**`, `/api/chat/**`, `/api/notifications/**`)
+
+**Files:** `gateway-service/src/main/resources/application.yml`
+
+**Validate:** `curl http://localhost:8080/api/streams/v1/ping` → reaches stream service
+
+---
+
+#### 2.2 PBAC Enforcement in Stream Service
+
+**Why:** Current endpoints allow any authenticated user to read/modify/delete any other user's stream. User A can delete user B's stream. This is the largest security gap in the platform.
+
+**What:**
+- Build `EntitlementMatcher` — parses JWT `ent` claim, resolves resource ownership (`sub` → `broadcaster_subject`), evaluates policy statements
+- Add `@PreAuthorize` or custom `@RequireEntitlement` annotation to stream controller endpoints
+- Map HTTP methods to PBAC actions: `POST /streams` → `create`, `GET /streams/{id}` → `read`, `PATCH` → `update`, `DELETE` → `delete`, `POST .../publish-key` → `issue_key`
+- Use `ReactiveSecurityContextHolder` to extract JWT in service layer
+
+**Files:**
+- `stream-service/src/main/java/com/streaming/stream/security/EntitlementMatcher.java` (new)
+- `stream-service/src/main/java/com/streaming/stream/security/RequireEntitlement.java` (new annotation)
+- `stream-service/src/main/java/com/streaming/stream/config/SecurityConfig.java` (enable method security)
+- `stream-service/src/main/java/com/streaming/stream/api/StreamController.java` (add annotations)
+
+**Validate:** Integration test — user A's token cannot read/modify/delete user B's stream
+
+**Reference:** [PBAC-AUTHORIZATION.md §6](PBAC-AUTHORIZATION.md) — enforcement matrix per service
+
+---
+
+#### 2.3 Stream State Machine
+
+**Why:** Stream lifecycle is currently just a string field with no transition validation. A stream needs defined states and valid transitions.
+
+**What:**
+- Define states: `draft → scheduled → live → ended` (plus `cancelled` from `draft` or `scheduled`)
+- Add `transition(StreamStatus target)` method to `StreamSessionEntity` with transition validation
+- Add `start()` transition → sets `startedAt`, fires `StreamEventPublisher.publish(STREAM_STARTED)`
+- Add `end()` transition → sets `endedAt`, fires `StreamEventPublisher.publish(STREAM_ENDED)`
+- Wire `StreamEventPublisher` to Kafka (already exists, not called anywhere)
+
+**Files:**
+- `stream-service/src/main/java/com/streaming/stream/domain/StreamStatus.java` (enum with transition rules)
+- `stream-service/src/main/java/com/streaming/stream/persistence/entity/StreamSessionEntity.java` (add transition logic)
+- `stream-service/src/main/java/com/streaming/stream/service/StreamService.java` (wire transitions)
+- `stream-service/src/main/java/com/streaming/stream/messaging/StreamEventPublisher.java` (already exists)
+
+**Validate:** Integration test — `draft → live` succeeds, `live → draft` throws
+
+---
+
+#### 2.4 SRS Webhook Integration
+
+**Why:** SRS must validate the stream key with the stream service before accepting an RTMP publish. Without this, anyone who guesses a key can publish.
+
+**What:**
+- Add `POST /v1/webhooks/srs/on_publish` endpoint (service-account authenticated, not user auth)
+- SRS calls this webhook with the stream key → stream service validates key hash → returns allow/deny
+- Configure SRS `http_hooks` in Docker Compose to call the webhook
+- Use service-account JWT (audience: `stream-service-internal`) for webhook auth
+
+**Files:**
+- `stream-service/src/main/java/com/streaming/stream/api/SrsWebhookController.java` (new)
+- `stream-service/src/main/java/com/streaming/stream/service/PublishKeyValidationService.java` (new)
+- `compose.yaml` (SRS http_hooks config)
+
+**Validate:** OBS publishes with valid key → accepted. OBS publishes with invalid key → rejected.
+
+---
+
+#### 2.5 Frontend: Stream Dashboard
+
+**Why:** Streamers need a UI to manage their streams. Currently only a placeholder home page exists.
+
+**What:**
+- `StreamService` (frontend) — HTTP client for stream API endpoints
+- `StreamListComponent` — lists user's streams with status badges (draft/scheduled/live/ended)
+- `StreamCreateComponent` — form: title, description, category, max viewers
+- `StreamDetailComponent` — stream info, publish key management (generate, copy, show RTMP URL), start/end controls
+- `StreamDashboardPage` — container with tab navigation (My Streams / Create)
+- Lazy-loaded route under `/dashboard/streams`
+
+**Files (new):**
+- `frontend/streaming-ui/src/app/core/services/stream.service.ts`
+- `frontend/streaming-ui/src/app/features/streams/stream-list/`
+- `frontend/streaming-ui/src/app/features/streams/stream-create/`
+- `frontend/streaming-ui/src/app/features/streams/stream-detail/`
+- `frontend/streaming-ui/src/app/features/streams/stream-dashboard-page/`
+
+**Validate:** `ng build` + manual flow: login → navigate to dashboard → create stream → view stream → generate publish key
+
+---
+
+### Phase 2 Checklist
+
+- [ ] 2.1 — Gateway path rewriting
+- [ ] 2.2 — PBAC enforcement (ownership checks)
+- [ ] 2.3 — Stream state machine + Kafka events
+- [ ] 2.4 — SRS webhook (publish key validation)
+- [ ] 2.5 — Frontend stream dashboard
+
+---
+
+## Phase 3 — Real-time Chat ○
+
+**Status:** Planned — chat service has Redis-only prototype, no service layer, no PG persistence, author impersonation bug
+
+**Goal:** Viewers in a stream room can chat. Messages persist to PostgreSQL with Redis as the hot cache.
+
+### Work Items
+
+| # | Item | Depends on |
+|---|------|-----------|
+| 3.1 | **Chat service layer** — extract `ChatService` from controller, wire `ReactiveChatMessageRepository` (R2DBC), implement cache-aside (write PG → update Redis, read Redis → fallback PG) | — |
+| 3.2 | **Fix author identity** — read `sub` from JWT (via `ReactiveSecurityContextHolder`), not from request body | 3.1 |
+| 3.3 | **Room lifecycle from stream events** — consume `stream.control` Kafka topic, auto-create chat room when stream starts, archive when stream ends | 2.3, 3.1 |
+| 3.4 | **PBAC enforcement in chat** — `send` requires `chat:room:{externalKey}` entitlement, `moderate` requires `chat:moderation` entitlement | 3.2 |
+| 3.5 | **Frontend: Chat component** — message list + input, scrolled to room, REST polling (WebSocket in Phase 6) | 3.2 |
+
+### Phase 3 Checklist
+
+- [ ] 3.1 — Service layer + PG persistence + Redis cache-aside
+- [ ] 3.2 — JWT-based author identity
+- [ ] 3.3 — Room auto-creation from stream events
+- [ ] 3.4 — PBAC enforcement
+- [ ] 3.5 — Frontend chat component
+
+---
+
+## Phase 4 — Viewer Experience ○
+
+**Status:** Planned
+
+**Goal:** A viewer can discover live streams, watch them, and interact via chat.
+
+### Work Items
+
+| # | Item | Depends on |
+|---|------|-----------|
+| 4.1 | **Frontend: Browse/discovery page** — list live streams with thumbnails, filter by category, search | 2.3 |
+| 4.2 | **Frontend: Stream viewing page** — HLS player (hls.js), embedded chat component, stream info sidebar | 2.4, 3.5, 4.1 |
+| 4.3 | **Playback URL generation** — stream service returns HLS URL per stream, gateway proxies or redirects to SRS | 2.4 |
+| 4.4 | **Viewer count / presence** — Redis-based ephemeral presence per room (`SETEX` with TTL), shown in UI | 4.2 |
+
+### Phase 4 Checklist
+
+- [ ] 4.1 — Browse/discovery page
+- [ ] 4.2 — Stream viewing page (player + chat)
+- [ ] 4.3 — Playback URL generation
+- [ ] 4.4 — Viewer presence
+
+---
+
+## Phase 5 — Notifications ○
+
+**Status:** Planned — notification service has only `/v1/ping`, `StreamControlListener` only logs
+
+**Goal:** Users get notified about followed streamers going live, chat mentions, etc.
+
+### Work Items
+
+| # | Item | Depends on |
+|---|------|-----------|
+| 5.1 | **Notification service core** — subscription CRUD (`channel_subscription` table), outbox management, `NotificationDispatcher` interface | — |
+| 5.2 | **Kafka consumer → dispatch** — `StreamControlListener` wired to dispatch logic (stream.started → notify followers, stream.ended → notify) | 2.3, 5.1 |
+| 5.3 | **Email adapter** — SMTP integration via Spring Mail, templated emails (Thymeleaf or plain text) | 5.1 |
+| 5.4 | **Frontend: Notification settings** — manage subscriptions, toggle email/push per channel, notification preferences | 5.1 |
+
+### Phase 5 Checklist
+
+- [ ] 5.1 — Subscription CRUD + outbox + dispatcher interface
+- [ ] 5.2 — Kafka → dispatch wiring
+- [ ] 5.3 — Email adapter
+- [ ] 5.4 — Frontend notification settings
+
+---
+
+## Phase 6 — Production Hardening ○
+
+**Status:** Planned
+
+**Goal:** The platform is safe, scalable, and maintainable for production use.
+
+### Work Items
+
+| # | Item | Depends on |
+|---|------|-----------|
+| 6.1 | **Idempotency keys** — gateway filter + Redis dedup + frontend `IdempotencyService` → enable POST retry in auth interceptor | — |
+| 6.2 | **Shared `pbac-common` library** — extract duplicated `JwtProperties` + `ReactiveJwtDecoder` + `EntitlementMatcher` from stream/chat/notification into a shared Gradle module | 2.2 |
+| 6.3 | **Rate limiting** — gateway-level rate limits per endpoint, Redis-backed token bucket | 6.1 |
+| 6.4 | **WebSocket upgrade for chat** — replace REST polling with WebSocket (STOMP or raw) for real-time messaging | 3.5 |
+| 6.5 | **Security hardening** — TLS everywhere, secrets management (env vars → vault), CSP headers, CSRF audit, dependency CVE scanning | — |
+| 6.6 | **Observability** — structured JSON logging, Micrometer metrics (Prometheus), health checks with dependencies, Grafana dashboard | — |
+
+### Phase 6 Checklist
+
+- [ ] 6.1 — Idempotency keys
+- [ ] 6.2 — Shared `pbac-common` library
+- [ ] 6.3 — Rate limiting
+- [ ] 6.4 — WebSocket chat
+- [ ] 6.5 — Security hardening
+- [ ] 6.6 — Observability
+
+---
+
+## Future (Phase 7+)
+
+Not planned yet — candidates:
+
+| Feature | Notes |
+|---------|-------|
+| VOD / Archives | Record streams, playback on demand |
+| Transcoding (FFmpeg) | Adaptive bitrate via SRS/FFmpeg pipeline |
+| Monetization | Subscriptions, tips, ads |
+| Moderation dashboard | Admin UI for chat moderation, stream takedowns |
+| Mobile app | Ionic/Capacitor or native, reusing existing API |
+| CDN integration | HLS edge delivery for scale |
+| Multi-region | Geo-distributed SRS + DB replication |
+
+---
+
+## Dependency Graph
+
+```
+Phase 1 (DONE)
+    │
+    ▼
+Phase 2 ─────────────────────────────┐
+│  2.1 Gateway fix                    │
+│  2.2 PBAC enforcement ──────────────┼──┐
+│  2.3 Stream state machine ──────────┼──┼──┐
+│  2.4 SRS webhook                    │  │  │
+│  2.5 Frontend stream dashboard      │  │  │
+│                                     │  │  │
+Phase 3 ──────────────────────────────┘  │  │
+│  3.1 Chat service layer                │  │
+│  3.2 Fix author identity               │  │
+│  3.3 Room from stream events ◄─────────┘  │
+│  3.4 PBAC in chat                         │
+│  3.5 Frontend chat component              │
+│                                           │
+Phase 4 ────────────────────────────────────┘
+│  4.1 Browse/discovery page     ◄── needs stream state machine (2.3)
+│  4.2 Stream viewing page       ◄── needs SRS webhook (2.4) + chat (3.5)
+│  4.3 Playback URL generation   ◄── needs SRS webhook (2.4)
+│  4.4 Viewer presence
+│
+Phase 5
+│  5.1-5.4 Notification service  ◄── needs stream events (2.3)
+│
+Phase 6
+│  6.1-6.6 Hardening             ◄── can run in parallel with earlier phases
+```
+
+---
+
+## Conventions
+
+### Per-Work-Item Flow
+
+```
+1. /plan    → implementation plan for the work item
+2. /implement → write code, tests, verify build
+3. Code review → code-reviewer agent
+4. Commit → conventional commits format
+5. Reference doc → docs/<PATTERN-NAME>.md if new pattern introduced
+```
+
+### Commit Format
+
+```
+<type>: <description>
+
+<optional body>
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`
+
+---
+
+## Related Docs
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) — High-level system architecture
+- [SERVICE-ARCHITECTURE.md](SERVICE-ARCHITECTURE.md) — Per-service architectural styles
+- [PBAC-AUTHORIZATION.md](PBAC-AUTHORIZATION.md) — Authorization model and JWT design
+- [REFRESH-TOKEN-ROTATION.md](REFRESH-TOKEN-ROTATION.md) — Token lifecycle
+- [RXJS-SINGLE-FLIGHT-PATTERN.md](RXJS-SINGLE-FLIGHT-PATTERN.md) — Concurrent dedup pattern
+- [AUTH-INTERCEPTOR-PATTERN.md](AUTH-INTERCEPTOR-PATTERN.md) — Frontend 401 handling
+- [IDEMPOTENCY-PATTERN.md](IDEMPOTENCY-PATTERN.md) — Idempotency key design

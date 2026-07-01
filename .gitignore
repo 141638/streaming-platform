@@ -30,6 +30,9 @@ replay_pid*
 /target/
 **/target/
 
+# Intellij
+**/.idea/**
+
 dist/
 .angular/
 node_modules/

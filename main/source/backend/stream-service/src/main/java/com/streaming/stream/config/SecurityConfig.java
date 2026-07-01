@@ -1,5 +1,7 @@
 package com.streaming.stream.config;
 
+// PBAC-COMMON-CANDIDATE (jwtDecoder bean + StreamAuthenticationEntryPoint) — extract to pbac-common in Phase 6.2
+
 import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
@@ -13,6 +15,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
+import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusReactiveJwtDecoder;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
@@ -33,6 +36,7 @@ public class SecurityConfig {
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt.jwtDecoder(decoder))
+                        .authenticationEntryPoint(new StreamAuthenticationEntryPoint())
                 )
                 .build();
     }
@@ -55,7 +59,9 @@ public class SecurityConfig {
                 new DefaultJOSEObjectTypeVerifier<>(JOSEObjectType.JWT, new JOSEObjectType("at+jwt")));
 
         NimbusReactiveJwtDecoder decoder = new NimbusReactiveJwtDecoder(
-                jwt -> Mono.fromCallable(() -> jwtProcessor.process(jwt, null)));
+                jwt -> Mono.fromCallable(() -> jwtProcessor.process(jwt, null))
+                        .onErrorMap(com.nimbusds.jwt.proc.BadJWTException.class,
+                                e -> new BadJwtException(e.getMessage(), e)));
         decoder.setJwtValidator(JwtValidators.createDefaultWithIssuer(props.issuer()));
         return decoder;
     }

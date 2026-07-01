@@ -8,11 +8,6 @@ import com.nimbusds.jose.proc.JWSVerificationKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 import com.streaming.gateway.security.CustomServerAuthenticationEntryPoint;
-
-import java.nio.charset.StandardCharsets;
-import javax.crypto.SecretKey;
-import javax.crypto.spec.SecretKeySpec;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -21,11 +16,16 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
+import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusReactiveJwtDecoder;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 import reactor.core.publisher.Mono;
+
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
 
 @Configuration
 @EnableWebFluxSecurity
@@ -93,7 +93,9 @@ public class SecurityConfig {
                 new DefaultJOSEObjectTypeVerifier<>(JOSEObjectType.JWT, new JOSEObjectType("at+jwt")));
 
         NimbusReactiveJwtDecoder decoder = new NimbusReactiveJwtDecoder(
-                jwt -> Mono.fromCallable(() -> jwtProcessor.process(jwt, null)));
+                jwt -> Mono.fromCallable(() -> jwtProcessor.process(jwt, null))
+                        .onErrorMap(com.nimbusds.jwt.proc.BadJWTException.class,
+                                e -> new BadJwtException(e.getMessage(), e)));
         decoder.setJwtValidator(JwtValidators.createDefaultWithIssuer(jwtProperties.issuer()));
 
         log.info("Configured ReactiveJwtDecoder with issuer={} (secret length={} bytes)",

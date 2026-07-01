@@ -1,4 +1,4 @@
-package com.streaming.gateway.security;
+package com.streaming.stream.config;
 
 // PBAC-COMMON-CANDIDATE — extract to pbac-common in Phase 6.2
 
@@ -15,32 +15,22 @@ import reactor.core.publisher.Mono;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Returns a structured JSON 401 body with an {@code error_code} field so
- * clients can distinguish expired tokens (→ refresh + retry) from invalid
+ * Returns a structured JSON 401 body with an {@code error_code} field so the
+ * frontend can distinguish expired tokens (→ refresh + retry) from invalid
  * or missing tokens (→ force logout).
- * <p>
- * Logs the underlying {@code AuthenticationException} message so operators
- * can diagnose bad signatures, malformed JWTs, and clock-skew expiry.
+ *
+ * <p>Mirrors the gateway's {@code CustomServerAuthenticationEntryPoint} so
+ * errors from downstream services carry the same contract.
  */
-public class CustomServerAuthenticationEntryPoint implements ServerAuthenticationEntryPoint {
+public class StreamAuthenticationEntryPoint implements ServerAuthenticationEntryPoint {
 
-    private static final Logger log = LoggerFactory.getLogger(CustomServerAuthenticationEntryPoint.class);
+    private static final Logger log = LoggerFactory.getLogger(StreamAuthenticationEntryPoint.class);
 
-    private static final String BODY_EXPIRED = """
-            {
-              "error": "Unauthorized",
-              "error_code": "token_expired",
-              "message": "Access token has expired"
-            }
-            """;
+    private static final String BODY_EXPIRED =
+            "{\"error\":\"Unauthorized\",\"error_code\":\"token_expired\",\"message\":\"Access token has expired\"}";
 
-    private static final String BODY_INVALID = """
-            {
-              "error": "Unauthorized",
-              "error_code": "invalid_token",
-              "message": "A valid Bearer token is required"
-            }
-            """;
+    private static final String BODY_INVALID =
+            "{\"error\":\"Unauthorized\",\"error_code\":\"invalid_token\",\"message\":\"A valid Bearer token is required\"}";
 
     @Override
     public Mono<Void> commence(ServerWebExchange exchange, AuthenticationException ex) {
@@ -50,13 +40,10 @@ public class CustomServerAuthenticationEntryPoint implements ServerAuthenticatio
                 isExpired(ex) ? "expired" : "invalid",
                 exchange.getRequest().getMethod(),
                 exchange.getRequest().getURI().getPath(),
-                ex == null ? null : ex.getMessage()
-        );
+                ex.getMessage());
 
         exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
         exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
-        // Suppress any WWW-Authenticate header so the browser does not
-        // pop its native login dialog over the Angular SPA.
         exchange.getResponse().getHeaders().remove("WWW-Authenticate");
         DataBuffer buffer = exchange.getResponse()
                 .bufferFactory()
@@ -64,7 +51,6 @@ public class CustomServerAuthenticationEntryPoint implements ServerAuthenticatio
         return exchange.getResponse().writeWith(Mono.just(buffer));
     }
 
-    /** Walk the exception chain for any mention of "expired" (case-insensitive). */
     private static boolean isExpired(AuthenticationException ex) {
         Throwable current = ex;
         while (current != null) {

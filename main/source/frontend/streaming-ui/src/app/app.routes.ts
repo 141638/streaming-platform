@@ -39,6 +39,20 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./pages/home/home.page').then((m) => m.HomePage),
       },
+      {
+        path: 'streams/create',
+        loadComponent: () =>
+          import('./pages/streams/stream-create/stream-create.page').then(
+            (m) => m.StreamCreatePage,
+          ),
+      },
+      {
+        path: 'channel',
+        loadComponent: () =>
+          import('./pages/streams/channel/channel.page').then(
+            (m) => m.ChannelPage,
+          ),
+      },
       { path: '', redirectTo: 'home', pathMatch: 'full' },
     ],
   },

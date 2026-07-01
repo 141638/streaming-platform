@@ -1,0 +1,13 @@
+:host {
+  display: block;
+}
+
+.page-container {
+  min-height: calc(100vh - 4rem);
+  padding: 2rem 1rem;
+}
+
+:host ::ng-deep .stream-create-card {
+  width: 100%;
+  max-width: 36rem;
+}

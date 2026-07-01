@@ -17,8 +17,9 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
         return throwError(() => error);
       }
 
-      // Never intercept the refresh call itself — infinite-loop guard
-      if (req.url.includes('/api/auth/v1/token/refresh')) {
+      // Never intercept refresh or logout calls — infinite-loop guard
+      if (req.url.includes('/api/auth/v1/token/refresh')
+          || req.url.includes('/api/auth/v1/logout')) {
         return throwError(() => error);
       }
 

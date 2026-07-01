@@ -4,6 +4,27 @@
       <span class="pi pi-play-circle text-xl app-shell-brand-icon"></span>
       <span class="text-lg font-semibold">Streaming Platform</span>
     </div>
+    <div class="p-toolbar-group-end flex align-items-center gap-2">
+      @if (authService.isStreamer()) {
+        <button
+          pButton
+          type="button"
+          icon="pi pi-plus"
+          label="Create"
+          (click)="createMenu.toggle($event)"
+        ></button>
+        <p-menu #createMenu [model]="createMenuItems" [popup]="true" />
+      }
+      <button
+        pButton
+        type="button"
+        class="p-button-rounded p-button-text"
+        (click)="userMenu.toggle($event)"
+      >
+        <p-avatar icon="pi pi-user" size="large" shape="circle" />
+      </button>
+      <p-menu #userMenu [model]="userMenuItems" [popup]="true" />
+    </div>
   </p-toolbar>
 
   <main class="app-shell-main">

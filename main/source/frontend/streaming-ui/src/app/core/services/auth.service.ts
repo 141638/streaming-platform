@@ -4,6 +4,7 @@ import { Router } from '@angular/router';
 import { finalize, Observable, share, tap } from 'rxjs';
 import { LoginRequestDto } from '../contracts/login-request.dto';
 import { LoginResponseDto } from '../contracts/login-response.dto';
+import { TokenPayloadDto } from '../contracts/token-payload.dto';
 
 const TOKEN_KEY = 'streaming_access_token';
 
@@ -16,11 +17,16 @@ export class AuthService {
     localStorage.getItem(TOKEN_KEY),
   );
 
+  private readonly _roles = signal<readonly string[]>(
+    AuthService.parseRoles(localStorage.getItem(TOKEN_KEY)),
+  );
+
   /** Single-flight guard: only one refresh HTTP call at a time. */
   private _refreshInProgress: Observable<LoginResponseDto> | null = null;
 
   public readonly accessToken = this._accessToken.asReadonly();
   public readonly isAuthenticated = computed(() => this._accessToken() !== null);
+  public readonly isStreamer = computed(() => this._roles().includes('streamer'));
 
   // ── Public API ──────────────────────────────────────────────────────────
 
@@ -53,9 +59,13 @@ export class AuthService {
   }
 
   public logout(): void {
+    // Best-effort: tell the server to revoke the refresh-token family.
+    // If the network fails, still clear local state and redirect.
+    this.http.post('/api/auth/v1/logout', {}).subscribe();
     this._refreshInProgress = null;
     localStorage.removeItem(TOKEN_KEY);
     this._accessToken.set(null);
+    this._roles.set([]);
     this.router.navigateByUrl('/login');
   }
 
@@ -64,5 +74,30 @@ export class AuthService {
   private persistSession(response: LoginResponseDto): void {
     localStorage.setItem(TOKEN_KEY, response.accessToken);
     this._accessToken.set(response.accessToken);
+    this._roles.set(AuthService.parseRoles(response.accessToken));
+  }
+
+  private static parseRoles(token: string | null): string[] {
+    if (!token) {
+      return [];
+    }
+    const payload = parseJwtPayload(token);
+    if (!payload?.attr?.roles) {
+      return [];
+    }
+    return [...payload.attr.roles];
+  }
+}
+
+/** Decode the JWT payload segment (no verification — the gateway already validates). */
+function parseJwtPayload(token: string): TokenPayloadDto | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      return null;
+    }
+    return JSON.parse(atob(parts[1])) as TokenPayloadDto;
+  } catch {
+    return null;
   }
 }

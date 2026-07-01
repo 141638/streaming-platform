@@ -15,7 +15,7 @@ public record StreamSummaryResponse(
         return new StreamSummaryResponse(
                 entity.getId(),
                 entity.getTitle(),
-                entity.getStatus(),
+                entity.getStatus().wireValue(),
                 entity.getCategory(),
                 entity.getCreatedAt()
         );

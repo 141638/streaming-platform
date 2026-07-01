@@ -7,8 +7,6 @@ import com.streaming.stream.api.dto.StreamSummaryResponse;
 import com.streaming.stream.api.dto.UpdateStreamRequest;
 import com.streaming.stream.service.StreamService;
 import jakarta.validation.Valid;
-import java.net.URI;
-import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -24,6 +22,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+
+import java.net.URI;
+import java.util.UUID;
 
 @RestController
 @RequiredArgsConstructor
@@ -41,53 +42,60 @@ public class StreamController {
     public Mono<ResponseEntity<StreamResponse>> create(
             @AuthenticationPrincipal Jwt jwt,
             @Valid @RequestBody CreateStreamRequest body) {
-        String sub = jwt.getSubject();
-        return streamService.createStream(sub, body)
+        return streamService.createStream(body, jwt)
                 .map(response -> ResponseEntity
                         .created(URI.create("/v1/streams/" + response.id()))
-                        .body(response));
+                        .body(response)
+                );
     }
 
     @GetMapping("/streams")
     public Mono<ResponseEntity<Flux<StreamSummaryResponse>>> listMine(
-            @AuthenticationPrincipal Jwt jwt) {
+            @AuthenticationPrincipal Jwt jwt
+    ) {
         String sub = jwt.getSubject();
         return Mono.just(ResponseEntity.ok(streamService.listMyStreams(sub)));
     }
 
     @GetMapping("/streams/{id}")
-    public Mono<ResponseEntity<StreamResponse>> get(@PathVariable UUID id) {
-        return streamService.getStream(id)
-                .map(ResponseEntity::ok);
+    public Mono<ResponseEntity<StreamResponse>> get(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID id) {
+        return streamService.getStream(id, jwt).map(ResponseEntity::ok);
     }
 
     @PatchMapping(path = "/streams/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<StreamResponse>> update(
+            @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID id,
             @Valid @RequestBody UpdateStreamRequest body) {
-        return streamService.updateStream(id, body)
-                .map(ResponseEntity::ok);
+        return streamService.updateStream(id, body, jwt).map(ResponseEntity::ok);
     }
 
     @DeleteMapping("/streams/{id}")
-    public Mono<ResponseEntity<Void>> delete(@PathVariable UUID id) {
-        return streamService.deleteStream(id)
-                .then(Mono.just(ResponseEntity.noContent().build()));
+    public Mono<ResponseEntity<Void>> delete(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID id) {
+        return streamService.deleteStream(id, jwt).then(Mono.just(ResponseEntity.noContent().build()));
     }
 
     @PostMapping("/streams/{id}/publish-key")
-    public Mono<ResponseEntity<PublishKeyResponse>> issuePublishKey(@PathVariable UUID id) {
-        return streamService.issuePublishKey(id)
+    public Mono<ResponseEntity<PublishKeyResponse>> issuePublishKey(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID id) {
+        return streamService.issuePublishKey(id, jwt)
                 .map(response -> ResponseEntity
                         .created(URI.create("/v1/streams/" + id + "/publish-key"))
                         .body(response));
     }
 
     @GetMapping("/streams/{id}/publish-key")
-    public Mono<ResponseEntity<PublishKeyResponse>> getPublishKey(@PathVariable UUID id) {
-        return streamService.getPublishKey(id)
-                .map(ResponseEntity::ok);
+    public Mono<ResponseEntity<PublishKeyResponse>> getPublishKey(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID id) {
+        return streamService.getPublishKey(id, jwt).map(ResponseEntity::ok);
     }
 
-    public record ApiMessage(String service, String status) {}
+    public record ApiMessage(String service, String status) {
+    }
 }

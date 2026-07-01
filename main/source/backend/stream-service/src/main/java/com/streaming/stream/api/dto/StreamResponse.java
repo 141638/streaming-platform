@@ -22,7 +22,7 @@ public record StreamResponse(
                 entity.getDescription(),
                 entity.getCategory(),
                 entity.getMaxViewers(),
-                entity.getStatus(),
+                entity.getStatus().wireValue(),
                 entity.getBroadcasterSubject(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt(),

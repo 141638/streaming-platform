@@ -7,6 +7,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Transient;
+import org.springframework.data.domain.Persistable;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 
@@ -15,10 +17,14 @@ import org.springframework.data.relational.core.mapping.Table;
 @NoArgsConstructor
 @AllArgsConstructor
 @Table(name = "stream_session")
-public class StreamSessionEntity {
+public class StreamSessionEntity implements Persistable<UUID> {
 
     @Id
     private UUID id;
+
+    /** R2DBC INSERT/UPDATE discriminator — set to {@code true} for new entities. */
+    @Transient
+    private boolean isNew;
 
     @Column("stream_key_hash")
     private String streamKeyHash;
@@ -26,7 +32,7 @@ public class StreamSessionEntity {
     @Column("broadcaster_subject")
     private String broadcasterSubject;
 
-    private String status;
+    private StreamStatus status;
 
     private String title;
 

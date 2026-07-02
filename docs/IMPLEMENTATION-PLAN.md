@@ -30,7 +30,7 @@ Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 
 |-------|--------|------|
 | [1 — Auth & Foundation](#phase-1--auth--foundation) | ✅ Done | Login, token rotation, PBAC JWT, gateway, frontend auth |
 | [2 — Stream Lifecycle](#phase-2--stream-lifecycle) | ⚡ Current | Stream CRUD with PBAC, state machine, SRS webhook, frontend dashboard |
-| [3 — Real-time Chat](#phase-3--real-time-chat) | ○ Planned | PG-backed chat with Redis cache-aside, room lifecycle from stream events |
+| [3 — Real-time Chat](#phase-3--real-time-chat) | ⚡ Current | PG-backed chat with Redis ZSET cache-aside, room lifecycle from stream events |
 | [4 — Viewer Experience](#phase-4--viewer-experience) | ○ Planned | Stream discovery, HLS player, embedded chat, viewer presence |
 | [5 — Notifications](#phase-5--notifications) | ○ Planned | Email notifications, subscription management, Kafka-driven dispatch |
 | [6 — Production Hardening](#phase-6--production-hardening) | ○ Planned | Idempotency, shared pbac-common, rate limiting, WebSocket, observability |
@@ -186,26 +186,160 @@ Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 
 
 ---
 
-## Phase 3 — Real-time Chat ○
+## Phase 3 — Real-time Chat ⚡
 
-**Status:** Planned — chat service has Redis-only prototype, no service layer, no PG persistence, author impersonation bug
+**Status:** In Progress — scaffold complete (15 source files + 2 migrations). Layered reactive architecture with Redis ZSET cache-aside. Author identity from JWT. Room auto-creation placeholder (Kafka consumer in 3.3).
 
-**Goal:** Viewers in a stream room can chat. Messages persist to PostgreSQL with Redis as the hot cache.
+**Goal:** Viewers in a stream room can chat. Messages persist to PostgreSQL with Redis as the hot cache. Room lifecycle is driven by stream events from Kafka.
+
+### Architecture Decisions
+
+Three ADRs were recorded during Phase 3 scaffold — see [docs/adr/chat/](adr/chat/):
+
+| ADR | Decision |
+|-----|----------|
+| [0001](adr/chat/0001-layered-reactive-architecture.md) | Layered reactive (`api/` → `application/` → `domain/` → `infrastructure/`) over DDD/Clean/Hexagonal — matches stream-service conventions |
+| [0002](adr/chat/0002-cache-aside-redis-zset.md) | Cache-aside with Redis ZSET (epoch-millis scored) — PG is system of record, Redis is disposable hot cache |
+| [0003](adr/chat/0003-jwt-derived-author-identity.md) | Author identity from JWT `sub` claim only — `SendMessageRequest` has no `author` field, eliminating impersonation |
+
+### Scaffold Artifacts
+
+```
+chat-service/src/main/java/com/streaming/chat/
+├── api/
+│   ├── ChatController.java              ← rewritten: @AuthenticationPrincipal, delegates to ChatService
+│   └── dto/
+│       ├── SendMessageRequest.java       ← { @NotBlank String content } — no author field
+│       └── MessageResponse.java          ← from(ChatMessage, roomKey)
+├── application/
+│   ├── ChatService.java                  ← cache-aside orchestration (PG-first writes, Redis-first reads)
+│   └── RoomService.java                  ← getOrCreate + archive (idempotent)
+├── domain/
+│   ├── ChatRoom.java                     ← entity → chat.chat_room, Persistable<UUID>
+│   ├── ChatMessage.java                  ← entity → chat.chat_message, Persistable<UUID>
+│   └── RoomStatus.java                   ← ACTIVE, ARCHIVED with wireValue()
+├── infrastructure/
+│   ├── persistence/
+│   │   ├── ReactiveChatRoomRepository.java       ← findByExternalKey, existsByExternalKey
+│   │   └── ReactiveChatMessageRepository.java    ← findByRoomIdOrderByCreatedAtDesc
+│   └── cache/
+│       └── RedisMessageCache.java        ← ZSET per room (key: chat:room:{roomKey}:recent), 100-msg cap
+└── config/
+    ├── SecurityConfig.java               ← existing, unchanged
+    ├── JwtProperties.java                ← existing, unchanged
+    └── ChatAuthenticationEntryPoint.java ← existing, unchanged
+
+V1__bootstrap_chat_schema.sql             ← existing: chat schema + chat_room + chat_message tables
+V2__add_room_status.sql                   ← new: status + archived_at on chat.chat_room
+```
+
+**Key design points:**
+- **Write path:** `ChatService.sendMessage()` → validate room active → `messageRepository.save()` (PG) → `cache.addToRecent()` (Redis ZSET). PG is always the first write — Redis failure does not lose data.
+- **Read path:** `ChatService.getRecentMessages()` → `cache.getRecent()` (Redis) → on miss, query PG + async backfill Redis.
+- **Author:** `ChatController` reads `jwt.getSubject()` → passes as `authorSubject` to `ChatService`. The request DTO has no author field.
+- **Rooms:** Auto-created on first message via `getOrCreateRoom()` — this is a temporary placeholder. Phase 3.3 replaces it with Kafka-driven creation from stream events.
+- **Retention:** ZSET trimmed to 100 messages per room on each write via `ZREMRANGEBYRANK`.
 
 ### Work Items
 
-| # | Item | Depends on |
-|---|------|-----------|
-| 3.1 | **Chat service layer** — extract `ChatService` from controller, wire `ReactiveChatMessageRepository` (R2DBC), implement cache-aside (write PG → update Redis, read Redis → fallback PG) | — |
-| 3.2 | **Fix author identity** — read `sub` from JWT (via `ReactiveSecurityContextHolder`), not from request body | 3.1 |
-| 3.3 | **Room lifecycle from stream events** — consume `stream.control` Kafka topic, auto-create chat room when stream starts, archive when stream ends | 2.3, 3.1 |
-| 3.4 | **PBAC enforcement in chat** — `send` requires `chat:room:{externalKey}` entitlement, `moderate` requires `chat:moderation` entitlement | 3.2 |
-| 3.5 | **Frontend: Chat component** — message list + input, scrolled to room, REST polling (WebSocket in Phase 6) | 3.2 |
+#### 3.1 — Chat Service Layer + PG Persistence + Redis Cache-Aside ✅
+
+**Status:** Done
+
+**What was built:**
+- Decomposed the 65-line prototype `ChatController` (inline Redis calls, no service layer) into `api/` → `application/` → `domain/` → `infrastructure/` layered architecture
+- `ChatService` orchestrates cache-aside: writes PG first then updates Redis; reads Redis first, falls back to PG with async backfill
+- `RedisMessageCache` wraps `ReactiveStringRedisTemplate` with ZSET operations (ZADD + ZREVRANGEBYSCORE + ZREMRANGEBYRANK), Jackson JSON serialization with `JavaTimeModule`
+- `ChatRoom` and `ChatMessage` implement `Persistable<UUID>` with `@Transient isNew` (matching stream-service pattern)
+- `RoomStatus` enum (ACTIVE, ARCHIVED) with Flyway migration V2
+- R2DBC repositories with derived query methods
+
+**Files:** 13 new + 1 rewritten + 1 new migration (see scaffold tree above)
+
+**Validate:** `./gradlew :chat-service:compileJava` — BUILD SUCCESSFUL
+
+---
+
+#### 3.2 — JWT-Based Author Identity ✅
+
+**Status:** Done (implemented as part of 3.1 scaffold)
+
+**What was built:**
+- `SendMessageRequest` is a single-field record: `@NotBlank String content` — no `author` field exists
+- `ChatController.sendMessage()` extracts `jwt.getSubject()` via `@AuthenticationPrincipal Jwt jwt` and passes it to `ChatService`
+- `ChatMessage.create(roomId, authorSubject, body, now)` stores `authorSubject` from JWT, not from request body
+- Jackson ignores unknown properties in request body by default — a client sending `{"author": "someone-else", "content": "hello"}` silently drops the `author` field
+
+**Why this matters:** The prototype controller accepted an `author` field from the request body. Any authenticated user could impersonate any other user. See [ADR-0003](adr/chat/0003-jwt-derived-author-identity.md).
+
+---
+
+#### 3.3 — Room Lifecycle from Stream Events
+
+**Depends on:** Phase 2.3 (stream state machine + Kafka events)
+
+**What:**
+- Add `StreamControlListener` — a reactive Kafka consumer in chat-service that listens to `stream.control` topic
+- On `STREAM_CREATED` event: create `ChatRoom` with `external_key = streamSessionExternalKey`
+- On `STREAM_ENDED` event: archive the room → set `status = ARCHIVED`, `archived_at = now`, evict Redis cache
+- Replace `getOrCreateRoom()` auto-creation in `ChatService` with a lookup-only path (room must already exist)
+- Handle out-of-order events: archive before create is a no-op, duplicate creates are idempotent (already handled by `getOrCreate`)
+
+**Files (planned):**
+- `chat-service/.../messaging/StreamControlListener.java` (new)
+- `chat-service/.../config/KafkaConsumerConfig.java` (new — or shared config)
+- `chat-service/.../application/ChatService.java` (modify — remove auto-create path)
+- `chat-service/.../infrastructure/cache/RedisMessageCache.java` (already has `evictRoom()`)
+
+**Validate:** Integration test — produce `STREAM_CREATED` event → room exists in chat DB → send message succeeds. Produce `STREAM_ENDED` → room archived → send message returns error.
+
+---
+
+#### 3.4 — PBAC Enforcement in Chat
+
+**Depends on:** Phase 3.2 (JWT identity), Phase 6.2 recommended (pbac-common extraction)
+
+**What:**
+- Map chat endpoints to `(resource, action)` per [PBAC-AUTHORIZATION.md §6.3](../PBAC-AUTHORIZATION.md#63-chat-service-apichat):
+  - `POST /v1/rooms/{roomKey}/messages` → `chat:message:room:{key}` / `send`
+  - `GET /v1/rooms/{roomKey}/messages/recent` → `chat:room:{key}` / `read`
+- Parse JWT `ent` claim, match against resource + action patterns
+- Ownership check: `broadcaster_subject == sub || viewer` (deferred to room membership when implemented)
+- Add `EntitlementMatcher` (or use shared `pbac-common` if extracted first)
+- Integration test: user without `send` entitlement on room gets 403
+
+**Note:** Currently `ent` enforcement is NOT implemented in any service — only gateway-level JWT validation exists. This work item is the chat-service side of the distributed PBAC enforcement described in [PBAC-AUTHORIZATION.md §7](../PBAC-AUTHORIZATION.md#7-evaluation-algorithm-each-service).
+
+**Files (planned):**
+- `chat-service/.../security/EntitlementMatcher.java` (new, or from pbac-common)
+- `chat-service/.../api/ChatController.java` (add authorization checks)
+- `chat-service/.../config/SecurityConfig.java` (enable method security)
+
+---
+
+#### 3.5 — Frontend Chat Component
+
+**Depends on:** Phase 3.2 (JWT identity), Phase 3.4 recommended (PBAC so unauthorized users can't send)
+
+**What:**
+- `ChatService` (frontend HTTP client) — `sendMessage(roomKey, content)` + `getRecentMessages(roomKey)`
+- `ChatComponent` — message list (auto-scrolled to bottom, newest-first display, author badges), message input (text + send button, Enter to send)
+- Embed in stream viewing page (Phase 4.2) — chat panel alongside HLS player
+- REST polling for now (poll every 2-3s) — WebSocket upgrade in Phase 6.4
+- Loading state (skeleton messages), empty state ("No messages yet. Say something!"), error state (toast on send failure)
+
+**Files (planned):**
+- `frontend/streaming-ui/src/app/core/services/chat.service.ts` (new)
+- `frontend/streaming-ui/src/app/features/chat/chat.component.ts` (new)
+- `frontend/streaming-ui/src/app/features/chat/chat.component.html` (new)
+- `frontend/streaming-ui/src/app/features/chat/chat.component.scss` (new)
+
+---
 
 ### Phase 3 Checklist
 
-- [ ] 3.1 — Service layer + PG persistence + Redis cache-aside
-- [ ] 3.2 — JWT-based author identity
+- [x] 3.1 — Service layer + PG persistence + Redis cache-aside
+- [x] 3.2 — JWT-based author identity
 - [ ] 3.3 — Room auto-creation from stream events
 - [ ] 3.4 — PBAC enforcement
 - [ ] 3.5 — Frontend chat component

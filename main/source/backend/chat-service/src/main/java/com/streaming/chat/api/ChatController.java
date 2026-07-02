@@ -1,10 +1,13 @@
 package com.streaming.chat.api;
 
+import com.streaming.chat.api.dto.MessageResponse;
+import com.streaming.chat.api.dto.SendMessageRequest;
+import com.streaming.chat.application.ChatService;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-import java.time.Instant;
-import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -14,52 +17,53 @@ import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+/**
+ * REST controller for chat operations.
+ *
+ * <p>The author identity is always extracted from the JWT {@code sub} claim,
+ * never from the request body. This prevents author impersonation.
+ */
 @RestController
+@RequiredArgsConstructor
 @RequestMapping(path = "/v1", produces = MediaType.APPLICATION_JSON_VALUE)
 public class ChatController {
 
-    private static final int MAX_RECENT = 50;
-
-    private final ReactiveStringRedisTemplate redis;
-
-    public ChatController(ReactiveStringRedisTemplate redis) {
-        this.redis = redis;
-    }
+    private final ChatService chatService;
 
     @GetMapping("/ping")
     public Mono<ApiMessage> ping() {
         return Mono.just(new ApiMessage("chat-service", "ok"));
     }
 
-    @PostMapping("/rooms/{roomId}/messages")
-    public Mono<ChatMessageDto> postMessage(
-            @PathVariable String roomId,
-            @Valid @RequestBody PostMessageRequest request
+    /**
+     * Send a message to a chat room.
+     *
+     * <p>If the room does not exist yet, it is auto-created. The author is
+     * derived from {@code jwt.subject}, not from the request body.
+     */
+    @PostMapping(path = "/rooms/{roomKey}/messages", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<MessageResponse> sendMessage(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String roomKey,
+            @Valid @RequestBody SendMessageRequest body
     ) {
-        String key = "chat:room:" + roomId;
-        String json = "{\"roomId\":\"%s\",\"author\":\"%s\",\"body\":\"%s\",\"ts\":\"%s\"}"
-                .formatted(roomId, request.author(), escape(request.body()), Instant.now().toString());
-        return redis.opsForList()
-                .leftPush(key, json)
-                .thenReturn(new ChatMessageDto(roomId, request.author(), request.body(), Instant.now().toString()));
+        String authorSubject = jwt.getSubject();
+        return chatService.sendMessage(roomKey, authorSubject, body.content());
     }
 
-    @GetMapping("/rooms/{roomId}/messages/recent")
-    public Flux<String> recent(@PathVariable String roomId) {
-        String key = "chat:room:" + roomId;
-        return redis.opsForList().range(key, 0, MAX_RECENT - 1);
+    /**
+     * Get the most recent messages for a room.
+     */
+    @GetMapping("/rooms/{roomKey}/messages/recent")
+    public Flux<MessageResponse> getRecentMessages(
+            @PathVariable String roomKey
+    ) {
+        return chatService.getRecentMessages(roomKey)
+                .flatMapMany(Flux::fromIterable);
     }
 
-    private static String escape(String body) {
-        return body.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
+    // -- inline types ------------------------------------------------------
 
     public record ApiMessage(String service, String status) {
-    }
-
-    public record PostMessageRequest(@NotBlank String author, @NotBlank String body) {
-    }
-
-    public record ChatMessageDto(String roomId, String author, String body, String timestamp) {
     }
 }

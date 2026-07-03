@@ -1,5 +1,6 @@
 package com.streaming.stream.api;
 
+import com.streaming.common.api.ApiMessage;
 import com.streaming.stream.api.dto.CreateStreamRequest;
 import com.streaming.stream.api.dto.PublishKeyResponse;
 import com.streaming.stream.api.dto.StreamResponse;
@@ -96,6 +97,4 @@ public class StreamController {
         return streamService.getPublishKey(id, jwt).map(ResponseEntity::ok);
     }
 
-    public record ApiMessage(String service, String status) {
-    }
 }

@@ -1,5 +1,6 @@
 package com.streaming.notification.api;
 
+import com.streaming.common.api.ApiMessage;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -15,6 +16,4 @@ public class PingController {
         return Mono.just(new ApiMessage("notification-service", "ok"));
     }
 
-    public record ApiMessage(String service, String status) {
-    }
 }

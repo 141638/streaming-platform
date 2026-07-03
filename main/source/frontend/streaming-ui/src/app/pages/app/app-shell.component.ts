@@ -10,7 +10,14 @@ import { AuthService } from '../../core/services/auth.service';
 @Component({
   selector: 'app-app-shell',
   standalone: true,
-  imports: [RouterOutlet, RouterModule, ToolbarModule, ButtonModule, MenuModule, AvatarModule],
+  imports: [
+    RouterOutlet,
+    RouterModule,
+    ToolbarModule,
+    ButtonModule,
+    MenuModule,
+    AvatarModule,
+  ],
   templateUrl: './app-shell.component.html',
 })
 export class AppShellComponent {
@@ -80,4 +87,8 @@ export class AppShellComponent {
       command: () => this.authService.logout(),
     },
   ];
+
+  public navigateHome(): void {
+    this.router.navigateByUrl('/home');
+  }
 }

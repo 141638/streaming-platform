@@ -1,5 +1,6 @@
 package com.streaming.stream.service;
 
+import com.streaming.common.crypto.HashUtils;
 import com.streaming.stream.api.dto.CreateStreamRequest;
 import com.streaming.stream.api.dto.PublishKeyResponse;
 import com.streaming.stream.api.dto.StreamResponse;
@@ -21,11 +22,8 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.HexFormat;
 import java.util.UUID;
 
 /**
@@ -147,15 +145,15 @@ public class StreamService {
                         .thenReturn(entity))
                 .map(entity -> {
                     String rawKey = UUID.randomUUID().toString().replace("-", "");
-                    String keyHash = sha256Hex(rawKey);
-                    entity.setStreamKeyHash(keyHash);
+                    entity.setStreamKeyHash(HashUtils.sha256Hex(rawKey));
                     entity.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
-                    return entity;
+                    return new PendingKey(entity, rawKey);
                 })
-                .flatMap(repository::save)
-                .map(entity -> new PublishKeyResponse(
-                        entity.getId(),
-                        "sk_" + UUID.randomUUID().toString().replace("-", ""),
+                .flatMap(pending -> repository.save(pending.entity)
+                        .map(saved -> new PendingKey(saved, pending.rawKey)))
+                .map(pending -> new PublishKeyResponse(
+                        pending.entity.getId(),
+                        "sk_" + pending.rawKey,
                         "rtmp://localhost:1935/live/",
                         OffsetDateTime.now(ZoneOffset.UTC).plusHours(24)
                 ))
@@ -179,15 +177,7 @@ public class StreamService {
                 ));
     }
 
-    private static String sha256Hex(String input) {
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] hash = md.digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(hash);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 not available", e);
-        }
-    }
+    private record PendingKey(StreamSessionEntity entity, String rawKey) {}
 
     public static class StreamNotFoundException extends RuntimeException {
         public StreamNotFoundException(UUID id) {

@@ -104,6 +104,42 @@ Not automatic — agents are invoked **on your explicit request** or via command
 - YAML frontmatter with `name`, `description`, `tools`, `model`
 - File names lowercase with hyphens, match agent name
 
+## Shared Libraries
+
+### `common` — Zero-dependency shared utilities
+
+Located at `main/source/backend/common/`. Plain Java 21, **no framework dependencies** (no Spring, no third-party libs). Usable from any service without pulling a transitive dependency tree.
+
+**AVAILABLE NOW — check here before reimplementing:**
+
+| Class | Location | Purpose |
+|-------|----------|---------|
+| `HashUtils` | `com.streaming.common.crypto` | `sha256(String)` → `byte[]`, `sha256Hex(String)` → hex `String` |
+| `ApiMessage` | `com.streaming.common.api` | `record(String service, String status)` — ping/health response |
+
+**CONSTRAINT:** `common` must stay framework-free. Do NOT add Spring annotations, `@ConfigurationProperties`, `ServerHttpSecurity`, or any dependency that ties it to Spring Boot. Things that need Spring (PBAC types, JWT config, security filters) go in the future `pbac-common` library instead — those are separate concerns.
+
+**DEPENDENCY SETUP:** To use `common` in a service, add to its `build.gradle.kts`:
+```kotlin
+implementation(project(":common"))
+```
+Current consumers: `auth-service`, `stream-service`, `chat-service`, `notification-service`.
+
+### `pbac-common` — Authorization library (planned Phase 6.2)
+
+Do NOT duplicate these — they'll be extracted from current duplicates into `pbac-common`:
+
+| Candidates (marked `PBAC-COMMON-CANDIDATE`) | Currently duplicated in |
+|----------------------------------------------|------------------------|
+| `AuthAction`, `AuthResourceDomain`, `AuthResourceKind` | auth-service, stream-service |
+| `EntitlementMatcher`, `RequiredAuthority` | stream-service |
+| `JwtProperties` | stream, chat, notification (3 copies) |
+| `AuthenticationEntryPoint` | gateway, stream, chat, notification (4 copies) |
+| `SecurityConfig` jwtDecoder bean | stream, chat, notification (3 copies) |
+| `AuthorizationResource`, `EntitlementStatements` | auth-service |
+
+When adding PBAC logic to a new service, **copy from stream-service's `security/` package** as a temporary measure until `pbac-common` extraction. Never create a third divergent copy.
+
 ## Project Structure
 
 ```
@@ -113,7 +149,7 @@ commands/        — 10 slash commands
 contexts/        — 6 behavior modes
 config/          — Project stack mappings
 rules/           — Per-language guidelines (angular, java, typescript, web, common)
-docs/    — Architecture and detail designs
+docs/            — Architecture and detail designs
 main/            — Docker compose, env configs, backend/frontend source
 agent-harness-template/ — Full industrial pipeline (orch, multi-model) for complex projects
 ```

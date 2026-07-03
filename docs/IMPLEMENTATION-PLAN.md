@@ -1,6 +1,6 @@
 # Implementation Plan
 
-**Last updated:** 2026-07-01
+**Last updated:** 2026-07-03
 **Current phase:** 2 — Stream Lifecycle
 
 ## End Goal
@@ -71,7 +71,7 @@ Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 
 
 ## Phase 2 — Stream Lifecycle ⚡
 
-**Status:** Current — stream service has CRUD skeletons but no PBAC enforcement, no state machine, no SRS integration
+**Status:** Current — PBAC enforcement complete (2.2 ✅), publish-key generation fixed, state machine and SRS integration remaining
 
 **Goal:** A streamer can create, configure, start, and end a stream. End-to-end: login → create stream → get publish key → OBS publishes → SRS validates key → stream goes live.
 
@@ -179,10 +179,10 @@ Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 
 ### Phase 2 Checklist
 
 - [ ] 2.1 — Gateway path rewriting
-- [ ] 2.2 — PBAC enforcement (ownership checks)
+- [x] 2.2 — PBAC enforcement (ownership checks)
 - [ ] 2.3 — Stream state machine + Kafka events
 - [ ] 2.4 — SRS webhook (publish key validation)
-- [ ] 2.5 — Frontend stream dashboard
+- [x] 2.5 — Frontend stream dashboard (partial: stream-create + channel pages exist; detail page with publish-key management still needed)
 
 ---
 

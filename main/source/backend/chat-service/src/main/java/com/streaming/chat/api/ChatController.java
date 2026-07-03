@@ -3,6 +3,7 @@ package com.streaming.chat.api;
 import com.streaming.chat.api.dto.MessageResponse;
 import com.streaming.chat.api.dto.SendMessageRequest;
 import com.streaming.chat.application.ChatService;
+import com.streaming.common.api.ApiMessage;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -62,8 +63,4 @@ public class ChatController {
                 .flatMapMany(Flux::fromIterable);
     }
 
-    // -- inline types ------------------------------------------------------
-
-    public record ApiMessage(String service, String status) {
-    }
 }

@@ -15,6 +15,7 @@ plugins {
 
 rootProject.name = "streaming-backend"
 include(
+    "common",
     "discovery-service",
     "gateway-service",
     "auth-service",

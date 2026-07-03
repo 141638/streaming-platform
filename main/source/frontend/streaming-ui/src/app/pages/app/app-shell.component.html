@@ -1,6 +1,11 @@
 <div class="app-shell min-h-screen surface-ground">
-  <p-toolbar styleClass="border-noround shadow-1 surface-card app-shell-toolbar">
-    <div class="p-toolbar-group-start flex align-items-center gap-3">
+  <p-toolbar
+    styleClass="border-noround shadow-1 surface-card app-shell-toolbar"
+  >
+    <div
+      class="p-toolbar-group-start flex align-items-center gap-3 cursor-pointer"
+      (click)="navigateHome()"
+    >
       <span class="pi pi-play-circle text-xl app-shell-brand-icon"></span>
       <span class="text-lg font-semibold">Streaming Platform</span>
     </div>

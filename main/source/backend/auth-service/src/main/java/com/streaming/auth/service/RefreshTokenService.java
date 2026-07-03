@@ -6,7 +6,7 @@ import com.streaming.auth.persistence.entity.RefreshTokenEntity;
 import com.streaming.auth.persistence.repository.RefreshTokenRepository;
 import com.streaming.auth.persistence.repository.UserAccountRepository;
 import com.streaming.auth.token.OpaqueTokenGenerator;
-import com.streaming.auth.token.OpaqueTokenHasher;
+import com.streaming.common.crypto.HashUtils;
 import com.streaming.auth.token.IssuedAccessToken;
 import com.streaming.auth.token.IssuedSessionTokens;
 import com.streaming.auth.token.JwtIssuerProperties;
@@ -47,7 +47,7 @@ public class RefreshTokenService {
         if (plaintextRefreshToken == null || plaintextRefreshToken.isBlank()) {
             throw new InvalidRefreshTokenException();
         }
-        byte[] hash = OpaqueTokenHasher.sha256Utf8(plaintextRefreshToken.trim());
+        byte[] hash = HashUtils.sha256(plaintextRefreshToken.trim());
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         RefreshTokenEntity stored =
                 refreshTokenRepository.lockByTokenHash(hash).orElseThrow(InvalidRefreshTokenException::new);
@@ -91,7 +91,7 @@ public class RefreshTokenService {
         if (plaintextRefreshToken == null || plaintextRefreshToken.isBlank()) {
             return;
         }
-        byte[] hash = OpaqueTokenHasher.sha256Utf8(plaintextRefreshToken.trim());
+        byte[] hash = HashUtils.sha256(plaintextRefreshToken.trim());
         refreshTokenRepository.findByTokenHash(hash).ifPresent(stored ->
                 refreshTokenMaintenanceService.revokeAllActiveInFamily(stored.getTokenFamilyId()));
     }
@@ -102,7 +102,7 @@ public class RefreshTokenService {
         RefreshTokenEntity entity = new RefreshTokenEntity();
         entity.setId(UUID.randomUUID());
         entity.setUserAccountId(userAccountId);
-        entity.setTokenHash(OpaqueTokenHasher.sha256Utf8(plaintext));
+        entity.setTokenHash(HashUtils.sha256(plaintext));
         entity.setTokenFamilyId(tokenFamilyId);
         entity.setExpiresAt(now.plusSeconds(jwtIssuerProperties.refreshTokenTtlSeconds()));
         entity.setCreatedAt(now);

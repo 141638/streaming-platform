@@ -25,8 +25,12 @@ export class AuthService {
   private _refreshInProgress: Observable<LoginResponseDto> | null = null;
 
   public readonly accessToken = this._accessToken.asReadonly();
-  public readonly isAuthenticated = computed(() => this._accessToken() !== null);
-  public readonly isStreamer = computed(() => this._roles().includes('streamer'));
+  public readonly isAuthenticated = computed(
+    () => this._accessToken() !== null,
+  );
+  public readonly isStreamer = computed(() =>
+    this._roles().includes('streamer'),
+  );
 
   // ── Public API ──────────────────────────────────────────────────────────
 

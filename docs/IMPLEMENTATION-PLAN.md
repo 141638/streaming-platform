@@ -178,7 +178,7 @@ Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 
 
 ### Phase 2 Checklist
 
-- [ ] 2.1 — Gateway path rewriting
+- [x] 2.1 — Gateway path rewriting (not needed — base-path stripping handles routing)
 - [x] 2.2 — PBAC enforcement (ownership checks)
 - [ ] 2.3 — Stream state machine + Kafka events
 - [ ] 2.4 — SRS webhook (publish key validation)

@@ -29,9 +29,13 @@ replay_pid*
 **/build/
 /target/
 **/target/
+**/bin/**
 
 # Intellij
 **/.idea/**
+
+# VS Code
+.vscode
 
 dist/
 .angular/

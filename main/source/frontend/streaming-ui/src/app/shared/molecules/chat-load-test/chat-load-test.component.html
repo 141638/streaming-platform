@@ -1,0 +1,52 @@
+<div class="chat-load-test flex flex-column gap-2 p-3 border-round surface-card">
+  <span class="text-sm font-semibold">Load Test</span>
+
+  <!-- Error -->
+  @if (errorMessage(); as err) {
+    <p-message severity="error" styleClass="w-full text-sm">
+      {{ err }}
+    </p-message>
+  }
+
+  <!-- Controls -->
+  <div class="flex gap-2 align-items-end">
+    <div class="flex flex-column gap-1">
+      <label class="text-xs" style="color: var(--color-text-tertiary)">
+        Message count
+      </label>
+      <p-inputNumber
+        [formControl]="messageCount"
+        [min]="1"
+        [max]="10000"
+        styleClass="w-8rem"
+        [disabled]="running()"
+        ariaLabel="Number of messages"
+      />
+    </div>
+    <p-button
+      type="button"
+      label="Run"
+      icon="pi pi-play"
+      [loading]="running()"
+      [disabled]="messageCount.invalid || running()"
+      (click)="runLoadTest()"
+    />
+  </div>
+
+  <!-- Progress -->
+  @if (running() || sent() > 0) {
+    <div class="flex flex-column gap-1">
+      <p-progressBar
+        [value]="progressPercent"
+        [showValue]="false"
+        styleClass="w-full"
+      />
+      <div class="flex justify-content-between text-xs" style="color: var(--color-text-muted)">
+        <span>{{ sent() }} sent / {{ failed() }} failed / {{ messageCount.value }} total</span>
+        @if (running()) {
+          <span>Sending to {{ roomKey }}…</span>
+        }
+      </div>
+    </div>
+  }
+</div>

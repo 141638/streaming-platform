@@ -1,0 +1,13 @@
+<div class="chat-room-page h-full" style="height: calc(100vh - 4rem)">
+  @if (roomKey()) {
+    <app-chat-panel class="h-30rem block" [roomKey]="roomKey()!" />
+    <app-chat-load-test [roomKey]="roomKey()!" />
+  } @else {
+    <div
+      class="flex justify-content-center align-items-center h-full"
+      style="color: var(--color-text-muted)"
+    >
+      <span class="text-sm">No room key provided.</span>
+    </div>
+  }
+</div>

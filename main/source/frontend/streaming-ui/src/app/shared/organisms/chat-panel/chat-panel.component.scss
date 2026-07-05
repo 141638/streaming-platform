@@ -1,0 +1,13 @@
+.chat-panel {
+  // own messages: blue tint, right-aligned
+  .chat-bubble-own {
+    max-width: 80%;
+    background-color: var(--blue-100);
+  }
+
+  // other users' messages: white, left-aligned
+  .chat-bubble-other {
+    max-width: 80%;
+    background-color: var(--surface-0);
+  }
+}

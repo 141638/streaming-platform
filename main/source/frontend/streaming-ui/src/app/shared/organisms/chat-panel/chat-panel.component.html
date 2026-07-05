@@ -1,0 +1,176 @@
+<div class="chat-panel flex flex-column overflow-auto h-full surface-card">
+  <!-- Archived banner -->
+  @if (roomStatus() === 'archived') {
+    <div class="px-3 pt-3">
+      <p-message severity="warn" styleClass="w-full text-sm">
+        This room has been archived. You can still read messages but cannot send new ones.
+      </p-message>
+    </div>
+  }
+
+  <!-- Error banner -->
+  @if (errorMessage(); as err) {
+    <div class="px-3 pt-3">
+      <p-message severity="error" styleClass="w-full text-sm">
+        {{ err }}
+      </p-message>
+    </div>
+  }
+
+  <!-- Message area -->
+  @if (loading()) {
+    <div class="flex flex-auto justify-content-center align-items-center">
+      <p-progressSpinner
+        strokeWidth="4"
+        styleClass="w-2rem h-2rem"
+        ariaLabel="Loading messages"
+      />
+    </div>
+  } @else if (roomStatus() === 'archived' && messages().length === 0) {
+    <div
+      class="flex flex-auto flex-column justify-content-center align-items-center gap-2"
+      style="color: var(--color-text-muted)"
+    >
+      <span class="pi pi-inbox text-4xl"></span>
+      <span class="text-sm">This room has been archived.</span>
+    </div>
+  } @else if (messages().length === 0) {
+    <div
+      class="flex flex-auto flex-column justify-content-center align-items-center gap-2"
+      style="color: var(--color-text-muted)"
+    >
+      <span class="pi pi-comments text-4xl"></span>
+      <span class="text-sm">No messages yet. Say something!</span>
+    </div>
+  } @else {
+    <cdk-virtual-scroll-viewport
+      itemSize="auto"
+      class="chat-messages flex-auto"
+      (scroll)="onScroll()"
+    >
+      <!-- top loading indicator -->
+      @if (loadingOlder()) {
+        <div class="flex justify-content-center py-2">
+          <p-progressSpinner
+            strokeWidth="3"
+            styleClass="w-1-5rem h-1-5rem"
+            ariaLabel="Loading older messages"
+          />
+        </div>
+      }
+
+      <div
+        *cdkVirtualFor="let msg of messages(); trackBy: trackByClientId"
+        class="flex-auto pb-2"
+      >
+        @if (msg.authorSubject === currentUserSub()) {
+          <!-- Own message: right-aligned -->
+          <div class="flex justify-content-end">
+            <div
+              class="chat-bubble chat-bubble-own flex flex-column gap-1 p-2 border-round-lg"
+            >
+              @if (msg.authorSubject) {
+                <span class="text-xs font-medium">
+                  {{ msg.authorSubject }}
+                </span>
+              }
+              <span class="text-sm white-space-pre-line">{{ msg.body }}</span>
+              <div class="flex align-items-center gap-2">
+                <span class="text-xs" style="color: var(--color-text-dim)">
+                  {{ msg.createdAt | date: 'shortTime' }}
+                </span>
+                @if (msg.status === 'sending') {
+                  <span
+                    class="text-xs italic"
+                    style="color: var(--color-text-muted)"
+                  >
+                    Sending…
+                  </span>
+                } @else if (msg.status === 'failed') {
+                  <div class="flex align-items-center gap-1">
+                    <span class="text-xs" style="color: var(--red-500)">
+                      Failed
+                    </span>
+                    <button
+                      pButton
+                      type="button"
+                      class="p-button-text p-button-sm"
+                      icon="pi pi-refresh"
+                      (click)="retry(msg.clientId)"
+                      ariaLabel="Retry sending message"
+                    ></button>
+                  </div>
+                }
+              </div>
+            </div>
+          </div>
+        } @else {
+          <!-- Other user's message: left-aligned -->
+          <div class="flex justify-content-start">
+            <div
+              class="chat-bubble chat-bubble-other flex flex-column gap-1 p-2 border-round-lg"
+            >
+              @if (msg.authorSubject) {
+                <span class="text-xs font-medium">
+                  {{ msg.authorSubject }}
+                </span>
+              }
+              <span class="text-sm white-space-pre-line">{{ msg.body }}</span>
+              <span class="text-xs" style="color: var(--color-text-dim)">
+                {{ msg.createdAt | date: 'shortTime' }}
+              </span>
+            </div>
+          </div>
+        }
+      </div>
+    </cdk-virtual-scroll-viewport>
+  }
+
+  <!-- Scroll / New-messages FABs -->
+  @if (messages().length > 0) {
+    <div class="flex justify-content-center relative">
+      @if (showNewMessageHint() && !showScrollButton()) {
+        <button
+          pButton
+          type="button"
+          class="p-button-sm absolute"
+          style="bottom: 0.5rem"
+          severity="success"
+          label="New messages"
+          icon="pi pi-arrow-down"
+          (click)="scrollToBottom()"
+        ></button>
+      }
+      @if (showScrollButton() && !showNewMessageHint()) {
+        <button
+          pButton
+          type="button"
+          class="p-button-rounded p-button-sm absolute"
+          style="bottom: 0.5rem"
+          icon="pi pi-chevron-down"
+          (click)="scrollToBottom()"
+          ariaLabel="Scroll to bottom"
+        ></button>
+      }
+    </div>
+  }
+
+  <!-- Input bar -->
+  <div class="chat-input-bar flex gap-2 p-3 border-top-1 surface-border flex-initial">
+    <input
+      pInputText
+      class="flex-auto"
+      [formControl]="messageInput"
+      [placeholder]="roomStatus() === 'archived' ? 'This room is archived' : 'Type a message…'"
+      (keydown.enter)="send()"
+      [disabled]="roomStatus() === 'archived'"
+    />
+    <p-button
+      type="button"
+      icon="pi pi-send"
+      [loading]="sending()"
+      [disabled]="messageInput.invalid || sending() || roomStatus() === 'archived'"
+      (click)="send()"
+    ></p-button>
+  </div>
+</div>

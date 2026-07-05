@@ -53,6 +53,11 @@ export const routes: Routes = [
             (m) => m.ChannelPage,
           ),
       },
+      {
+        path: 'chat/:roomKey',
+        loadComponent: () =>
+          import('./pages/chat/chat-room.page').then((m) => m.ChatRoomPage),
+      },
       { path: '', redirectTo: 'home', pathMatch: 'full' },
     ],
   },

@@ -1,6 +1,7 @@
 package com.streaming.chat.infrastructure.persistence;
 
 import com.streaming.chat.domain.ChatMessage;
+import java.time.Instant;
 import java.util.UUID;
 import org.springframework.data.repository.reactive.ReactiveCrudRepository;
 import reactor.core.publisher.Flux;
@@ -14,4 +15,11 @@ public interface ReactiveChatMessageRepository extends ReactiveCrudRepository<Ch
      * Find messages for a room ordered by creation time descending (newest first).
      */
     Flux<ChatMessage> findByRoomIdOrderByCreatedAtDesc(UUID roomId);
+
+    /**
+     * Find messages older than a cursor for lazy-load pagination,
+     * ordered newest-first.
+     */
+    Flux<ChatMessage> findByRoomIdAndCreatedAtBeforeOrderByCreatedAtDesc(
+            UUID roomId, Instant createdAt);
 }

@@ -1,6 +1,7 @@
 package com.streaming.chat.api;
 
 import com.streaming.chat.api.dto.MessageResponse;
+import com.streaming.chat.api.dto.RoomResponse;
 import com.streaming.chat.api.dto.SendMessageRequest;
 import com.streaming.chat.application.ChatService;
 import com.streaming.common.api.ApiMessage;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -53,12 +55,31 @@ public class ChatController {
     }
 
     /**
-     * Get the most recent messages for a room.
+     * Get metadata about a chat room (status, creation time, etc.).
+     * Returns 404 if the room does not exist yet.
+     */
+    @GetMapping("/rooms/{roomKey}")
+    public Mono<RoomResponse> getRoom(
+            @PathVariable String roomKey
+    ) {
+        return chatService.getRoom(roomKey);
+    }
+
+    /**
+     * Get messages for a room. By default returns the most recent 50.
+     * Pass {@code before} (ISO-8601 cursor) and {@code limit} for
+     * cursor-based pagination when scrolling up through history.
      */
     @GetMapping("/rooms/{roomKey}/messages/recent")
     public Flux<MessageResponse> getRecentMessages(
-            @PathVariable String roomKey
+            @PathVariable String roomKey,
+            @RequestParam(required = false) String before,
+            @RequestParam(defaultValue = "50") int limit
     ) {
+        if (before != null && !before.isBlank()) {
+            return chatService.getMessagesBefore(roomKey, before, limit)
+                    .flatMapMany(Flux::fromIterable);
+        }
         return chatService.getRecentMessages(roomKey)
                 .flatMapMany(Flux::fromIterable);
     }

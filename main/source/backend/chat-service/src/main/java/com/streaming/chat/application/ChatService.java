@@ -1,11 +1,13 @@
 package com.streaming.chat.application;
 
 import com.streaming.chat.api.dto.MessageResponse;
+import com.streaming.chat.api.dto.RoomResponse;
 import com.streaming.chat.domain.ChatMessage;
 import com.streaming.chat.domain.ChatRoom;
 import com.streaming.chat.infrastructure.cache.RedisMessageCache;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatMessageRepository;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatRoomRepository;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -56,6 +58,7 @@ public class ChatService {
                 .filter(ChatRoom::isActive)
                 .switchIfEmpty(Mono.error(new RoomArchivedException(roomKey)))
                 .flatMap(room -> {
+                    log.info("Message hit.");
                     ChatMessage msg = ChatMessage.create(room.getId(), authorSubject, body, now);
                     return messageRepository.save(msg)
                             .map(saved -> MessageResponse.from(saved, room.getExternalKey()));
@@ -102,6 +105,62 @@ public class ChatService {
                                 return Mono.just(fromPg);
                             });
                 });
+    }
+
+    /**
+     * Look up a room by its external key.
+     *
+     * @param roomKey the room's external key
+     * @return the room metadata, or {@link Mono#empty()} if not found
+     */
+    public Mono<RoomResponse> getRoom(String roomKey) {
+        return roomRepository.findByExternalKey(roomKey)
+                .map(RoomResponse::from);
+    }
+
+    /**
+     * Get messages older than the given cursor, for lazy-load history.
+     *
+     * @param roomKey the room's external key
+     * @param cursor  ISO-8601 timestamp of the oldest message currently loaded
+     * @param limit   max number of messages to return
+     * @return messages ordered newest-first (empty list if none)
+     */
+    public Mono<List<MessageResponse>> getMessagesBefore(String roomKey, String cursor, int limit) {
+        double maxScore = parseCursorToEpochMillis(cursor);
+        return cache.getBefore(roomKey, maxScore, limit)
+                .flatMap(cached -> {
+                    if (!cached.isEmpty()) {
+                        log.debug("Cache before-hit for roomKey={}, count={}", roomKey, cached.size());
+                        return Mono.just(cached);
+                    }
+                    log.debug("Cache before-miss for roomKey={}, falling back to PG", roomKey);
+                    return roomRepository.findByExternalKey(roomKey)
+                            .flatMapMany(room -> messageRepository
+                                    .findByRoomIdAndCreatedAtBeforeOrderByCreatedAtDesc(
+                                            room.getId(),
+                                            parseCursorToInstant(cursor))
+                                    .take(limit)
+                                    .map(msg -> MessageResponse.from(msg, room.getExternalKey())))
+                            .collectList();
+                });
+    }
+
+    private static double parseCursorToEpochMillis(String cursor) {
+        try {
+            return Instant.parse(cursor).toEpochMilli();
+        } catch (Exception e) {
+            log.warn("Invalid cursor, falling back to now: {}", cursor);
+            return System.currentTimeMillis();
+        }
+    }
+
+    private static Instant parseCursorToInstant(String cursor) {
+        try {
+            return Instant.parse(cursor);
+        } catch (Exception e) {
+            return Instant.now();
+        }
     }
 
     // -- internal ----------------------------------------------------------

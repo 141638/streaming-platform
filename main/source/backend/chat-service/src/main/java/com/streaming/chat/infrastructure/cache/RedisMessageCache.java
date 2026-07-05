@@ -9,6 +9,7 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Range;
+import org.springframework.data.domain.Range.Bound;
 import org.springframework.data.redis.connection.Limit;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.stereotype.Component;
@@ -49,7 +50,8 @@ public class RedisMessageCache {
      *
      * @param roomKey the room's external key
      * @param message the message to cache
-     * @return {@code true} if the message was cached successfully
+     * @return {@code true} if the message was cached successfully,
+     *         {@code false} on serialization failure or Redis unavailability
      */
     public Mono<Boolean> addToRecent(String roomKey, MessageResponse message) {
         String key = recentKey(roomKey);
@@ -60,7 +62,12 @@ public class RedisMessageCache {
         double score = message.createdAt().toInstant().toEpochMilli();
         return redis.opsForZSet()
                 .add(key, json, score)
-                .flatMap(added -> trimToRetention(key).thenReturn(added));
+                .flatMap(added -> trimToRetention(key).thenReturn(added))
+                .onErrorResume(ex -> {
+                    log.warn("Redis write failed for key={}, message already persisted to PG. Error: {}",
+                            key, ex.getMessage());
+                    return Mono.just(false);
+                });
     }
 
     private Mono<Long> trimToRetention(String key) {
@@ -81,7 +88,7 @@ public class RedisMessageCache {
      *
      * @param roomKey the room's external key
      * @param limit   max number of messages to return
-     * @return deserialized messages (empty list on cache miss)
+     * @return deserialized messages (empty list on cache miss or Redis failure)
      */
     public Mono<List<MessageResponse>> getRecent(String roomKey, int limit) {
         String key = recentKey(roomKey);
@@ -93,6 +100,34 @@ public class RedisMessageCache {
                     if (list.isEmpty()) {
                         log.debug("Cache miss for key={}", key);
                     }
+                })
+                .onErrorResume(ex -> {
+                    log.warn("Redis read failed for key={}, falling back to PG. Error: {}", key,
+                            ex.getMessage());
+                    return Mono.just(Collections.emptyList());
+                });
+    }
+
+    /**
+     * Read messages with scores strictly less than {@code maxScore},
+     * ordered newest-first. Used for cursor-based pagination when scrolling up.
+     *
+     * @param roomKey  the room's external key
+     * @param maxScore exclusive upper bound (epoch-millis of the oldest loaded message)
+     * @param limit    max number of messages to return
+     * @return deserialized messages (empty list on cache miss or Redis failure)
+     */
+    public Mono<List<MessageResponse>> getBefore(String roomKey, double maxScore, int limit) {
+        String key = recentKey(roomKey);
+        Range<Double> before = Range.of(Bound.unbounded(), Bound.exclusive(maxScore));
+        return redis.opsForZSet()
+                .reverseRangeByScore(key, before, Limit.limit().count(limit))
+                .collectList()
+                .map(this::deserializeList)
+                .onErrorResume(ex -> {
+                    log.warn("Redis before-query failed for key={}, maxScore={}. Error: {}",
+                            key, maxScore, ex.getMessage());
+                    return Mono.just(Collections.emptyList());
                 });
     }
 
@@ -102,7 +137,11 @@ public class RedisMessageCache {
     public Mono<Boolean> evictRoom(String roomKey) {
         String key = recentKey(roomKey);
         return redis.delete(key)
-                .map(count -> count > 0);
+                .map(count -> count > 0)
+                .onErrorResume(ex -> {
+                    log.warn("Redis evict failed for key={}. Error: {}", key, ex.getMessage());
+                    return Mono.just(false);
+                });
     }
 
     // -- helpers -----------------------------------------------------------

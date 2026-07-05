@@ -1,7 +1,7 @@
 # Implementation Plan
 
-**Last updated:** 2026-07-03
-**Current phase:** 2 — Stream Lifecycle
+**Last updated:** 2026-07-05
+**Current phase:** 3 — Real-time Chat
 
 ## End Goal
 
@@ -23,17 +23,33 @@ Streamer signs in → creates stream → gets publish key → OBS publishes to S
 ```
 Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 ──► Phase 6
 (Auth)      (Stream)    (Chat)      (Viewer)    (Notify)    (Harden)
-  ✅          ⚡           ○           ○           ○           ○
+  ✅          ⚡           ⚡           ○           ○           ○
 ```
 
-| Phase | Status | Goal |
-|-------|--------|------|
-| [1 — Auth & Foundation](#phase-1--auth--foundation) | ✅ Done | Login, token rotation, PBAC JWT, gateway, frontend auth |
-| [2 — Stream Lifecycle](#phase-2--stream-lifecycle) | ⚡ Current | Stream CRUD with PBAC, state machine, SRS webhook, frontend dashboard |
-| [3 — Real-time Chat](#phase-3--real-time-chat) | ⚡ Current | PG-backed chat with Redis ZSET cache-aside, room lifecycle from stream events |
-| [4 — Viewer Experience](#phase-4--viewer-experience) | ○ Planned | Stream discovery, HLS player, embedded chat, viewer presence |
-| [5 — Notifications](#phase-5--notifications) | ○ Planned | Email notifications, subscription management, Kafka-driven dispatch |
-| [6 — Production Hardening](#phase-6--production-hardening) | ○ Planned | Idempotency, shared pbac-common, rate limiting, WebSocket, observability |
+| Phase | Status | Goal | Third-Party Services |
+|-------|--------|------|---------------------|
+| [1 — Auth & Foundation](#phase-1--auth--foundation) | ✅ Done | Login, token rotation, PBAC JWT, gateway, frontend auth | PostgreSQL |
+| [2 — Stream Lifecycle](#phase-2--stream-lifecycle) | ⚡ Current | Stream CRUD with PBAC, state machine, SRS webhook, frontend dashboard | PostgreSQL, Kafka |
+| [3 — Real-time Chat](#phase-3--real-time-chat) | ⚡ Current | PG-backed chat with Redis ZSET cache-aside, room lifecycle from stream events | PostgreSQL, **Redis** |
+| [4 — Viewer Experience](#phase-4--viewer-experience) | ○ Planned | Stream discovery, HLS player, embedded chat, viewer presence | **SRS** |
+| [5 — Notifications](#phase-5--notifications) | ○ Planned | Email notifications, subscription management, Kafka-driven dispatch | Kafka, SMTP |
+| [6 — Production Hardening](#phase-6--production-hardening) | ○ Planned | Idempotency, shared pbac-common, rate limiting, WebSocket, observability | — |
+
+---
+
+## Third-Party Service Lifecycle Convention
+
+Every phase that depends on a Docker-based service follows this pattern:
+
+| Step | Name | Description |
+|------|------|-------------|
+| 1 | **Define** | Docker Compose service entry — image tag, port mapping, health check, volume (if persistence needed), env vars |
+| 2 | **Provision** | `docker compose up -d <service>`, wait for health check to pass |
+| 3 | **Connect** | Application config (env vars → `application.yml`), verify connectivity with a ping or health endpoint |
+| 4 | **Test** | Integration tests against a real instance (Testcontainers or dedicated compose profile) — verify hot path, cold path, fallback, and edge cases |
+| 5 | **Verify** | End-to-end smoke test: write data through the service → read it back → confirm it round-trips correctly |
+
+> **Rule:** A phase is NOT done until steps 1–5 are complete for every third-party service it introduces. "The Docker image exists on Docker Hub" or "there's an env file" does not count — the service must be defined in a compose file, provisioned, connected, and tested.
 
 ---
 
@@ -55,7 +71,7 @@ Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 
 | 1.8 | Route guards (auth + guest) with `CanMatch` | `auth.guard.ts`, `guest.guard.ts` |
 | 1.9 | App shell with toolbar and router outlet | `AppShellComponent`, `HomePage` (placeholder) |
 | 1.10 | Eureka discovery, gateway routing to all services | `discovery-service`, gateway `application.yml` routes |
-| 1.11 | Docker Compose infrastructure (PostgreSQL, Redis, Kafka, SRS) | `compose.yaml` |
+| 1.11 | Docker Compose infrastructure (PostgreSQL, Redis, Kafka, SRS) | ⚠️ **Partial** — Kafka and Redis have compose files; PostgreSQL, SRS, and discovery are env-file-only (see [Infrastructure Status](#infrastructure-status)) |
 
 ### Reference Docs
 
@@ -69,6 +85,22 @@ Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 
 
 ---
 
+## Infrastructure Status
+
+As of 2026-07-05, the root `compose.yaml` (Phase 1.11) has **not been created**. The following third-party services are used across phases:
+
+| Service | Phase | Compose Defined? | Env File? | Health Check? | Volume? |
+|---------|-------|------------------|-----------|---------------|---------|
+| PostgreSQL | 1–6 | ❌ | ✅ `main/env/postgres.env` | ❌ | ❌ |
+| Kafka | 2–5 | ✅ `main/docker/kafka/` | ✅ `main/env/kafka.env` | ❌ | ✅ (broker data) |
+| Redis | 3 | ✅ `main/docker/redis/` | ✅ `main/env/redis.env` | ✅ `redis-cli ping` | ❌ (disposable per ADR-0002) |
+| SRS | 4 | ❌ | ❌ (in `spring.env.template`) | ❌ | ❌ |
+| Discovery (Eureka) | 1–6 | ❌ (Dockerfile only) | ✅ `main/env/discovery.env` | ❌ | ❌ |
+
+Each phase below now includes an **infrastructure setup** item (`.0`) that must be completed before the phase is considered done. These items collectively drive the creation of the root `compose.yaml`.
+
+---
+
 ## Phase 2 — Stream Lifecycle ⚡
 
 **Status:** Current — PBAC enforcement complete (2.2 ✅), publish-key generation fixed, state machine and SRS integration remaining
@@ -76,6 +108,25 @@ Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 
 **Goal:** A streamer can create, configure, start, and end a stream. End-to-end: login → create stream → get publish key → OBS publishes → SRS validates key → stream goes live.
 
 ### Work Items
+
+#### 2.0 — Infrastructure: Kafka Connectivity
+
+**Why:** The stream service depends on Kafka for publishing stream lifecycle events (`STREAM_STARTED`, `STREAM_ENDED`). Kafka compose files exist (`main/docker/kafka/`) but connectivity has not been verified from the stream service. Additionally, health checks are missing on the Kafka broker containers.
+
+**What:**
+- Add health check to Kafka broker compose services (`KAFKA_CFG_HEALTH_CHECK_TOPIC` or `nc -z localhost 9092`)
+- Verify stream-service can connect to Kafka — check `spring.kafka.bootstrap-servers` resolves
+- Verify topic auto-creation works (produce a test message, verify it appears)
+- Document startup order: Kafka must be healthy before stream-service starts
+
+**Files:**
+- `main/docker/kafka/docker-compose.yml` (add health checks)
+- `main/docker/kafka/single-broker/docker-compose.yaml` (add health checks)
+- `main/source/backend/stream-service/src/main/resources/application.yml` (verify Kafka config)
+
+**Validate:** `docker compose -f main/docker/kafka/single-broker/docker-compose.yaml up -d` → brokers healthy → stream-service connects and can produce to a test topic
+
+---
 
 #### 2.1 Gateway Route Path Rewriting
 
@@ -91,7 +142,7 @@ Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 
 
 ---
 
-#### 2.2 PBAC Enforcement in Stream Service
+#### 2.2 PBAC Enforcement in Stream Service ✅
 
 **Why:** Current endpoints allow any authenticated user to read/modify/delete any other user's stream. User A can delete user B's stream. This is the largest security gap in the platform.
 
@@ -176,25 +227,45 @@ Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 
 
 ---
 
+#### 2.6 — Kafka Integration Testing
+
+**Why:** The stream state machine (2.3) publishes events to Kafka, and downstream services (chat-service 3.3, notification-service 5.2) consume them. There are currently no tests verifying that Kafka produce/consume works end-to-end.
+
+**What:**
+- Add `testImplementation("org.testcontainers:kafka")` to stream-service
+- Write `StreamEventPublisherTest` — produce a `STREAM_CREATED` event, verify it appears on the topic
+- Write `StreamControlListenerTest` (in chat-service after 3.3) — consume a `STREAM_CREATED` event, verify room is created
+- Verify topic auto-creation and serialization/deserialization with the configured KafkaTemplate
+
+**Files (planned):**
+- `stream-service/src/test/java/.../messaging/StreamEventPublisherTest.java` (new)
+- `chat-service/src/test/java/.../messaging/StreamControlListenerTest.java` (new, after 3.3)
+
+**Validate:** `./gradlew :stream-service:test` — Kafka integration tests pass with Testcontainers
+
+---
+
 ### Phase 2 Checklist
 
+- [ ] 2.0 — Kafka connectivity verification + health checks
 - [x] 2.1 — Gateway path rewriting (not needed — base-path stripping handles routing)
 - [x] 2.2 — PBAC enforcement (ownership checks)
 - [ ] 2.3 — Stream state machine + Kafka events
 - [ ] 2.4 — SRS webhook (publish key validation)
 - [x] 2.5 — Frontend stream dashboard (partial: stream-create + channel pages exist; detail page with publish-key management still needed)
+- [ ] 2.6 — Kafka integration testing
 
 ---
 
 ## Phase 3 — Real-time Chat ⚡
 
-**Status:** In Progress — scaffold complete (15 source files + 2 migrations). Layered reactive architecture with Redis ZSET cache-aside. Author identity from JWT. Room auto-creation placeholder (Kafka consumer in 3.3).
+**Status:** In Progress — 3.1 (service layer) and 3.2 (JWT identity) committed. 3.5 (frontend) built but uncommitted. Redis infrastructure not yet defined.
 
 **Goal:** Viewers in a stream room can chat. Messages persist to PostgreSQL with Redis as the hot cache. Room lifecycle is driven by stream events from Kafka.
 
 ### Architecture Decisions
 
-Three ADRs were recorded during Phase 3 scaffold — see [docs/adr/chat/](adr/chat/):
+Three ADRs were recorded during Phase 3 design — see [docs/adr/chat/](adr/chat/):
 
 | ADR | Decision |
 |-----|----------|
@@ -210,7 +281,8 @@ chat-service/src/main/java/com/streaming/chat/
 │   ├── ChatController.java              ← rewritten: @AuthenticationPrincipal, delegates to ChatService
 │   └── dto/
 │       ├── SendMessageRequest.java       ← { @NotBlank String content } — no author field
-│       └── MessageResponse.java          ← from(ChatMessage, roomKey)
+│       ├── MessageResponse.java          ← from(ChatMessage, roomKey)
+│       └── RoomResponse.java             ← from(ChatRoom): externalKey, status, createdAt, archivedAt
 ├── application/
 │   ├── ChatService.java                  ← cache-aside orchestration (PG-first writes, Redis-first reads)
 │   └── RoomService.java                  ← getOrCreate + archive (idempotent)
@@ -221,7 +293,7 @@ chat-service/src/main/java/com/streaming/chat/
 ├── infrastructure/
 │   ├── persistence/
 │   │   ├── ReactiveChatRoomRepository.java       ← findByExternalKey, existsByExternalKey
-│   │   └── ReactiveChatMessageRepository.java    ← findByRoomIdOrderByCreatedAtDesc
+│   │   └── ReactiveChatMessageRepository.java    ← findByRoomIdOrderByCreatedAtDesc, findByRoomIdAndCreatedAtBeforeOrderByCreatedAtDesc
 │   └── cache/
 │       └── RedisMessageCache.java        ← ZSET per room (key: chat:room:{roomKey}:recent), 100-msg cap
 └── config/
@@ -233,14 +305,31 @@ V1__bootstrap_chat_schema.sql             ← existing: chat schema + chat_room 
 V2__add_room_status.sql                   ← new: status + archived_at on chat.chat_room
 ```
 
-**Key design points:**
-- **Write path:** `ChatService.sendMessage()` → validate room active → `messageRepository.save()` (PG) → `cache.addToRecent()` (Redis ZSET). PG is always the first write — Redis failure does not lose data.
-- **Read path:** `ChatService.getRecentMessages()` → `cache.getRecent()` (Redis) → on miss, query PG + async backfill Redis.
-- **Author:** `ChatController` reads `jwt.getSubject()` → passes as `authorSubject` to `ChatService`. The request DTO has no author field.
-- **Rooms:** Auto-created on first message via `getOrCreateRoom()` — this is a temporary placeholder. Phase 3.3 replaces it with Kafka-driven creation from stream events.
-- **Retention:** ZSET trimmed to 100 messages per room on each write via `ZREMRANGEBYRANK`.
-
 ### Work Items
+
+---
+
+#### 3.0 — Infrastructure: Redis Setup
+
+**Why:** The chat service depends on Redis for the hot cache layer. Currently no Redis Docker Compose service exists — only an env file (`main/env/redis.env`). Without a defined Redis service, the cache layer cannot be tested or run.
+
+**What:**
+- Add a `redis` service to the root `compose.yaml` with:
+  - Image: `redis:7-alpine`
+  - Port: `${REDIS_PUBLISH_PORT}:6379`
+  - Health check: `redis-cli ping`
+  - Volume: none (Redis is a disposable cache per ADR-0002; no persistence needed)
+  - Network: shared application network
+- Verify the chat service connects via `REDIS_HOST` / `REDIS_PORT` env vars
+- Verify `ReactiveStringRedisTemplate` can execute a `PING` command
+
+**Files:**
+- `compose.yaml` (new — add Redis service)
+- `main/env/redis.env` (already exists — verify values)
+
+**Validate:** `docker compose up -d redis` → `redis-cli ping` → PONG → chat-service starts and connects
+
+---
 
 #### 3.1 — Chat Service Layer + PG Persistence + Redis Cache-Aside ✅
 
@@ -254,7 +343,17 @@ V2__add_room_status.sql                   ← new: status + archived_at on chat.
 - `RoomStatus` enum (ACTIVE, ARCHIVED) with Flyway migration V2
 - R2DBC repositories with derived query methods
 
-**Files:** 13 new + 1 rewritten + 1 new migration (see scaffold tree above)
+**What was built beyond the original plan:**
+- **Redis resilience:** All three `RedisMessageCache` public methods wrapped with `.onErrorResume()` — Redis connection failure returns empty list / `false` instead of propagating exception. Writes are PG-first, so no data loss.
+- **Cursor-based pagination:** `getBefore(roomKey, maxScore, limit)` using `Range.of(Bound.unbounded(), Bound.exclusive(maxScore))` with `reverseRangeByScore` for ZSET cursor queries. PG fallback via `findByRoomIdAndCreatedAtBeforeOrderByCreatedAtDesc`.
+- **Room status endpoint:** `GET /v1/rooms/{roomKey}` returns `RoomResponse` with status, timestamps. Used by frontend to gate chat features.
+- **Archived room enforcement:** `sendMessage()` checks `room.isActive()` and throws `RoomArchivedException` if archived.
+
+**Cache warm-up (implemented for `getRecentMessages`, gap for `getMessagesBefore`):**
+- `getRecentMessages()`: On Redis miss → query PG → **async backfill** via `Flux.fromIterable(fromPg).flatMap(m -> cache.addToRecent(roomKey, m)).subscribe(...)`. Fire-and-forget; failures are logged and swallowed.
+- `getMessagesBefore()`: On Redis miss → query PG → **does NOT backfill** (gap — see [3.7](#37--cache-warm-up-completion)). Messages fetched via cursor pagination from PG are never written to Redis, so repeated scroll-up on the same room always hits PG.
+
+**Files:** 13 new + 1 rewritten + 1 new migration (see scaffold tree above), plus `ChatController`, `ChatService`, `RedisMessageCache`, `ReactiveChatMessageRepository`, and `RoomResponse.java`
 
 **Validate:** `./gradlew :chat-service:compileJava` — BUILD SUCCESSFUL
 
@@ -262,7 +361,7 @@ V2__add_room_status.sql                   ← new: status + archived_at on chat.
 
 #### 3.2 — JWT-Based Author Identity ✅
 
-**Status:** Done (implemented as part of 3.1 scaffold)
+**Status:** Done
 
 **What was built:**
 - `SendMessageRequest` is a single-field record: `@NotBlank String content` — no `author` field exists
@@ -317,32 +416,128 @@ V2__add_room_status.sql                   ← new: status + archived_at on chat.
 
 ---
 
-#### 3.5 — Frontend Chat Component
+#### 3.5 — Frontend Chat Experience
 
-**Depends on:** Phase 3.2 (JWT identity), Phase 3.4 recommended (PBAC so unauthorized users can't send)
+**Status:** Done — significantly expanded from original plan scope.
+
+**What the plan originally said:** Simple `ChatComponent` — message list + input + REST polling + loading/empty/error states.
+
+**What was actually built (12 new files + 1 modified):**
+
+| Component | Type | Description |
+|-----------|------|-------------|
+| `ChatService` | Service | HTTP client for `/api/chat/v1/rooms` — `getRoom()`, `sendMessage()`, `getRecentMessages()`, `getMessagesBefore(roomKey, cursor, limit)` |
+| `ChatPanelComponent` | Organism | Reusable smart chat panel (`[roomKey]` input, no page coupling) — embeddable in any page |
+| `ChatLoadTestComponent` | Molecule | Multi-user load testing tool — 3 test users, random messages, bypasses auth interceptor |
+| `ChatRoomPage` | Page | Thin wrapper — reads `:roomKey` from route, composes `ChatPanelComponent` + `ChatLoadTestComponent` |
+| 3 DTO contracts | Contracts | `ChatMessageResponseDto`, `RoomResponseDto`, `SendMessageRequestDto` |
+
+**`ChatPanelComponent` feature set:**
+
+| Feature | Implementation |
+|---------|---------------|
+| **Virtual scroll** | `cdk-virtual-scroll-viewport` with `itemSize="auto"` — variable-height bubble measurement via ResizeObserver; only viewport + buffer rendered in DOM |
+| **Lazy load** | Scroll near top (120px threshold) → `getMessagesBefore(cursor)` → prepend with scroll position preserved (measures `prevScrollHeight`/`prevScrollTop`, adjusts after CDK re-render in double `requestAnimationFrame`) |
+| **Smart scroll-to-bottom** | Captures `isNearBottom` before poll merge → `scrollTo({bottom: 0})` if true; shows "New messages" FAB pill if false |
+| **Optimistic send** | Client-generated `clientId` → immediate display with `status: 'sending'` → replaced with server response on success → red "Failed" badge + retry button on error |
+| **Room status gate** | `checkRoomStatus()` before features → ARCHIVED: load messages, disable input + polling; ACTIVE: full features; 404: empty state |
+| **Archived room UX** | Warning banner ("This room has been archived"), read-only messages, disabled input bar |
+| **REST polling** | 3-second interval → `getRecentMessages()` → merge by deduping server IDs, sort by `createdAt` |
+| **JWT identity** | Parses `sub` from access token (`atob` → `JSON.parse`) → right-aligns own messages, left-aligns others |
+| **Signal-based state** | 12 signals for reactive state (`messages`, `loading`, `sending`, `loadingOlder`, `errorMessage`, `roomStatus`, `showScrollButton`, `showNewMessageHint`, `hasMoreBefore`, `currentUserSub`) |
+| **Error handling** | Network error banner, per-message retry, 400 → "room may be archived" message |
+
+**Files:**
+- `frontend/streaming-ui/src/app/core/contracts/chat-message-response.dto.ts`
+- `frontend/streaming-ui/src/app/core/contracts/room-response.dto.ts`
+- `frontend/streaming-ui/src/app/core/contracts/send-message-request.dto.ts`
+- `frontend/streaming-ui/src/app/core/services/chat.service.ts`
+- `frontend/streaming-ui/src/app/pages/chat/chat-room.page.ts`
+- `frontend/streaming-ui/src/app/pages/chat/chat-room.page.html`
+- `frontend/streaming-ui/src/app/shared/organisms/chat-panel/chat-panel.component.ts`
+- `frontend/streaming-ui/src/app/shared/organisms/chat-panel/chat-panel.component.html`
+- `frontend/streaming-ui/src/app/shared/organisms/chat-panel/chat-panel.component.scss`
+- `frontend/streaming-ui/src/app/shared/molecules/chat-load-test/chat-load-test.component.ts`
+- `frontend/streaming-ui/src/app/shared/molecules/chat-load-test/chat-load-test.component.html`
+- `frontend/streaming-ui/src/app/app.routes.ts` (modified — added `/chat/:roomKey` route)
+
+**Known gaps in 3.5:**
+- No unit tests for `ChatPanelComponent` or `ChatService`
+- `ChatPanelComponent` uses `ChangeDetectionStrategy.Default` (not `OnPush`)
+- Load test component has a cross-feature dependency on `LoginResponseDto` from auth contracts
+
+**Validate:** `ng build` — passes (verified 2026-07-04)
+
+---
+
+#### 3.6 — Cache Integration Testing (NEW)
+
+**Why:** The `RedisMessageCache` and `ChatService` have zero tests. The cache-aside pattern has multiple paths (hot read, cold fallback, warm-up, retention trim, cursor pagination, error resilience) — each needs verification against a real Redis instance.
 
 **What:**
-- `ChatService` (frontend HTTP client) — `sendMessage(roomKey, content)` + `getRecentMessages(roomKey)`
-- `ChatComponent` — message list (auto-scrolled to bottom, newest-first display, author badges), message input (text + send button, Enter to send)
-- Embed in stream viewing page (Phase 4.2) — chat panel alongside HLS player
-- REST polling for now (poll every 2-3s) — WebSocket upgrade in Phase 6.4
-- Loading state (skeleton messages), empty state ("No messages yet. Say something!"), error state (toast on send failure)
+- Add `testImplementation("com.redis.testcontainers:testcontainers-redis:1.6.4")` (or `org.testcontainers:testcontainers` + manual `GenericContainer`)
+- Add `testImplementation("org.testcontainers:junit-jupiter")`
+- Create `src/test/resources/application-test.yml` with Testcontainers-derived Redis properties
+
+**Test categories:**
+
+| # | Test Class | What It Verifies |
+|---|-----------|-----------------|
+| 1 | `RedisMessageCacheTest` — **hot path write** | `addToRecent()` → ZADD with epoch-millis score → `getRecent()` returns deserialized messages newest-first |
+| 2 | `RedisMessageCacheTest` — **hot path read** | `getRecent()` on empty key → empty list (not error); on populated key → correct count, correct order |
+| 3 | `RedisMessageCacheTest` — **retention** | Add 150 messages → verify only 100 remain in ZSET (trim via `ZREMRANGEBYRANK`) |
+| 4 | `RedisMessageCacheTest` — **cursor pagination** | Add 50 messages → `getBefore(roomKey, middleScore, limit)` → returns only messages with score < middleScore |
+| 5 | `RedisMessageCacheTest` — **error resilience** | Stop Redis container → `addToRecent()` returns `false` (not throw); `getRecent()` returns empty list (not throw); `getBefore()` returns empty list (not throw) |
+| 6 | `ChatServiceTest` — **cache-aside orchestration** | Redis populated → `getRecentMessages()` returns cached (never queries PG). Redis empty → falls back to PG → async backfill fires. Redis down → falls back to PG gracefully |
+| 7 | `ChatServiceTest` — **archived room rejection** | `sendMessage()` on archived room → `RoomArchivedException` |
+| 8 | `ChatServiceTest` — **warm-up verify** | After `getRecentMessages()` cold miss → messages are backfilled to Redis → next call hits cache |
 
 **Files (planned):**
-- `frontend/streaming-ui/src/app/core/services/chat.service.ts` (new)
-- `frontend/streaming-ui/src/app/features/chat/chat.component.ts` (new)
-- `frontend/streaming-ui/src/app/features/chat/chat.component.html` (new)
-- `frontend/streaming-ui/src/app/features/chat/chat.component.scss` (new)
+- `chat-service/build.gradle.kts` (add Testcontainers deps)
+- `chat-service/src/test/resources/application-test.yml` (new)
+- `chat-service/src/test/java/.../infrastructure/cache/RedisMessageCacheTest.java` (new)
+- `chat-service/src/test/java/.../application/ChatServiceTest.java` (new)
+- `chat-service/src/test/java/.../api/ChatControllerTest.java` (new)
+
+**Validate:** `./gradlew :chat-service:test` — all 8 test categories pass with Testcontainers Redis
+
+---
+
+#### 3.7 — Cache Warm-Up Completion (NEW)
+
+**Why:** `getMessagesBefore()` falls back to PG on Redis miss but never backfills the cache. This means every scroll-up on a room with older messages always hits PostgreSQL — the cache is only warm for the most recent 100 messages (populated by `sendMessage` and `getRecentMessages` async backfill). This is a correctness gap in the cache-aside implementation.
+
+**What:**
+- In `ChatService.getMessagesBefore()`, after the PG fallback path (`collectList()`), add an async backfill identical to the pattern already in `getRecentMessages()`:
+  ```java
+  .flatMap(fromPg -> {
+      Flux.fromIterable(fromPg)
+          .flatMap(m -> cache.addToRecent(roomKey, m))
+          .subscribe(
+              count -> {},
+              err -> log.warn("Backfill cache write failed for roomKey={}", roomKey, err)
+          );
+      return Mono.just(fromPg);
+  });
+  ```
+
+**Files:**
+- `chat-service/.../application/ChatService.java` (add backfill in `getMessagesBefore` PG fallback path)
+
+**Validate:** After `getMessagesBefore()` cold miss, messages are backfilled → next `getMessagesBefore()` with same cursor range hits Redis
 
 ---
 
 ### Phase 3 Checklist
 
-- [x] 3.1 — Service layer + PG persistence + Redis cache-aside
+- [x] 3.0 — Infrastructure: Redis Docker Compose service + health check + connectivity
+- [x] 3.1 — Service layer + PG persistence + Redis cache-aside (extended: cursor pagination, Redis resilience, room status, archived enforcement)
 - [x] 3.2 — JWT-based author identity
-- [ ] 3.3 — Room auto-creation from stream events
+- [ ] 3.3 — Room auto-creation from stream events (blocked by 2.3)
 - [ ] 3.4 — PBAC enforcement
-- [ ] 3.5 — Frontend chat component
+- [x] 3.5 — Frontend chat experience (extended: virtual scroll, lazy load, smart scroll, optimistic send; remaining: unit tests + OnPush)
+- [ ] 3.6 — Cache integration testing (zero tests exist)
+- [ ] 3.7 — Cache warm-up completion (`getMessagesBefore` backfill gap)
 
 ---
 
@@ -354,15 +549,37 @@ V2__add_room_status.sql                   ← new: status + archived_at on chat.
 
 ### Work Items
 
+#### 4.0 — Infrastructure: SRS Setup
+
+**Why:** The viewer experience depends on SRS for HLS streaming. Currently only a config file (`main/docker/srs/conf/custom.conf`) exists — no Docker Compose service definition, no health check, no port mapping.
+
+**What:**
+- Add an `srs` service to the root `compose.yaml` with:
+  - Image: `ossrs/srs:5` (or `ossrs/srs:6`)
+  - Ports: `1935:1935` (RTMP), `8085:8080` (HLS HTTP), `1985:1985` (HTTP API)
+  - Volume: `./main/docker/srs/conf/custom.conf:/srs/conf/srs.conf` (mount config)
+  - Health check: `curl -s http://localhost:1985/api/v1/versions`
+- Verify RTMP ingest works (`ffmpeg` or OBS → publish test stream)
+- Verify HLS segments are generated under `./objs/nginx/html`
+
+**Files:**
+- `compose.yaml` (new — add SRS service)
+- `main/docker/srs/conf/custom.conf` (already exists — verify config)
+
+**Validate:** `docker compose up -d srs` → SRS healthy → publish test RTMP stream → `curl http://localhost:8085/test/index.m3u8` returns playlist
+
+---
+
 | # | Item | Depends on |
 |---|------|-----------|
 | 4.1 | **Frontend: Browse/discovery page** — list live streams with thumbnails, filter by category, search | 2.3 |
-| 4.2 | **Frontend: Stream viewing page** — HLS player (hls.js), embedded chat component, stream info sidebar | 2.4, 3.5, 4.1 |
+| 4.2 | **Frontend: Stream viewing page** — HLS player (hls.js), embedded chat panel (`ChatPanelComponent` already built), stream info sidebar | 2.4, 3.5, 4.1 |
 | 4.3 | **Playback URL generation** — stream service returns HLS URL per stream, gateway proxies or redirects to SRS | 2.4 |
 | 4.4 | **Viewer count / presence** — Redis-based ephemeral presence per room (`SETEX` with TTL), shown in UI | 4.2 |
 
 ### Phase 4 Checklist
 
+- [ ] 4.0 — Infrastructure: SRS Docker Compose service + health check + RTMP/HLS verification
 - [ ] 4.1 — Browse/discovery page
 - [ ] 4.2 — Stream viewing page (player + chat)
 - [ ] 4.3 — Playback URL generation
@@ -441,34 +658,50 @@ Not planned yet — candidates:
 ## Dependency Graph
 
 ```
-Phase 1 (DONE)
+                    ┌──────────────────────────┐
+                    │   Infrastructure Layer    │
+                    │                           │
+                    │  PostgreSQL ── (all phases)│
+                    │  Kafka ─────── (2,3,5)    │
+                    │  Redis ─────── (3,6.3)    │
+                    │  SRS ───────── (4)        │
+                    │  SMTP ──────── (5)        │
+                    └──────┬───────────────────┘
+                           │
+Phase 1 (DONE) ───────────┘
     │
     ▼
 Phase 2 ─────────────────────────────┐
-│  2.1 Gateway fix                    │
+│  2.0 Kafka infra + health check    │
+│  2.1 Gateway fix                   │
 │  2.2 PBAC enforcement ──────────────┼──┐
 │  2.3 Stream state machine ──────────┼──┼──┐
-│  2.4 SRS webhook                    │  │  │
-│  2.5 Frontend stream dashboard      │  │  │
+│  2.4 SRS webhook                   │  │  │
+│  2.5 Frontend stream dashboard     │  │  │
+│  2.6 Kafka integration tests       │  │  │
 │                                     │  │  │
 Phase 3 ──────────────────────────────┘  │  │
-│  3.1 Chat service layer                │  │
-│  3.2 Fix author identity               │  │
+│  3.0 Redis infra + compose service    │  │
+│  3.1 Chat service layer               │  │
+│  3.2 Fix author identity              │  │
 │  3.3 Room from stream events ◄─────────┘  │
 │  3.4 PBAC in chat                         │
-│  3.5 Frontend chat component              │
+│  3.5 Frontend chat experience             │
+│  3.6 Cache integration tests              │
+│  3.7 Cache warm-up completion             │
 │                                           │
 Phase 4 ────────────────────────────────────┘
-│  4.1 Browse/discovery page     ◄── needs stream state machine (2.3)
-│  4.2 Stream viewing page       ◄── needs SRS webhook (2.4) + chat (3.5)
-│  4.3 Playback URL generation   ◄── needs SRS webhook (2.4)
+│  4.0 SRS infra + compose service  ◄── needs SRS Docker service
+│  4.1 Browse/discovery page        ◄── needs stream state machine (2.3)
+│  4.2 Stream viewing page          ◄── needs SRS webhook (2.4) + chat (3.5)
+│  4.3 Playback URL generation      ◄── needs SRS webhook (2.4)
 │  4.4 Viewer presence
 │
 Phase 5
-│  5.1-5.4 Notification service  ◄── needs stream events (2.3)
+│  5.1-5.4 Notification service     ◄── needs stream events (2.3)
 │
 Phase 6
-│  6.1-6.6 Hardening             ◄── can run in parallel with earlier phases
+│  6.1-6.6 Hardening                ◄── can run in parallel with earlier phases
 ```
 
 ---
@@ -484,6 +717,20 @@ Phase 6
 4. Commit → conventional commits format
 5. Reference doc → docs/<PATTERN-NAME>.md if new pattern introduced
 ```
+
+### Third-Party Service Lifecycle
+
+For every Docker-based service introduced in a phase:
+
+```
+1. Define   → Compose service entry (image, port, health check, volume, env)
+2. Provision → docker compose up -d, verify health
+3. Connect  → App config (env vars → application.yml), verify connectivity
+4. Test     → Integration tests with real instance (Testcontainers or compose)
+5. Verify   → End-to-end smoke test: write → read → round-trip confirmed
+```
+
+A phase is NOT done until all 5 steps are complete for every service it introduces.
 
 ### Commit Format
 

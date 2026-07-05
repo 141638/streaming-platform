@@ -1,6 +1,6 @@
-<div class="app-shell min-h-screen surface-ground">
+<div class="app-shell min-h-screen flex flex-column overflow-auto surface-ground">
   <p-toolbar
-    styleClass="border-noround shadow-1 surface-card app-shell-toolbar"
+    styleClass="flex-initial border-noround shadow-1 surface-card app-shell-toolbar"
   >
     <div
       class="p-toolbar-group-start flex align-items-center gap-3 cursor-pointer"
@@ -32,7 +32,7 @@
     </div>
   </p-toolbar>
 
-  <main class="app-shell-main">
+  <main class="app-shell-main flex-auto overflow-auto">
     <router-outlet />
   </main>
 </div>

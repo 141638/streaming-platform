@@ -1,7 +1,7 @@
-<div class="chat-room-page h-full" style="height: calc(100vh - 4rem)">
+<div class="chat-room-page flex flex-column h-full">
   @if (roomKey()) {
-    <app-chat-panel class="h-30rem block" [roomKey]="roomKey()!" />
-    <app-chat-load-test [roomKey]="roomKey()!" />
+    <app-chat-panel class="flex-auto block" [roomKey]="roomKey()!" />
+    <app-chat-load-test class="flex-initial" [roomKey]="roomKey()!" />
   } @else {
     <div
       class="flex justify-content-center align-items-center h-full"

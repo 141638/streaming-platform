@@ -69,7 +69,11 @@ class AccessTokenIssuanceServiceTest {
             300,
             "test-secret",
             "stream-service-internal",
-            3600
+            3600,
+            true,
+            false,
+            "Lax",
+            "/api/auth"
     );
 
     private static final UUID USER_ID = UUID.randomUUID();

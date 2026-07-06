@@ -1,18 +1,68 @@
 services:
   redis:
-    image: redis:7-alpine
+    # Pinned to a specific minor release to prevent breaking auto-updates
+    image: redis:7.2.4-alpine
     container_name: streaming-redis
-    hostname: streaming-redis
-    ports:
-      - "${REDIS_PUBLISH_PORT:-6379}:6379"
+    restart: unless-stopped
+    # Memory governance:
+    #   --maxmemory prevents unbounded Redis growth (cache is disposable per ADR-0002).
+    #   allkeys-lru: evict least-recently-used keys when full — appropriate for a cache.
+    #   RDB snapshots (--save) provide fast restart recovery alongside AOF.
+    command: >
+      redis-server
+      --appendonly yes
+      --requirepass "${REDIS_PASSWORD:?error}"
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+    environment:
+      # REDISCLI_AUTH: used by redis-cli in healthcheck; also suppresses the
+      # "Using a password with -a option" warning that would spam healthcheck logs.
+      REDISCLI_AUTH: "${REDIS_PASSWORD}"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli ping"]
       interval: 5s
       timeout: 3s
       retries: 3
+    # No public port mapping — only containers on streaming_network can reach Redis.
     networks:
       - streaming_network
+    volumes:
+      - redis_data:/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redisinsight:
+    image: redis/redisinsight:2.44.0
+    container_name: redisinsight
+    restart: unless-stopped
+    ports:
+      - "${REDISINSIGHT_PORT:-5540}:5540"
+    environment:
+      - RI_APP_MODE=true
+    networks:
+      - streaming_network
+    volumes:
+      - redisinsight_data:/db
+    depends_on:
+      redis:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   streaming_network:
     driver: bridge
+
+volumes:
+  redis_data:
+    driver: local
+  redisinsight_data:
+    driver: local

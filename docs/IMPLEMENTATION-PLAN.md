@@ -626,7 +626,7 @@ V2__add_room_status.sql                   ← new: status + archived_at on chat.
 | 6.3 | **Rate limiting** — gateway-level rate limits per endpoint, Redis-backed token bucket | 6.1 |
 | 6.4 | **WebSocket upgrade for chat** — replace REST polling with WebSocket (STOMP or raw) for real-time messaging | 3.5 |
 | 6.5 | **Security hardening** — TLS everywhere, secrets management (env vars → vault), CSP headers, CSRF audit, dependency CVE scanning | — |
-| 6.6 | **Observability** — structured JSON logging, Micrometer metrics (Prometheus), health checks with dependencies, Grafana dashboard | — |
+| 6.6 | **Observability** — ~~structured JSON logging~~ ✅, Micrometer Tracing (traceId/spanId propagation), Micrometer metrics (Prometheus), Grafana dashboard, centralized log backend (Loki or ELK) | — |
 
 ### Phase 6 Checklist
 
@@ -636,6 +636,11 @@ V2__add_room_status.sql                   ← new: status + archived_at on chat.
 - [ ] 6.4 — WebSocket chat
 - [ ] 6.5 — Security hardening
 - [ ] 6.6 — Observability
+  - [x] Structured JSON logging (logstash-logback-encoder, ADR-0001, docs/LOGGING-ARCHITECTURE.md)
+  - [ ] Micrometer Tracing (traceId/spanId propagation across HTTP + Kafka)
+  - [ ] Micrometer metrics (Prometheus endpoint)
+  - [ ] Grafana dashboard
+  - [ ] Centralized log backend (Loki/Grafana or ELK)
 
 ---
 

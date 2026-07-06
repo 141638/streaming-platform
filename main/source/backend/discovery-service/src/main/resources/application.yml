@@ -5,6 +5,10 @@ spring:
   application:
     name: discovery-service
 
+streaming:
+  service:
+    instance-id: "${random.uuid}"
+
 eureka:
   client:
     register-with-eureka: false

@@ -21,7 +21,7 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
+      password: ${REDIS_PASSWORD:r3d1s-d3v-p4ss-2024}
 
 eureka:
   client:
@@ -29,7 +29,7 @@ eureka:
       defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
   instance:
     prefer-ip-address: true
-    instance-id: "${random.uuid}"
+    instance-id: "${streaming.service.instance-id}"
 
 management:
   endpoints:
@@ -41,6 +41,8 @@ management:
       show-details: always
 
 streaming:
+  service:
+    instance-id: "${random.uuid}"
   jwt:
     issuer: ${JWT_ISSUER:https://auth.streaming.local}
     hmac-secret: ${JWT_HMAC_SECRET:MNH6CwQ7H4xAf69hpn0sc2Rn+wxT/d+I9QWELikQqgM=}

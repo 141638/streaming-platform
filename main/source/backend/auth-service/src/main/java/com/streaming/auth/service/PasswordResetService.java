@@ -4,7 +4,7 @@ import com.streaming.auth.dto.PasswordResetResponse;
 import com.streaming.auth.exception.InvalidPasswordResetTokenException;
 import com.streaming.auth.exception.PasswordValidationException;
 import com.streaming.auth.persistence.entity.UserAccountEntity;
-import com.streaming.auth.persistence.repository.RefreshTokenRepository;
+import com.streaming.auth.infrastructure.redis.RefreshTokenRedisService;
 import com.streaming.auth.persistence.repository.UserAccountRepository;
 import jakarta.mail.MessagingException;
 import lombok.RequiredArgsConstructor;
@@ -30,7 +30,7 @@ public class PasswordResetService {
     private static final Logger log = LoggerFactory.getLogger(PasswordResetService.class);
 
     private final UserAccountRepository userAccountRepository;
-    private final RefreshTokenRepository refreshTokenRepository;
+    private final RefreshTokenRedisService redisService;
     private final PasswordResetTokenService passwordResetTokenService;
     private final PasswordEncoder passwordEncoder;
     private final MailCommonService mailCommonService;
@@ -84,9 +84,8 @@ public class PasswordResetService {
         user.setPasswordHash(hashed);
         user.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
 
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        int revoked = refreshTokenRepository.revokeAllActiveByUser(userId, now);
-        log.info("Password reset for user {}: revoked {} active refresh token(s)", userId, revoked);
+        redisService.revokeAllByUser(userId);
+        log.info("Password reset for user {}: revoked active refresh tokens", userId);
 
         userAccountRepository.save(user);
 

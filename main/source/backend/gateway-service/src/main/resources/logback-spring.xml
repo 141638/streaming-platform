@@ -6,7 +6,7 @@
       Outputs every log line as a JSON object to stdout via LoggingEventCompositeJsonEncoder.
       Fields: timestamp, level, logger, message, thread, service, instanceId, traceId, spanId, stack_trace.
 
-    Local dev profile (--spring.profiles.active=local):
+    Local dev profile (spring.profiles.active=local):
       Switches to human-readable text format with traceId/spanId placeholders.
 
     Dependencies needed (per service build.gradle.kts):

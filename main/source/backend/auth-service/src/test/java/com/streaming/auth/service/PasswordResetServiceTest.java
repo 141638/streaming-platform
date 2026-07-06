@@ -12,7 +12,7 @@ import com.streaming.auth.dto.PasswordResetResponse;
 import com.streaming.auth.exception.InvalidPasswordResetTokenException;
 import com.streaming.auth.exception.PasswordValidationException;
 import com.streaming.auth.persistence.entity.UserAccountEntity;
-import com.streaming.auth.persistence.repository.RefreshTokenRepository;
+import com.streaming.auth.infrastructure.redis.RefreshTokenRedisService;
 import com.streaming.auth.persistence.repository.UserAccountRepository;
 import com.streaming.auth.service.MailCommonService;
 import java.time.OffsetDateTime;
@@ -36,7 +36,7 @@ class PasswordResetServiceTest {
     private UserAccountRepository userAccountRepository;
 
     @Mock
-    private RefreshTokenRepository refreshTokenRepository;
+    private RefreshTokenRedisService redisService;
 
     @Mock
     private PasswordResetTokenService passwordResetTokenService;
@@ -53,7 +53,7 @@ class PasswordResetServiceTest {
     void setUp() {
         passwordResetService = new PasswordResetService(
                 userAccountRepository,
-                refreshTokenRepository,
+                redisService,
                 passwordResetTokenService,
                 passwordEncoder,
                 mailCommonService);
@@ -123,8 +123,7 @@ class PasswordResetServiceTest {
             when(passwordResetTokenService.validateAndDecode("valid-token")).thenReturn(userId);
             when(userAccountRepository.findByIdAndDeleteFlagFalse(userId)).thenReturn(Optional.of(user));
             when(passwordEncoder.encode("newPassword123")).thenReturn("new-hash");
-            when(refreshTokenRepository.revokeAllActiveByUser(eq(userId), any(OffsetDateTime.class)))
-                    .thenReturn(3);
+            // revokeAllByUser is void — mockito no-ops by default for void methods
 
             PasswordResetResponse response =
                     passwordResetService.confirmReset("valid-token", "newPassword123");
@@ -133,7 +132,7 @@ class PasswordResetServiceTest {
             assertThat(response.message()).contains("Password has been reset");
             assertThat(user.getPasswordHash()).isEqualTo("new-hash");
             assertThat(user.getUpdatedAt()).isNotNull();
-            verify(refreshTokenRepository).revokeAllActiveByUser(eq(userId), any(OffsetDateTime.class));
+            verify(redisService).revokeAllByUser(userId);
             verify(userAccountRepository).save(user);
         }
 

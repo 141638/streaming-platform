@@ -7,16 +7,17 @@ import com.streaming.chat.domain.ChatRoom;
 import com.streaming.chat.infrastructure.cache.RedisMessageCache;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatMessageRepository;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatRoomRepository;
-import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.List;
 
 /**
  * Application service for chat message operations.
@@ -46,9 +47,9 @@ public class ChatService {
      * simplifies the Phase 3 scaffold; Phase 3.3 will replace this with
      * Kafka-driven room creation from stream events).
      *
-     * @param roomKey      the room's external key
+     * @param roomKey the room's external key
      * @param authorSubject the JWT {@code sub} claim — the authenticated user
-     * @param body          the message content
+     * @param body the message content
      * @return the sent message as a response DTO
      */
     public Mono<MessageResponse> sendMessage(String roomKey, String authorSubject, String body) {
@@ -99,8 +100,10 @@ public class ChatService {
                                 Flux.fromIterable(fromPg)
                                         .flatMap(m -> cache.addToRecent(roomKey, m))
                                         .subscribe(
-                                                count -> {},
-                                                err -> log.warn("Backfill cache write failed for roomKey={}", roomKey, err)
+                                                count -> {
+                                                },
+                                                err -> log.warn("Backfill cache write failed for roomKey={}", roomKey,
+                                                        err)
                                         );
                                 return Mono.just(fromPg);
                             });
@@ -115,6 +118,7 @@ public class ChatService {
      */
     public Mono<RoomResponse> getRoom(String roomKey) {
         return roomRepository.findByExternalKey(roomKey)
+                .switchIfEmpty(Mono.error(new RoomNotFoundException(roomKey)))
                 .map(RoomResponse::from);
     }
 
@@ -122,8 +126,8 @@ public class ChatService {
      * Get messages older than the given cursor, for lazy-load history.
      *
      * @param roomKey the room's external key
-     * @param cursor  ISO-8601 timestamp of the oldest message currently loaded
-     * @param limit   max number of messages to return
+     * @param cursor ISO-8601 timestamp of the oldest message currently loaded
+     * @param limit max number of messages to return
      * @return messages ordered newest-first (empty list if none)
      */
     public Mono<List<MessageResponse>> getMessagesBefore(String roomKey, String cursor, int limit) {
@@ -174,6 +178,12 @@ public class ChatService {
     }
 
     // -- exceptions --------------------------------------------------------
+
+    public static class RoomNotFoundException extends RuntimeException {
+        public RoomNotFoundException(String roomKey) {
+            super("Chat room is notfound: roomKey=" + roomKey);
+        }
+    }
 
     public static class RoomArchivedException extends RuntimeException {
         public RoomArchivedException(String roomKey) {

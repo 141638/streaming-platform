@@ -2,111 +2,111 @@ package com.streaming.auth.service;
 
 import com.streaming.auth.exception.InvalidRefreshTokenException;
 import com.streaming.auth.exception.UserAccountNotFoundException;
-import com.streaming.auth.persistence.entity.RefreshTokenEntity;
-import com.streaming.auth.persistence.repository.RefreshTokenRepository;
+import com.streaming.auth.infrastructure.redis.RefreshTokenRedisService;
+import com.streaming.auth.infrastructure.redis.RefreshTokenRedisService.RotateResult;
 import com.streaming.auth.persistence.repository.UserAccountRepository;
-import com.streaming.auth.token.OpaqueTokenGenerator;
-import com.streaming.common.crypto.HashUtils;
 import com.streaming.auth.token.IssuedAccessToken;
 import com.streaming.auth.token.IssuedSessionTokens;
 import com.streaming.auth.token.JwtIssuerProperties;
+import com.streaming.auth.token.OpaqueTokenGenerator;
+import com.streaming.common.crypto.HashUtils;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Opaque rotating refresh credentials (hashed at rest). Replay of a revoked token revokes its family.
+ * Opaque rotating refresh credentials (hashed at rest, stored in Redis).
+ *
+ * <p>Token rotation is handled by an atomic Lua script — no application-level
+ * locks or transactions are needed. Replay of a revoked token triggers
+ * family-wide revocation inside the same atomic script.
  */
 @Service
 @RequiredArgsConstructor
 public class RefreshTokenService {
 
-    private final RefreshTokenRepository refreshTokenRepository;
+    private final RefreshTokenRedisService redisService;
     private final UserAccountRepository userAccountRepository;
     private final AccessTokenIssuanceService accessTokenIssuanceService;
     private final JwtIssuerProperties jwtIssuerProperties;
-    private final RefreshTokenMaintenanceService refreshTokenMaintenanceService;
 
-    @Transactional
+    /** Issue a new access + refresh token pair for a user (login). */
     public IssuedSessionTokens issueNewFamilySession(UUID userId) {
         userAccountRepository
                 .findByIdAndDeleteFlagFalse(userId)
                 .orElseThrow(() -> new UserAccountNotFoundException(userId));
+
         IssuedAccessToken access = accessTokenIssuanceService.issueForUser(userId);
         UUID familyId = UUID.randomUUID();
         String plaintext = persistNewRefresh(userId, familyId);
         return new IssuedSessionTokens(access, plaintext, jwtIssuerProperties.refreshTokenTtlSeconds());
     }
 
-    /** Exchange a valid rotating refresh credential for new access + new refresh (same {@code token_family_id}). */
-    @Transactional
+    /**
+     * Exchange a valid rotating refresh credential for a new access + refresh token pair.
+     *
+     * <p>The Lua script atomically validates, detects replays, revokes the old token,
+     * and persists the new one — all in a single Redis round-trip.
+     */
     public IssuedSessionTokens rotateSession(String plaintextRefreshToken) {
         if (plaintextRefreshToken == null || plaintextRefreshToken.isBlank()) {
             throw new InvalidRefreshTokenException();
         }
-        byte[] hash = HashUtils.sha256(plaintextRefreshToken.trim());
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        RefreshTokenEntity stored =
-                refreshTokenRepository.lockByTokenHash(hash).orElseThrow(InvalidRefreshTokenException::new);
 
-        if (stored.getRevokedAt() != null) {
-            refreshTokenMaintenanceService.revokeAllActiveInFamily(stored.getTokenFamilyId());
-            throw new InvalidRefreshTokenException();
-        }
+        String oldHash = HashUtils.sha256Hex(plaintextRefreshToken.trim());
 
-        if (!stored.getExpiresAt().isAfter(now)) {
-            throw new InvalidRefreshTokenException("Refresh token expired");
-        }
+        // Look up old token metadata for family/user context
+        var oldMetadata = redisService.findByHash(oldHash)
+                .orElseThrow(InvalidRefreshTokenException::new);
 
-        UUID userId = stored.getUserAccountId();
+        // Verify user still exists (non-Redis check — PostgreSQL source of truth)
+        UUID userId = oldMetadata.userId();
         if (userAccountRepository.findByIdAndDeleteFlagFalse(userId).isEmpty()) {
             throw new InvalidRefreshTokenException("Principal no longer eligible");
         }
 
+        // Issue access JWT before rotation (if this fails, no state has changed)
         IssuedAccessToken access = accessTokenIssuanceService.issueForUser(userId);
 
-        UUID familyId = stored.getTokenFamilyId();
-        stored.setRevokedAt(now);
-        refreshTokenRepository.save(stored);
+        // Generate the replacement token
+        String newPlaintext = OpaqueTokenGenerator.newRefreshSecret();
+        String newHash = HashUtils.sha256Hex(newPlaintext);
+        OffsetDateTime expiresAt = OffsetDateTime.now(ZoneOffset.UTC)
+                .plusSeconds(jwtIssuerProperties.refreshTokenTtlSeconds());
 
-        String nextPlaintext = persistNewRefresh(userId, familyId);
+        // Atomic rotation via Lua script
+        RotateResult result = redisService.rotate(
+                oldHash, newHash, userId, oldMetadata.familyId(), expiresAt);
 
-        return new IssuedSessionTokens(access, nextPlaintext, jwtIssuerProperties.refreshTokenTtlSeconds());
+        return switch (result) {
+            case OK -> new IssuedSessionTokens(access, newPlaintext, jwtIssuerProperties.refreshTokenTtlSeconds());
+            case EXPIRED -> throw new InvalidRefreshTokenException("Refresh token expired");
+            case REVOKED_FAMILY, INVALID -> throw new InvalidRefreshTokenException();
+        };
     }
 
     /**
      * Revoke all active tokens in the family identified by the given refresh token.
-     * Used during explicit logout — quietly succeeds if the token is not found or
-     * already revoked (idempotent).
-     *
-     * <p>No transaction annotation: the lookup and the revocation each run in
-     * their own transaction so the {@code REQUIRES_NEW} inner transaction in
-     * {@link RefreshTokenMaintenanceService#revokeAllActiveInFamily} is not
-     * blocked by a lingering pessimistic lock from the lookup.
+     * Idempotent — quietly succeeds if the token is not found or already revoked.
      */
     public void revokeTokensByRefreshToken(String plaintextRefreshToken) {
         if (plaintextRefreshToken == null || plaintextRefreshToken.isBlank()) {
             return;
         }
-        byte[] hash = HashUtils.sha256(plaintextRefreshToken.trim());
-        refreshTokenRepository.findByTokenHash(hash).ifPresent(stored ->
-                refreshTokenMaintenanceService.revokeAllActiveInFamily(stored.getTokenFamilyId()));
+        String hash = HashUtils.sha256Hex(plaintextRefreshToken.trim());
+        redisService.findByHash(hash).ifPresent(meta ->
+                redisService.revokeFamily(meta.familyId()));
     }
 
     private String persistNewRefresh(UUID userAccountId, UUID tokenFamilyId) {
         String plaintext = OpaqueTokenGenerator.newRefreshSecret();
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        RefreshTokenEntity entity = new RefreshTokenEntity();
-        entity.setId(UUID.randomUUID());
-        entity.setUserAccountId(userAccountId);
-        entity.setTokenHash(HashUtils.sha256(plaintext));
-        entity.setTokenFamilyId(tokenFamilyId);
-        entity.setExpiresAt(now.plusSeconds(jwtIssuerProperties.refreshTokenTtlSeconds()));
-        entity.setCreatedAt(now);
-        refreshTokenRepository.save(entity);
+        String hash = HashUtils.sha256Hex(plaintext);
+        OffsetDateTime expiresAt = OffsetDateTime.now(ZoneOffset.UTC)
+                .plusSeconds(jwtIssuerProperties.refreshTokenTtlSeconds());
+        redisService.issueNewFamily(hash, userAccountId, tokenFamilyId, expiresAt);
         return plaintext;
     }
 }

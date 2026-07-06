@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Structured JSON logging template for streaming-platform services.
+
+    Default (no profile / production):
+      Outputs every log line as a JSON object to stdout via LoggingEventCompositeJsonEncoder.
+      Fields: timestamp, level, logger, message, thread, service, instanceId, traceId, spanId, stack_trace.
+
+    Local dev profile (--spring.profiles.active=local):
+      Switches to human-readable text format with traceId/spanId placeholders.
+
+    Dependencies needed (per service build.gradle.kts):
+      implementation("net.logstash.logback:logstash-logback-encoder:8.0")
+
+    Required application.yml properties:
+      spring.application.name                    → service field
+      streaming.service.instance-id             → instanceId field
+      eureka.instance.instance-id               → reuses streaming.service.instance-id
+
+    See docs/LOGGING-ARCHITECTURE.md and docs/adr/common/0001-structured-json-logging.md
+-->
+<configuration>
+    <!--
+        Read from Spring Environment. Logback defers init until the Environment is ready,
+        so ${random.uuid} (used by streaming.service.instance-id) is already resolved.
+    -->
+    <springProperty scope="context" name="SERVICE_NAME" source="spring.application.name"/>
+    <springProperty scope="context" name="INSTANCE_ID" source="streaming.service.instance-id"/>
+
+    <!-- ─── JSON Appender (production / default) ─────────────────────────── -->
+    <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+            <providers>
+                <timestamp>
+                    <fieldName>timestamp</fieldName>
+                </timestamp>
+                <logLevel>
+                    <fieldName>level</fieldName>
+                </logLevel>
+                <loggerName>
+                    <fieldName>logger</fieldName>
+                </loggerName>
+                <threadName>
+                    <fieldName>thread</fieldName>
+                </threadName>
+                <message>
+                    <fieldName>message</fieldName>
+                </message>
+                <stackTrace>
+                    <fieldName>exception</fieldName>
+                </stackTrace>
+                <!-- traceId / spanId: included now as empty strings; populated automatically
+                     when Micrometer Tracing (Phase 2) is added. -->
+                <mdc/>
+                <!-- Static custom fields resolved from Spring Environment at encode time -->
+                <pattern>
+                    <pattern>
+                        {"service":"${SERVICE_NAME}","instanceId":"${INSTANCE_ID}"}
+                    </pattern>
+                </pattern>
+            </providers>
+        </encoder>
+    </appender>
+
+    <!-- ─── Human-Readable Appender (local dev) ──────────────────────────── -->
+    <appender name="TEXT_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <charset>UTF-8</charset>
+            <pattern>
+                %d{HH:mm:ss.SSS} %highlight(%-5level) [%thread] %cyan(%logger{36}) [%X{traceId:-}] - %msg%n
+            </pattern>
+        </encoder>
+    </appender>
+
+    <!-- ─── Profile-Based Routing ────────────────────────────────────────── -->
+    <springProfile name="local">
+        <root level="INFO">
+            <appender-ref ref="TEXT_CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="!local">
+        <root level="INFO">
+            <appender-ref ref="JSON_CONSOLE"/>
+        </root>
+    </springProfile>
+</configuration>

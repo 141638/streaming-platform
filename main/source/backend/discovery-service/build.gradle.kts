@@ -20,6 +20,7 @@ java {
 dependencies {
     implementation("org.springframework.cloud:spring-cloud-starter-netflix-eureka-server")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    implementation("net.logstash.logback:logstash-logback-encoder:8.0")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
 }
 

@@ -1,7 +1,7 @@
 # Implementation Plan
 
-**Last updated:** 2026-07-05
-**Current phase:** 3 — Real-time Chat
+**Last updated:** 2026-07-06
+**Current phase:** 3 — Real-time Chat / 6 — Production Hardening (partial)
 
 ## End Goal
 
@@ -23,7 +23,7 @@ Streamer signs in → creates stream → gets publish key → OBS publishes to S
 ```
 Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 ──► Phase 6
 (Auth)      (Stream)    (Chat)      (Viewer)    (Notify)    (Harden)
-  ✅          ⚡           ⚡           ○           ○           ○
+  ✅          ⚡           ⚡           ○           ○           ⚡
 ```
 
 | Phase | Status | Goal | Third-Party Services |
@@ -33,7 +33,7 @@ Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 
 | [3 — Real-time Chat](#phase-3--real-time-chat) | ⚡ Current | PG-backed chat with Redis ZSET cache-aside, room lifecycle from stream events | PostgreSQL, **Redis** |
 | [4 — Viewer Experience](#phase-4--viewer-experience) | ○ Planned | Stream discovery, HLS player, embedded chat, viewer presence | **SRS** |
 | [5 — Notifications](#phase-5--notifications) | ○ Planned | Email notifications, subscription management, Kafka-driven dispatch | Kafka, SMTP |
-| [6 — Production Hardening](#phase-6--production-hardening) | ○ Planned | Idempotency, shared pbac-common, rate limiting, WebSocket, observability | — |
+| [6 — Production Hardening](#phase-6--production-hardening) | ⚡ In Progress | Idempotency, shared pbac-common, rate limiting, WebSocket, observability. Redis infrastructure hardened, structured logging done, refresh tokens migrated to Redis. | — |
 
 ---
 
@@ -613,7 +613,7 @@ V2__add_room_status.sql                   ← new: status + archived_at on chat.
 
 ## Phase 6 — Production Hardening ○
 
-**Status:** Planned
+**Status:** In Progress — Redis infrastructure hardened, structured logging deployed, refresh tokens migrated to Redis. Remaining items are planned but not started.
 
 **Goal:** The platform is safe, scalable, and maintainable for production use.
 
@@ -621,22 +621,29 @@ V2__add_room_status.sql                   ← new: status + archived_at on chat.
 
 | # | Item | Depends on |
 |---|------|-----------|
+| 6.0a | ✅ **Redis infrastructure hardening** — pinned image (7.2.4-alpine), AOF+RDB persistence, password auth, memory limits (256MB allkeys-lru), RedisInsight (2.44.0), json-file log rotation, restart policy | — |
+| 6.0b | ✅ **Refresh token → Redis migration** — replaced JPA pessimistic-lock rotation with atomic Lua script; deleted RefreshTokenEntity/Repository/MaintenanceService; auth-service now uses Redis as primary store for ephemeral credentials. See [ADR auth/0001](adr/auth/0001-redis-refresh-token-storage.md) | 6.0a |
 | 6.1 | **Idempotency keys** — gateway filter + Redis dedup + frontend `IdempotencyService` → enable POST retry in auth interceptor | — |
 | 6.2 | **Shared `pbac-common` library** — extract duplicated `JwtProperties` + `ReactiveJwtDecoder` + `EntitlementMatcher` from stream/chat/notification into a shared Gradle module | 2.2 |
-| 6.3 | **Rate limiting** — gateway-level rate limits per endpoint, Redis-backed token bucket | 6.1 |
-| 6.4 | **WebSocket upgrade for chat** — replace REST polling with WebSocket (STOMP or raw) for real-time messaging | 3.5 |
+| 6.3 | **Rate limiting** — gateway-level rate limits per endpoint, Redis-backed token bucket. See [ADR common/0002](adr/common/0002-redis-ephemeral-data-store.md) for design | 6.0a |
+| 6.4 | **WebSocket upgrade for chat** — replace REST polling with WebSocket (STOMP or raw) for real-time messaging. Redis Pub/Sub for cross-instance message fan-out | 3.5 |
 | 6.5 | **Security hardening** — TLS everywhere, secrets management (env vars → vault), CSP headers, CSRF audit, dependency CVE scanning | — |
 | 6.6 | **Observability** — ~~structured JSON logging~~ ✅, Micrometer Tracing (traceId/spanId propagation), Micrometer metrics (Prometheus), Grafana dashboard, centralized log backend (Loki or ELK) | — |
 
 ### Phase 6 Checklist
 
+- [x] 6.0a — Redis infrastructure hardening
+- [x] 6.0b — Refresh token → Redis migration
 - [ ] 6.1 — Idempotency keys
 - [ ] 6.2 — Shared `pbac-common` library
 - [ ] 6.3 — Rate limiting
 - [ ] 6.4 — WebSocket chat
 - [ ] 6.5 — Security hardening
 - [ ] 6.6 — Observability
-  - [x] Structured JSON logging (logstash-logback-encoder, ADR-0001, docs/LOGGING-ARCHITECTURE.md)
+  - [x] Structured JSON logging (logstash-logback-encoder, all 6 services, [ADR common/0001](adr/common/0001-structured-json-logging.md), [LOGGING-ARCHITECTURE.md](LOGGING-ARCHITECTURE.md))
+  - [x] Logging architecture documentation ([LOGGING-ARCHITECTURE.md](LOGGING-ARCHITECTURE.md), [TRACE-PROPAGATION.md](TRACE-PROPAGATION.md))
+  - [x] `streaming.service.instance-id` — unified instance identity across Eureka + logs
+  - [x] Local dev profile — human-readable logs via `SPRING_PROFILES_ACTIVE=local`
   - [ ] Micrometer Tracing (traceId/spanId propagation across HTTP + Kafka)
   - [ ] Micrometer metrics (Prometheus endpoint)
   - [ ] Grafana dashboard

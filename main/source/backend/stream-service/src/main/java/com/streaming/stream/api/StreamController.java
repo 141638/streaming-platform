@@ -1,13 +1,17 @@
 package com.streaming.stream.api;
 
 import com.streaming.common.api.ApiMessage;
+import com.streaming.stream.api.dto.CategoryResponse;
 import com.streaming.stream.api.dto.CreateStreamRequest;
 import com.streaming.stream.api.dto.PublishKeyResponse;
+import com.streaming.stream.api.dto.ScheduleStreamRequest;
 import com.streaming.stream.api.dto.StreamResponse;
 import com.streaming.stream.api.dto.StreamSummaryResponse;
 import com.streaming.stream.api.dto.UpdateStreamRequest;
 import com.streaming.stream.service.StreamService;
 import jakarta.validation.Valid;
+import java.net.URI;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -24,9 +28,6 @@ import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.net.URI;
-import java.util.UUID;
-
 @RestController
 @RequiredArgsConstructor
 @RequestMapping(path = "/v1", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -34,10 +35,21 @@ public class StreamController {
 
     private final StreamService streamService;
 
+    // ── Health ──────────────────────────────────────────────────────────────
+
     @GetMapping("/ping")
     public Mono<ApiMessage> ping() {
         return Mono.just(new ApiMessage("stream-service", "ok"));
     }
+
+    // ── Categories ──────────────────────────────────────────────────────────
+
+    @GetMapping("/categories")
+    public Mono<ResponseEntity<Flux<CategoryResponse>>> listCategories() {
+        return Mono.just(ResponseEntity.ok(streamService.listCategories()));
+    }
+
+    // ── Streams CRUD ────────────────────────────────────────────────────────
 
     @PostMapping(path = "/streams", consumes = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<StreamResponse>> create(
@@ -46,14 +58,12 @@ public class StreamController {
         return streamService.createStream(body, jwt)
                 .map(response -> ResponseEntity
                         .created(URI.create("/v1/streams/" + response.id()))
-                        .body(response)
-                );
+                        .body(response));
     }
 
     @GetMapping("/streams")
     public Mono<ResponseEntity<Flux<StreamSummaryResponse>>> listMine(
-            @AuthenticationPrincipal Jwt jwt
-    ) {
+            @AuthenticationPrincipal Jwt jwt) {
         String sub = jwt.getSubject();
         return Mono.just(ResponseEntity.ok(streamService.listMyStreams(sub)));
     }
@@ -77,8 +87,42 @@ public class StreamController {
     public Mono<ResponseEntity<Void>> delete(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID id) {
-        return streamService.deleteStream(id, jwt).then(Mono.just(ResponseEntity.noContent().build()));
+        return streamService.deleteStream(id, jwt)
+                .then(Mono.just(ResponseEntity.noContent().build()));
     }
+
+    // ── Lifecycle ───────────────────────────────────────────────────────────
+
+    @PostMapping("/streams/{id}/start")
+    public Mono<ResponseEntity<StreamResponse>> start(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID id) {
+        return streamService.startStream(id, jwt).map(ResponseEntity::ok);
+    }
+
+    @PostMapping("/streams/{id}/end")
+    public Mono<ResponseEntity<StreamResponse>> end(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID id) {
+        return streamService.endStream(id, jwt).map(ResponseEntity::ok);
+    }
+
+    @PostMapping("/streams/{id}/cancel")
+    public Mono<ResponseEntity<StreamResponse>> cancel(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID id) {
+        return streamService.cancelStream(id, jwt).map(ResponseEntity::ok);
+    }
+
+    @PostMapping(path = "/streams/{id}/schedule", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<StreamResponse>> schedule(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID id,
+            @Valid @RequestBody ScheduleStreamRequest body) {
+        return streamService.scheduleStream(id, jwt, body).map(ResponseEntity::ok);
+    }
+
+    // ── Publish Key ─────────────────────────────────────────────────────────
 
     @PostMapping("/streams/{id}/publish-key")
     public Mono<ResponseEntity<PublishKeyResponse>> issuePublishKey(
@@ -96,5 +140,4 @@ public class StreamController {
             @PathVariable UUID id) {
         return streamService.getPublishKey(id, jwt).map(ResponseEntity::ok);
     }
-
 }

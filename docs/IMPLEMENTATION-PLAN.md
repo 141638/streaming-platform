@@ -103,9 +103,9 @@ Each phase below now includes an **infrastructure setup** item (`.0`) that must 
 
 ## Phase 2 — Stream Lifecycle ⚡
 
-**Status:** Current — PBAC enforcement complete (2.2 ✅), publish-key generation fixed, state machine and SRS integration remaining
+**Status:** Active — PBAC (2.2 ✅), Kafka (2.0 ✅), state machine (2.3 ✅), categories/tags (2.3 ✅) complete. SRS integration (2.4) next.
 
-**Goal:** A streamer can create, configure, start, and end a stream. End-to-end: login → create stream → get publish key → OBS publishes → SRS validates key → stream goes live.
+**Goal:** A streamer can create, configure, start, and end a stream. End-to-end: login → create stream → get publish URL → paste into OBS → OBS starts → SRS webhook validates → stream auto-goes-live → viewers watch via direct HLS.
 
 ### Work Items
 
@@ -164,43 +164,98 @@ Each phase below now includes an **infrastructure setup** item (`.0`) that must 
 
 ---
 
-#### 2.3 Stream State Machine
+#### 2.3 Stream State Machine ✅
 
-**Why:** Stream lifecycle is currently just a string field with no transition validation. A stream needs defined states and valid transitions.
+**Why:** Stream lifecycle was a string field with no transition validation.
 
-**What:**
-- Define states: `draft → scheduled → live → ended` (plus `cancelled` from `draft` or `scheduled`)
-- Add `transition(StreamStatus target)` method to `StreamSessionEntity` with transition validation
-- Add `start()` transition → sets `startedAt`, fires `StreamEventPublisher.publish(STREAM_STARTED)`
-- Add `end()` transition → sets `endedAt`, fires `StreamEventPublisher.publish(STREAM_ENDED)`
-- Wire `StreamEventPublisher` to Kafka (already exists, not called anywhere)
+**What was implemented:**
+- State machine via `StreamSessionEntity` domain methods: `transitionTo()`, `goLive()`, `end()`, `cancel()`
+- Transition map: DRAFT → LIVE | CANCELLED, LIVE → ENDED, ENDED/CANCELLED → terminal
+- SCHEDULED is a creation-time-only state (terminal except for go-live action — see 2.4)
+- `@Version` optimistic locking on all transitions
+- One-live-stream-per-broadcaster: service-layer check + partial unique index
+- PBAC `LIFECYCLE` action on all transition endpoints
+- Kafka events: `STREAM_CREATED`, `STREAM_SCHEDULED`, `STREAM_STARTED`, `STREAM_ENDED`, `STREAM_CANCELLED`
+- Lifecycle endpoints: `POST /start`, `/end`, `/cancel`
+- `POST /schedule` removed in revision — SCHEDULED is creation-only
+
+**What was removed (Phase 2.4 revision):**
+- `DRAFT → SCHEDULED` generic transition — schedule only at creation time
+- `SCHEDULED → LIVE`, `SCHEDULED → CANCELLED` — SCHEDULED is terminal
+- `entity.schedule()`, `scheduleStream()`, `POST /streams/{id}/schedule`, `ScheduleStreamRequest`
 
 **Files:**
-- `stream-service/src/main/java/com/streaming/stream/domain/StreamStatus.java` (enum with transition rules)
-- `stream-service/src/main/java/com/streaming/stream/persistence/entity/StreamSessionEntity.java` (add transition logic)
-- `stream-service/src/main/java/com/streaming/stream/service/StreamService.java` (wire transitions)
-- `stream-service/src/main/java/com/streaming/stream/messaging/StreamEventPublisher.java` (already exists)
+- `StreamStatus.java` — `allowedTransitions()` via Java 21 switch
+- `StreamSessionEntity.java` — domain methods + `@Version`
+- `StreamService.java` — lifecycle methods, one-live check, dual-entry create
+- `StreamController.java` — lifecycle endpoints
+- `StreamServiceTest.java` — 42 tests
 
-**Validate:** Integration test — `draft → live` succeeds, `live → draft` throws
+**ADR:** [0001-stream-state-machine.md](adr/stream/0001-stream-state-machine.md) (Revised 2026-07-07)
+
+**Validate:** `./gradlew :stream-service:test` — 42/42 pass
 
 ---
 
-#### 2.4 SRS Webhook Integration
+#### 2.4 SRS Webhook Integration & Publish Token Architecture
 
-**Why:** SRS must validate the stream key with the stream service before accepting an RTMP publish. Without this, anyone who guesses a key can publish.
+**Why:** SRS must validate that a streamer is authorized to publish before accepting an RTMP connection. The stream service must auto-detect stream start/end via SRS webhooks and transition state accordingly.
+
+**Architecture (see [ADR-0004](adr/stream/0004-srs-webhook-publish-token.md)):**
+
+Three separate identifiers:
+- **Stream ID** (public, in REST URLs)
+- **SRS stream name** (semi-private UUID, in RTMP/HLS URLs; SHA-256 stored in `stream_key_hash`)
+- **Publish token** (JWT, in RTMP `?token=` query param; self-validating, short-lived)
+
+Flow:
+```
+POST /streams → DRAFT + { publishUrl: "rtmp://srs/live/{srsName}?token={jwt}" }
+Streamer pastes URL into OBS
+OBS → RTMP → SRS → on_publish webhook → stream service validates JWT → auto-goLive
+SRS → HLS → viewer browser (direct, no proxy)
+OBS stops → SRS → on_unpublish webhook → stream service → auto-end
+```
 
 **What:**
-- Add `POST /v1/webhooks/srs/on_publish` endpoint (service-account authenticated, not user auth)
-- SRS calls this webhook with the stream key → stream service validates key hash → returns allow/deny
-- Configure SRS `http_hooks` in Docker Compose to call the webhook
-- Use service-account JWT (audience: `stream-service-internal`) for webhook auth
+- **2.4a — State machine revision:**
+  - Remove SCHEDULED transitions (already done in 2.3 revision)
+  - Add `POST /v1/streams/{id}/go-live` — SCHEDULED→DRAFT with fresh publish key
+  - SCHEDULED streams have no publish key until go-live
+- **2.4b — Publish token issuance:**
+  - Generate srsName (UUID) + publish JWT at DRAFT creation
+  - `GET /streams/{id}/publish-key` re-issues fresh srsName + JWT (key rotation)
+  - JWT TTL: 2h (DRAFT), 15m (LIVE)
+  - Publish token claims: `sub`, `streamId`, `srsName`, `exp`
+- **2.4c — Webhook endpoints:**
+  - `POST /v1/webhooks/srs/on_publish` — validate JWT + stream_key_hash → goLive → 200/403
+  - `POST /v1/webhooks/srs/on_unpublish` — end stream → 200
+  - Webhook auth: shared secret (`X-Webhook-Secret` header, internal Docker network)
+  - Security config: `/v1/webhooks/**` excluded from JWT auth
+- **2.4d — Playback URL:**
+  - `StreamResponse.playUrl` — SRS HLS URL (`http://srs:8080/live/{srsName}.m3u8`)
+  - Direct browser→SRS connection; no proxy through stream service
+- **2.4e — Migration V5:**
+  - Reverse V3: `stream_key_hash` set NOT NULL (all DRAFT/LIVE streams have a key)
 
 **Files:**
-- `stream-service/src/main/java/com/streaming/stream/api/SrsWebhookController.java` (new)
-- `stream-service/src/main/java/com/streaming/stream/service/PublishKeyValidationService.java` (new)
-- `compose.yaml` (SRS http_hooks config)
+- `StreamStatus.java` (remove SCHEDULED transitions)
+- `StreamSessionEntity.java` (revise transition methods)
+- `StreamService.java` (goLiveFromSchedule, publish token issuance, webhook transition methods)
+- `StreamController.java` (go-live endpoint, webhook controller)
+- `SrsWebhookController.java` (new — on_publish, on_unpublish)
+- `PublishTokenService.java` (new — JWT issuance/validation)
+- `SrsWebhookProperties.java` (new — shared secret config)
+- `SecurityConfig.java` (permit webhook paths)
+- `V5__reverse_stream_key_hash_not_null.sql` (new)
+- `application.yml` (SRS config, webhook secret)
+- `main/docker/srs/conf/custom.conf` (http_hooks config)
+- `StreamServiceTest.java` (update for revised state machine)
+- `PublishTokenServiceTest.java` (new)
 
-**Validate:** OBS publishes with valid key → accepted. OBS publishes with invalid key → rejected.
+**Validate:** OBS publishes with valid token → accepted, stream auto-goes-live, STREAM_STARTED event fired. OBS publishes with invalid/expired token → rejected.
+
+**ADR:** [0004-srs-webhook-publish-token.md](adr/stream/0004-srs-webhook-publish-token.md)
 
 ---
 
@@ -245,23 +300,59 @@ Each phase below now includes an **infrastructure setup** item (`.0`) that must 
 
 ---
 
+#### 2.7 — Schedule Reminder Batch (Deferred)
+
+**Why:** Scheduled streams need pre-stream reminders to prompt the streamer to set up. The reminder system ensures scheduled streams don't go forgotten.
+
+**Design (ADR deferred):**
+- Three-wave reminder: 9AM 2 days before, 4PM 1 day before, 8 hours before scheduled time
+- Requires: job scheduler (Spring `@Scheduled`/Quartz), push notification infrastructure, user notification preferences
+- Schedule data model supports it: `scheduled_at` column exists; may need `reminder_sent_at` tracking
+
+**Depends on:** Phase 5.x (notification infrastructure), Phase 4.x (subscription data model)
+
+---
+
+#### 2.8 — Stream Templates (Deferred)
+
+**Why:** Streamers who go live regularly need reusable boilerplates. Creating from scratch each time is friction.
+
+**Design sketch (full ADR later):**
+- `StreamTemplateEntity`: `id`, `broadcasterSubject`, `name`, `title`, `description`, `categoryId`, `tags[]`, `maxViewers`
+- `POST /v1/streams/templates` — save template
+- `GET /v1/streams/templates` — list templates
+- `POST /v1/streams?fromTemplate={id}` — create DRAFT from template (pre-fills, issues new key)
+- Template ≠ stream — no status, no publish key, no lifecycle
+- Different from SCHEDULED: template is reusable, schedule is a specific planned broadcast
+
+**Depends on:** Phase 2.4 (publish token issuance in create flow)
+
+---
+
 ### Phase 2 Checklist
 
 - [x] 2.0 — Kafka connectivity verification + health checks
 - [x] 2.1 — Gateway path rewriting (not needed — base-path stripping handles routing)
 - [x] 2.2 — PBAC enforcement (ownership checks)
 - [x] 2.3 — Stream state machine + Kafka events
-- [ ] 2.4 — SRS webhook (publish key validation)
-- [x] 2.5 — Frontend stream dashboard (partial: stream-create + channel pages exist; detail page with publish-key management still needed)
+- [ ] 2.4a — State machine revision (remove SCHEDULED transitions, add go-live)
+- [ ] 2.4b — Publish token issuance (JWT, srsName, TTL, re-issuance)
+- [ ] 2.4c — SRS webhook endpoints (on_publish, on_unpublish)
+- [ ] 2.4d — Playback URL in StreamResponse
+- [ ] 2.4e — Migration V5 (reverse stream_key_hash NOT NULL)
+- [x] 2.5 — Frontend stream dashboard (partial: stream-create + channel pages exist)
 - [ ] 2.6 — Kafka integration testing
+- [ ] 2.7 — Schedule reminder batch (deferred — depends on notification + subscription)
+- [ ] 2.8 — Stream templates (deferred — separate ADR needed)
 
-**New ADRs recorded for Phase 2.0/2.3 — see [docs/adr/stream/](adr/stream/):**
+**Architecture Decisions — see [docs/adr/stream/](adr/stream/):**
 
 | ADR | Decision |
 |-----|----------|
-| [0001](adr/stream/0001-stream-state-machine.md) | Stream state machine with entity domain methods, optimistic locking, one-live-stream rule |
+| [0001](adr/stream/0001-stream-state-machine.md) | Stream state machine with entity domain methods, optimistic locking, one-live-stream rule (Revised 2026-07-07) |
 | [0002](adr/stream/0002-kafka-event-publishing.md) | Reactive Kafka publisher with at-most-once delivery, deferred DLQ/outbox concerns |
 | [0003](adr/stream/0003-categories-tags.md) | Managed `stream_category` lookup table + `TEXT[]` tags with GIN index |
+| [0004](adr/stream/0004-srs-webhook-publish-token.md) | SRS webhook integration with JWT publish token, srsName/SHA-256 lookup, auto-transition |
 
 ---
 

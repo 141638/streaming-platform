@@ -51,4 +51,4 @@ Agent:
 
 - Does NOT write code unless you explicitly ask ("ok, fix it" → switches to `/implement`)
 - Does NOT commit or push
-- May suggest delegating to `/plan` if the solution requires a full implementation plan
+- May suggest delegating to `/blueprint` if the solution requires a full implementation plan

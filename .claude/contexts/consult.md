@@ -31,7 +31,7 @@ Focus: Analysis and recommendations, not implementation
 ## Boundaries
 - Do NOT write code unless explicitly asked
 - Do NOT commit or push
-- If the solution requires implementation, suggest `/implement` or `/plan`
+- If the solution requires implementation, suggest `/implement` or `/blueprint`
 - Present options, let the user decide
 
 ## Output

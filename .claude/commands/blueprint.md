@@ -1,11 +1,11 @@
 ---
-description: Create an implementation plan before writing code. WAIT for user CONFIRM before touching code.
+description: Create an implementation blueprint before writing code. WAIT for user CONFIRM before touching code.
 argument-hint: "[feature description]"
 ---
 
-# /plan — Implementation Planning
+# /blueprint — Implementation Blueprint
 
-Create a step-by-step implementation plan before writing any code.
+Create a step-by-step implementation blueprint before writing any code.
 
 ## When to Use
 
@@ -25,7 +25,7 @@ Create a step-by-step implementation plan before writing any code.
 ## Output Format
 
 ```markdown
-# Plan: [Feature Name]
+# Blueprint: [Feature Name]
 
 ## Summary
 [2-3 sentences]

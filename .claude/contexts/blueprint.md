@@ -1,6 +1,6 @@
-# Planning Context
+# Blueprint Context
 
-Mode: Architecture design, implementation planning
+Mode: Architecture design, implementation blueprint
 Focus: Understanding before deciding, deciding before coding
 
 ## Behavior

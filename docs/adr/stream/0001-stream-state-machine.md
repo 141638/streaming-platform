@@ -1,6 +1,6 @@
 # ADR-0001: Stream State Machine
 
-**Status:** Accepted (Revised 2026-07-07)
+**Status:** Accepted (Revised 2026-07-07; implemented 2026-07-08)
 **Date:** 2026-07-07
 **Domain:** Stream Service
 
@@ -63,6 +63,12 @@ This avoids cloning/duplication while keeping the schedule as a reusable plan. A
 | `POST /v1/streams/{id}/start` | Manual DRAFT→LIVE for testing without OBS/SRS |
 | `POST /v1/streams/{id}/end` | Manual LIVE→ENDED for testing |
 | `POST /v1/streams/{id}/cancel` | Manual DRAFT→CANCELLED for testing |
+
+### What Was Added (Phase 2.4)
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /v1/streams/{id}/go-live` | SCHEDULED→DRAFT activation with fresh publish key (see ADR-0004) |
 
 ### Alternatives Considered
 

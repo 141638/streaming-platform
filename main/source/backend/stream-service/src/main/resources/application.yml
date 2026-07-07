@@ -56,3 +56,10 @@ streaming:
   jwt:
     issuer: ${JWT_ISSUER:https://auth.streaming.local}
     hmac-secret: ${JWT_HMAC_SECRET:MNH6CwQ7H4xAf69hpn0sc2Rn+wxT/d+I9QWELikQqgM=}
+  publish-token:
+    ttl: 2h
+    srs-rtmp-host: ${SRS_RTMP_HOST:rtmp://localhost:1935}
+    srs-hls-host: ${SRS_HLS_HOST:http://localhost:8080}
+  srs:
+    webhook:
+      secret: ${SRS_WEBHOOK_SECRET:change-me}

@@ -114,6 +114,15 @@ public class StreamController {
         return streamService.cancelStream(id, jwt).map(ResponseEntity::ok);
     }
 
+    // ── Go-live from SCHEDULED ───────────────────────────────────────────────
+
+    @PostMapping("/streams/{id}/go-live")
+    public Mono<ResponseEntity<PublishKeyResponse>> goLive(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID id) {
+        return streamService.goLiveFromSchedule(id, jwt).map(ResponseEntity::ok);
+    }
+
     // ── Publish Key ─────────────────────────────────────────────────────────
 
     @PostMapping("/streams/{id}/publish-key")

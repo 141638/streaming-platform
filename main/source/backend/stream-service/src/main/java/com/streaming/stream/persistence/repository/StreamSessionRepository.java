@@ -12,4 +12,6 @@ public interface StreamSessionRepository extends ReactiveCrudRepository<StreamSe
     Flux<StreamSessionEntity> findAllByBroadcasterSubject(String broadcasterSubject);
 
     Mono<Boolean> existsByBroadcasterSubjectAndStatus(String broadcasterSubject, StreamStatus status);
+
+    Mono<StreamSessionEntity> findByStreamKeyHash(String streamKeyHash);
 }

@@ -8,8 +8,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.streaming.stream.api.dto.CreateStreamRequest;
-
 import com.streaming.stream.api.dto.UpdateStreamRequest;
+import com.streaming.stream.config.PublishTokenProperties;
 import com.streaming.stream.messaging.StreamEventPublisher;
 import com.streaming.stream.persistence.entity.StreamSessionEntity;
 import com.streaming.stream.persistence.entity.StreamStatus;
@@ -20,6 +20,7 @@ import com.streaming.stream.security.AuthResourceDomain;
 import com.streaming.stream.security.AuthResourceKind;
 import com.streaming.stream.security.RequiredAuthority;
 import com.streaming.stream.security.StreamAuthorization;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
@@ -42,6 +43,7 @@ class StreamServiceTest {
     private static final UUID STREAM_ID = UUID.randomUUID();
     private static final String OWNER_SUB = "e8f9a1b2-3c4d-5e6f-7a8b-9c0d1e2f3a4b";
     private static final String OTHER_SUB = "f9a1b2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c";
+    private static final String HMAC_SECRET = "MNH6CwQ7H4xAf69hpn0sc2Rn+wxT/d+I9QWELikQqgM=";
 
     @Mock
     private StreamSessionRepository repository;
@@ -55,11 +57,18 @@ class StreamServiceTest {
     @Mock
     private StreamEventPublisher eventPublisher;
 
+    @Mock
+    private PublishTokenService publishTokenService;
+
+    private final PublishTokenProperties publishTokenProps = new PublishTokenProperties(
+            Duration.ofHours(2), "rtmp://srs:1935", "http://srs:8080");
+
     private StreamService service;
 
     @BeforeEach
     void setUp() {
-        service = new StreamService(repository, categoryRepository, authorization, eventPublisher);
+        service = new StreamService(repository, categoryRepository, authorization,
+                eventPublisher, publishTokenService, publishTokenProps);
     }
 
     private static Jwt jwt(String sub) {
@@ -496,6 +505,165 @@ class StreamServiceTest {
             StreamSessionEntity e = entity(STREAM_ID, OWNER_SUB, StreamStatus.DRAFT);
             e.transitionTo(StreamStatus.DRAFT);
             assertThat(e.getStatus()).isEqualTo(StreamStatus.DRAFT);
+        }
+    }
+
+    // ── goLiveFromSchedule ──────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("goLiveFromSchedule")
+    class GoLiveFromSchedule {
+
+        @Test
+        @DisplayName("transitions SCHEDULED → DRAFT with publish key")
+        void transitionsScheduledToDraft() {
+            Jwt j = jwt(OWNER_SUB);
+            StreamSessionEntity e = entity(STREAM_ID, OWNER_SUB, StreamStatus.SCHEDULED);
+            String expectedToken = "publish-token";
+            when(repository.findById(STREAM_ID)).thenReturn(Mono.just(e));
+            when(authorization.requireAccess(eq(j), eq(required(AuthAction.LIFECYCLE, OWNER_SUB))))
+                    .thenReturn(Mono.empty());
+            when(publishTokenService.issueToken(eq(STREAM_ID), any(), eq(OWNER_SUB)))
+                    .thenReturn(expectedToken);
+            when(repository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+            StepVerifier.create(service.goLiveFromSchedule(STREAM_ID, j))
+                    .assertNext(response -> {
+                        assertThat(response.token()).isEqualTo(expectedToken);
+                        assertThat(response.srsName()).isNotBlank();
+                        assertThat(response.rtmpUrl()).contains("?token=" + expectedToken);
+                    })
+                    .verifyComplete();
+        }
+
+        @Test
+        @DisplayName("rejects non-SCHEDULED stream")
+        void rejectsNonScheduled() {
+            Jwt j = jwt(OWNER_SUB);
+            StreamSessionEntity e = entity(STREAM_ID, OWNER_SUB, StreamStatus.DRAFT);
+            when(repository.findById(STREAM_ID)).thenReturn(Mono.just(e));
+            when(authorization.requireAccess(eq(j), eq(required(AuthAction.LIFECYCLE, OWNER_SUB))))
+                    .thenReturn(Mono.empty());
+
+            StepVerifier.create(service.goLiveFromSchedule(STREAM_ID, j))
+                    .expectError(IllegalStateException.class)
+                    .verify();
+        }
+    }
+
+    // ── handlePublish (webhook) ─────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("handlePublish")
+    class HandlePublish {
+
+        private static final String SRS_NAME = "test-srs-name";
+        private static final String TOKEN = "valid-token";
+
+        @Test
+        @DisplayName("DRAFT → LIVE on valid token")
+        void draftToLive() {
+            stubPublish();
+            StreamSessionEntity e = entity(STREAM_ID, OWNER_SUB, StreamStatus.DRAFT);
+            e.setStreamKeyHash("hashed");
+            when(repository.findByStreamKeyHash(any())).thenReturn(Mono.just(e));
+            when(publishTokenService.validateForPublish(TOKEN, SRS_NAME, StreamStatus.DRAFT))
+                    .thenReturn(Mono.just(new PublishTokenService.PublishTokenClaims(
+                            OWNER_SUB, STREAM_ID, SRS_NAME, null)));
+            when(repository.existsByBroadcasterSubjectAndStatus(OWNER_SUB, StreamStatus.LIVE))
+                    .thenReturn(Mono.just(false));
+            when(repository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+            StepVerifier.create(service.handlePublish(SRS_NAME, TOKEN))
+                    .verifyComplete();
+
+            verify(eventPublisher).publish(any());
+        }
+
+        @Test
+        @DisplayName("LIVE: reconnect passes without state change")
+        void liveReconnect() {
+            StreamSessionEntity e = entity(STREAM_ID, OWNER_SUB, StreamStatus.LIVE);
+            e.setStreamKeyHash("hashed");
+            when(repository.findByStreamKeyHash(any())).thenReturn(Mono.just(e));
+            when(publishTokenService.validateForPublish(TOKEN, SRS_NAME, StreamStatus.LIVE))
+                    .thenReturn(Mono.just(new PublishTokenService.PublishTokenClaims(
+                            OWNER_SUB, STREAM_ID, SRS_NAME, null)));
+
+            StepVerifier.create(service.handlePublish(SRS_NAME, TOKEN))
+                    .verifyComplete();
+
+            verify(repository, never()).save(any());
+            verify(eventPublisher, never()).publish(any());
+        }
+
+        @Test
+        @DisplayName("rejects ENDED stream")
+        void rejectsEnded() {
+            StreamSessionEntity e = entity(STREAM_ID, OWNER_SUB, StreamStatus.ENDED);
+            e.setStreamKeyHash("hashed");
+            when(repository.findByStreamKeyHash(any())).thenReturn(Mono.just(e));
+
+            StepVerifier.create(service.handlePublish(SRS_NAME, TOKEN))
+                    .expectError(StreamService.InvalidPublishTokenException.class)
+                    .verify();
+        }
+
+        @Test
+        @DisplayName("rejects unknown srsName")
+        void rejectsUnknownSrsName() {
+            when(repository.findByStreamKeyHash(any())).thenReturn(Mono.empty());
+
+            StepVerifier.create(service.handlePublish(SRS_NAME, TOKEN))
+                    .expectError(StreamService.InvalidPublishTokenException.class)
+                    .verify();
+        }
+    }
+
+    // ── handleUnpublish (webhook) ───────────────────────────────────────────
+
+    @Nested
+    @DisplayName("handleUnpublish")
+    class HandleUnpublish {
+
+        private static final String SRS_NAME = "test-srs-name";
+
+        @Test
+        @DisplayName("LIVE → ENDED")
+        void liveToEnded() {
+            stubPublish();
+            StreamSessionEntity e = entity(STREAM_ID, OWNER_SUB, StreamStatus.LIVE);
+            e.setStreamKeyHash("hashed");
+            when(repository.findByStreamKeyHash(any())).thenReturn(Mono.just(e));
+            when(repository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+            StepVerifier.create(service.handleUnpublish(SRS_NAME))
+                    .verifyComplete();
+
+            verify(eventPublisher).publish(any());
+        }
+
+        @Test
+        @DisplayName("non-LIVE is idempotent no-op")
+        void nonLiveNoop() {
+            StreamSessionEntity e = entity(STREAM_ID, OWNER_SUB, StreamStatus.ENDED);
+            e.setStreamKeyHash("hashed");
+            when(repository.findByStreamKeyHash(any())).thenReturn(Mono.just(e));
+
+            StepVerifier.create(service.handleUnpublish(SRS_NAME))
+                    .verifyComplete();
+
+            verify(repository, never()).save(any());
+            verify(eventPublisher, never()).publish(any());
+        }
+
+        @Test
+        @DisplayName("unknown srsName is swallowed (idempotent)")
+        void unknownSrsNameSwallowed() {
+            when(repository.findByStreamKeyHash(any())).thenReturn(Mono.empty());
+
+            StepVerifier.create(service.handleUnpublish(SRS_NAME))
+                    .verifyComplete();
         }
     }
 }

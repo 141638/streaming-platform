@@ -65,6 +65,10 @@ public class SecurityConfig {
                                 "/api/auth/v1/logout",
                                 "/api/auth/v1/password-reset/request",
                                 "/api/auth/v1/password-reset/confirm"
+                        ),
+                        // SRS webhooks use publish-token auth, not JWT
+                        ServerWebExchangeMatchers.pathMatchers(
+                                "/api/streams/v1/webhooks/**"
                         )
                 ))
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)

@@ -39,6 +39,10 @@ public class StreamSessionEntity implements Persistable<UUID> {
     @Column("stream_key_hash")
     private String streamKeyHash;
 
+    /** Plain SRS stream name (UUID) for URL construction. {@code NULL} when no key issued. */
+    @Column("srs_name")
+    private String srsName;
+
     @Column("broadcaster_subject")
     private String broadcasterSubject;
 

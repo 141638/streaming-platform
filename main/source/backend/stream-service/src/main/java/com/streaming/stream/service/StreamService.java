@@ -4,10 +4,10 @@ import com.streaming.common.crypto.HashUtils;
 import com.streaming.stream.api.dto.CategoryResponse;
 import com.streaming.stream.api.dto.CreateStreamRequest;
 import com.streaming.stream.api.dto.PublishKeyResponse;
-
 import com.streaming.stream.api.dto.StreamResponse;
 import com.streaming.stream.api.dto.StreamSummaryResponse;
 import com.streaming.stream.api.dto.UpdateStreamRequest;
+import com.streaming.stream.config.PublishTokenProperties;
 import com.streaming.stream.messaging.StreamEvent;
 import com.streaming.stream.messaging.StreamEventPublisher;
 import com.streaming.stream.persistence.entity.StreamSessionEntity;
@@ -22,7 +22,6 @@ import com.streaming.stream.security.StreamAuthorization;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.OptimisticLockingFailureException;
@@ -32,7 +31,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @Service
-@RequiredArgsConstructor
 public class StreamService {
 
     private static final Logger log = LoggerFactory.getLogger(StreamService.class);
@@ -41,12 +39,29 @@ public class StreamService {
     private final StreamCategoryRepository categoryRepository;
     private final StreamAuthorization authorization;
     private final StreamEventPublisher eventPublisher;
+    private final PublishTokenService publishTokenService;
+    private final PublishTokenProperties publishTokenProps;
+
+    public StreamService(StreamSessionRepository repository,
+                         StreamCategoryRepository categoryRepository,
+                         StreamAuthorization authorization,
+                         StreamEventPublisher eventPublisher,
+                         PublishTokenService publishTokenService,
+                         PublishTokenProperties publishTokenProps) {
+        this.repository = repository;
+        this.categoryRepository = categoryRepository;
+        this.authorization = authorization;
+        this.eventPublisher = eventPublisher;
+        this.publishTokenService = publishTokenService;
+        this.publishTokenProps = publishTokenProps;
+    }
 
     // ── Create ──────────────────────────────────────────────────────────────
 
     /**
      * Create a new stream. If {@code scheduledAt} is provided, the stream is
-     * created in {@code SCHEDULED} status; otherwise it starts as {@code DRAFT}.
+     * created in {@code SCHEDULED} status with no publish key. Otherwise it
+     * starts as {@code DRAFT} with a publish key (srsName + JWT token).
      */
     public Mono<StreamResponse> createStream(CreateStreamRequest request, Jwt jwt) {
         final String sub = jwt.getSubject();
@@ -61,6 +76,11 @@ public class StreamService {
                     if (request.scheduledAt() != null) {
                         entity.setStatus(StreamStatus.SCHEDULED);
                         entity.setScheduledAt(request.scheduledAt());
+                    } else {
+                        // DRAFT: generate srsName and store its hash
+                        String srsName = newSrsName();
+                        entity.setStreamKeyHash(HashUtils.sha256Hex(srsName));
+                        entity.setSrsName(srsName);
                     }
                     if (request.categoryId() != null) {
                         return categoryRepository.findById(request.categoryId())
@@ -201,6 +221,10 @@ public class StreamService {
 
     // ── Publish key ─────────────────────────────────────────────────────────
 
+    /**
+     * Issue a fresh publish key. DRAFT: full rotation (new srsName + JWT).
+     * LIVE: JWT-only rotation (same srsName, new JWT — protects HLS playback).
+     */
     public Mono<PublishKeyResponse> issuePublishKey(UUID streamId, Jwt jwt) {
         return repository.findById(streamId)
                 .switchIfEmpty(Mono.error(new StreamNotFoundException(streamId)))
@@ -209,23 +233,34 @@ public class StreamService {
                                 AuthResourceDomain.STREAM, AuthResourceKind.SESSION,
                                 AuthAction.ISSUE_KEY, entity.getBroadcasterSubject()))
                         .thenReturn(entity))
-                .map(entity -> {
-                    String rawKey = UUID.randomUUID().toString().replace("-", "");
-                    entity.setStreamKeyHash(HashUtils.sha256Hex(rawKey));
-                    entity.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
-                    return new PendingKey(entity, rawKey);
+                .flatMap(entity -> {
+                    if (entity.getStatus() != StreamStatus.DRAFT
+                            && entity.getStatus() != StreamStatus.LIVE) {
+                        return Mono.error(new IllegalStateException(
+                                "Publish key can only be issued for DRAFT or LIVE streams"));
+                    }
+
+                    OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+                    boolean isLive = entity.getStatus() == StreamStatus.LIVE;
+
+                    // LIVE: keep srsName stable so HLS playback isn't interrupted
+                    String srsName = isLive ? entity.getSrsName() : newSrsName();
+                    String token = publishTokenService.issueToken(
+                            streamId, srsName, entity.getBroadcasterSubject());
+
+                    entity.setSrsName(srsName);
+                    entity.setStreamKeyHash(HashUtils.sha256Hex(srsName));
+                    entity.setUpdatedAt(now);
+
+                    return repository.save(entity)
+                            .map(saved -> buildPublishKeyResponse(
+                                    saved, srsName, token, now));
                 })
-                .flatMap(pending -> repository.save(pending.entity)
-                        .map(saved -> new PendingKey(saved, pending.rawKey)))
-                .map(pending -> new PublishKeyResponse(
-                        pending.entity.getId(),
-                        "sk_" + pending.rawKey,
-                        "rtmp://localhost:1935/live/",
-                        OffsetDateTime.now(ZoneOffset.UTC).plusHours(24)
-                ))
-                .doOnSuccess(resp -> log.info("Publish key issued for stream: id={}", streamId));
+                .doOnSuccess(resp -> log.info(
+                        "Publish key issued for stream: id={}", streamId));
     }
 
+    /** View an existing publish key (token masked). */
     public Mono<PublishKeyResponse> getPublishKey(UUID streamId, Jwt jwt) {
         return repository.findById(streamId)
                 .switchIfEmpty(Mono.error(new StreamNotFoundException(streamId)))
@@ -236,12 +271,138 @@ public class StreamService {
                         .onErrorMap(StreamAuthorization.StreamAccessDeniedException.class,
                                 e -> new StreamNotFoundException(streamId))
                         .thenReturn(entity))
-                .map(entity -> new PublishKeyResponse(
-                        entity.getId(),
-                        "sk_****",
-                        "rtmp://localhost:1935/live/",
-                        null
-                ));
+                .map(entity -> {
+                    if (entity.getSrsName() == null) {
+                        throw new NoPublishKeyException(streamId);
+                    }
+                    return buildPublishKeyResponse(entity, entity.getSrsName(),
+                            "****", null);
+                });
+    }
+
+    // ── Go-live from SCHEDULED ──────────────────────────────────────────────
+
+    /**
+     * Activate a scheduled stream: SCHEDULED → DRAFT with a fresh publish key.
+     * This is the only way to move out of SCHEDULED status.
+     */
+    public Mono<PublishKeyResponse> goLiveFromSchedule(UUID streamId, Jwt jwt) {
+        return repository.findById(streamId)
+                .switchIfEmpty(Mono.error(new StreamNotFoundException(streamId)))
+                .flatMap(entity -> authorization
+                        .requireAccess(jwt, new RequiredAuthority(
+                                AuthResourceDomain.STREAM, AuthResourceKind.SESSION,
+                                AuthAction.LIFECYCLE, entity.getBroadcasterSubject()))
+                        .thenReturn(entity))
+                .flatMap(entity -> {
+                    if (entity.getStatus() != StreamStatus.SCHEDULED) {
+                        return Mono.error(new IllegalStateException(
+                                "Only SCHEDULED streams can go live. Current: "
+                                        + entity.getStatus().wireValue()));
+                    }
+
+                    OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+                    String srsName = newSrsName();
+                    String token = publishTokenService.issueToken(
+                            streamId, srsName, entity.getBroadcasterSubject());
+
+                    entity.setSrsName(srsName);
+                    entity.setStreamKeyHash(HashUtils.sha256Hex(srsName));
+                    entity.setStatus(StreamStatus.DRAFT);
+                    entity.setScheduledAt(null);
+                    entity.setUpdatedAt(now);
+
+                    return repository.save(entity)
+                            .map(saved -> buildPublishKeyResponse(
+                                    saved, srsName, token, now));
+                })
+                .doOnSuccess(resp -> log.info(
+                        "Stream activated from SCHEDULED: id={}", streamId));
+    }
+
+    // ── Webhook handlers (internal — no PBAC, auth via publish token) ───────
+
+    /**
+     * Handle an SRS {@code on_publish} webhook. If the stream is DRAFT,
+     * transitions it to LIVE. If already LIVE, allows the reconnection
+     * (Sol3: expiry is not checked for LIVE reconnects).
+     */
+    public Mono<Void> handlePublish(String srsName, String rawToken) {
+        String hash = HashUtils.sha256Hex(srsName);
+        return repository.findByStreamKeyHash(hash)
+                .switchIfEmpty(Mono.error(new InvalidPublishTokenException(
+                        "No stream found for srsName")))
+                .flatMap(entity -> {
+                    StreamStatus status = entity.getStatus();
+                    if (status == StreamStatus.ENDED
+                            || status == StreamStatus.CANCELLED) {
+                        return Mono.error(new InvalidPublishTokenException(
+                                "Stream is " + status.wireValue()));
+                    }
+
+                    return publishTokenService.validateForPublish(
+                                    rawToken, srsName, status)
+                            .then(Mono.defer(() -> {
+                                if (status == StreamStatus.DRAFT) {
+                                    return repository
+                                            .existsByBroadcasterSubjectAndStatus(
+                                                    entity.getBroadcasterSubject(),
+                                                    StreamStatus.LIVE)
+                                            .flatMap(hasLive -> {
+                                                if (Boolean.TRUE.equals(hasLive)) {
+                                                    return Mono.error(
+                                                            new StreamAlreadyLiveException(
+                                                                    entity.getBroadcasterSubject()));
+                                                }
+                                                entity.goLive();
+                                                return repository.save(entity)
+                                                        .doOnSuccess(saved -> {
+                                                            eventPublisher.publish(
+                                                                    StreamEvent.started(
+                                                                            saved.getId(),
+                                                                            saved.getBroadcasterSubject()))
+                                                                    .subscribe();
+                                                            log.info("Stream started via webhook: id={}",
+                                                                    saved.getId());
+                                                        });
+                                            });
+                                }
+                                // LIVE → reconnect, no state change
+                                log.info("Stream reconnect via webhook: id={}",
+                                        entity.getId());
+                                return Mono.<StreamSessionEntity>just(entity);
+                            }));
+                })
+                .then();
+    }
+
+    /** Handle an SRS {@code on_unpublish} webhook. Ends the stream if LIVE. */
+    public Mono<Void> handleUnpublish(String srsName) {
+        String hash = HashUtils.sha256Hex(srsName);
+        return repository.findByStreamKeyHash(hash)
+                .flatMap(entity -> {
+                    if (entity.getStatus() != StreamStatus.LIVE) {
+                        log.info("on_unpublish for non-LIVE stream: id={} status={}",
+                                entity.getId(), entity.getStatus().wireValue());
+                        return Mono.<StreamSessionEntity>just(entity);
+                    }
+                    entity.end();
+                    return repository.save(entity)
+                            .doOnSuccess(saved -> {
+                                eventPublisher.publish(
+                                        StreamEvent.ended(saved.getId(),
+                                                saved.getBroadcasterSubject()))
+                                        .subscribe();
+                                log.info("Stream ended via webhook: id={}",
+                                        saved.getId());
+                            });
+                })
+                .onErrorResume(e -> {
+                    log.warn("on_unpublish lookup failed (idempotent no-op): {}",
+                            e.getMessage());
+                    return Mono.empty();
+                })
+                .then();
     }
 
     // ── Categories ──────────────────────────────────────────────────────────
@@ -336,9 +497,27 @@ public class StreamService {
                         ex -> new StreamConflictException("Stream was modified by another operation. Reload and try again."));
     }
 
-    // ── Inner types ─────────────────────────────────────────────────────────
+    // ── Private helpers ─────────────────────────────────────────────────────
 
-    private record PendingKey(StreamSessionEntity entity, String rawKey) {}
+    /** Generate a new SRS stream name (UUID without dashes). */
+    private static String newSrsName() {
+        return UUID.randomUUID().toString().replace("-", "");
+    }
+
+    /** Build a PublishKeyResponse from entity state. */
+    private PublishKeyResponse buildPublishKeyResponse(
+            StreamSessionEntity entity, String srsName,
+            String token, OffsetDateTime now) {
+        String rtmpUrl = String.format("%s/live/%s?token=%s",
+                publishTokenProps.srsRtmpHost(), srsName, token);
+        String playUrl = String.format("%s/live/%s.m3u8",
+                publishTokenProps.srsHlsHost(), srsName);
+        OffsetDateTime expiresAt = now != null
+                ? now.plus(publishTokenProps.ttl())
+                : null;
+        return new PublishKeyResponse(
+                entity.getId(), srsName, rtmpUrl, playUrl, token, expiresAt);
+    }
 
     // ── Exceptions ──────────────────────────────────────────────────────────
 
@@ -356,6 +535,19 @@ public class StreamService {
 
     public static class StreamConflictException extends RuntimeException {
         public StreamConflictException(String message) {
+            super(message);
+        }
+    }
+
+    public static class NoPublishKeyException extends RuntimeException {
+        public NoPublishKeyException(UUID streamId) {
+            super("No publish key has been issued for stream: id=" + streamId);
+        }
+    }
+
+    /** Thrown when webhook publish token validation fails. */
+    public static class InvalidPublishTokenException extends RuntimeException {
+        public InvalidPublishTokenException(String message) {
             super(message);
         }
     }

@@ -49,3 +49,35 @@ For complex problems, use split role sub-agents:
 - Security expert
 - Consistency reviewer
 - Redundancy checker
+
+## Delegation Transparency
+
+**Purpose:** Make agent delegation visible and auditable so the user can optimize agent/skill effectiveness over time.
+
+### Before Delegation
+
+Every time a task is delegated to a named agent, print a one-line notice to the console:
+
+```
+🤖 Delegating to <agent-name>: <one-line summary of the task>
+```
+
+### After Completion
+
+When a delegated agent completes work that involved **modifying code or files**, print a summary report:
+
+```
+📋 Agent Report: <agent-name>
+   ✅ <file> — <what changed, 1 line>
+   ✅ <file> — <what changed, 1 line>
+   ❌ <file> — <issue encountered>   (if any)
+```
+
+Skip the report when the agent only performed read-only analysis (search, review, exploration) with no modifications. The report is for mutating work only.
+
+### Why
+
+Tracking delegation patterns reveals:
+- Which agents are most/least used — prune underused ones
+- Whether the right agent was picked for the task type — tune the trigger table
+- Whether an agent's output consistently needs manual cleanup — refine its prompt or retire it

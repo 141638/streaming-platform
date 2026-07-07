@@ -197,17 +197,18 @@ Watch for these architectural anti-patterns:
 Example architecture for an AI-powered SaaS platform:
 
 ### Current Architecture
-- **Frontend**: Next.js 15 (Vercel/Cloud Run)
-- **Backend**: FastAPI or Express (Cloud Run/Railway)
-- **Database**: PostgreSQL (Supabase)
-- **Cache**: Redis (Upstash/Railway)
+- **Frontend**: Angular 18
+- **Backend**: Java 21, Java Spring, Java Webflux
+- **Discovery**: Eureka
+- **Data plane**: SRS, OBS
+- **Database**: PostgreSQL
+- **Cache**: Redis
 - **AI**: Claude API with structured output
-- **Real-time**: Supabase subscriptions
+- **Queue**: Kafka kraft cluster
 
 ### Key Design Decisions
-1. **Hybrid Deployment**: Vercel (frontend) + Cloud Run (backend) for optimal performance
-2. **AI Integration**: Structured output with Pydantic/Zod for type safety
-3. **Real-time Updates**: Supabase subscriptions for live data
+1. **Hybrid Deployment**: npm (frontend) + gradle (backend) for optimal local build performance
+2. **Cloud Deployment**: docker compose + docker swarm, Nginx (frontend)
 4. **Immutable Patterns**: Spread operators for predictable state
 5. **Many Small Files**: High cohesion, low coupling
 

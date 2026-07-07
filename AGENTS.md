@@ -16,9 +16,9 @@ Optimized agent harness for the **Live Streaming Platform** POC. Tailored for Ja
 
 | Agent | Purpose | Model | When to Use |
 |-------|---------|-------|-------------|
-| planner | Implementation planning | opus | Complex features, refactoring — via `/plan` or `/implement --mode=full` |
-| architect | System design & scalability | opus | Architectural decisions, service boundaries |
-| doc-analyzer | Japanese BD processing | opus | Processing xlsx/md basic designs, generating detail designs |
+| planner | Implementation planning | opus | Complex features, refactoring — via `/blueprint` or `/implement --mode=full` |
+| architect | System design & scalability | opus | Architectural decisions, service boundaries, used when user ask about architecture decision in `/consul` or `/blueprint` or full flow in `/implement --mode=full` |
+| doc-analyzer | Japanese BD processing | opus | Processing xlsx/md basic designs, generating detail designs. For complex document, consult with `/consult` or `/architecture` |
 | code-reviewer | Code quality & maintainability | sonnet | Via `/review` |
 | security-reviewer | Vulnerability detection | sonnet | Auth/input/DB changes |
 | tdd-guide | Test-driven development | sonnet | Via `/implement --tdd` |
@@ -38,11 +38,11 @@ Optimized agent harness for the **Live Streaming Platform** POC. Tailored for Ja
 
 | Command | Purpose |
 |---------|---------|
-| `/plan` | Implementation plan — wait for confirm |
+| `/blueprint` | Sketch plan and implementation if approved — wait for confirm |
 | `/implement` | Flexible implementation (full/quick/step modes) |
 | `/review` | Code review (local or PR) |
 | `/perform` | Quick generation, no ceremony |
-| `/consult` | Debug partner, technical advisor |
+| `/consult` | Debug partner, technical advisor, architecture |
 | `/build-fix` | Fix build errors |
 | `/docs` | Look up library/API documentation |
 | `/learn` | Extract reusable patterns from session |
@@ -53,10 +53,10 @@ Optimized agent harness for the **Live Streaming Platform** POC. Tailored for Ja
 
 Not automatic — agents are invoked **on your explicit request** or via commands:
 
-- Complex feature → `/plan` first, then `/implement --mode=full`
+- Complex feature → `/blueprint` first, then `/implement --mode=full` if the plan is approved
 - Single task → `/implement` (auto-detects quick mode)
 - Generate/prototype → `/perform`
-- Debug/decide → `/consult`
+- Debug/decide/architecture → `/consult`
 - After writing code → `/review`
 - Build broken → `/build-fix`
 - Japanese BD received → `doc-analyzer` agent, then `/plan`

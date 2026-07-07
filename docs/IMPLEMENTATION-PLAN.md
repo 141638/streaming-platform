@@ -1,7 +1,7 @@
 # Implementation Plan
 
-**Last updated:** 2026-07-06
-**Current phase:** 3 — Real-time Chat / 6 — Production Hardening (partial)
+**Last updated:** 2026-07-08
+**Current phase:** 2 — Stream Lifecycle (2.4 complete) / 3 — Real-time Chat (partial)
 
 ## End Goal
 
@@ -103,7 +103,7 @@ Each phase below now includes an **infrastructure setup** item (`.0`) that must 
 
 ## Phase 2 — Stream Lifecycle ⚡
 
-**Status:** Active — PBAC (2.2 ✅), Kafka (2.0 ✅), state machine (2.3 ✅), categories/tags (2.3 ✅) complete. SRS integration (2.4) next.
+**Status:** Active — PBAC (2.2 ✅), Kafka (2.0 ✅), state machine (2.3 ✅), categories/tags (2.3 ✅), SRS integration + publish tokens (2.4 ✅) complete. Frontend dashboard (2.5) and Kafka testing (2.6) next.
 
 **Goal:** A streamer can create, configure, start, and end a stream. End-to-end: login → create stream → get publish URL → paste into OBS → OBS starts → SRS webhook validates → stream auto-goes-live → viewers watch via direct HLS.
 
@@ -189,73 +189,97 @@ Each phase below now includes an **infrastructure setup** item (`.0`) that must 
 - `StreamSessionEntity.java` — domain methods + `@Version`
 - `StreamService.java` — lifecycle methods, one-live check, dual-entry create
 - `StreamController.java` — lifecycle endpoints
-- `StreamServiceTest.java` — 42 tests
+- `StreamServiceTest.java` — 34 tests (8 schedule-related tests removed per 2.4a revision)
 
 **ADR:** [0001-stream-state-machine.md](adr/stream/0001-stream-state-machine.md) (Revised 2026-07-07)
 
-**Validate:** `./gradlew :stream-service:test` — 42/42 pass
+**Validate:** `./gradlew :stream-service:test` — 34/34 pass (before 2.4b additions)
 
 ---
 
-#### 2.4 SRS Webhook Integration & Publish Token Architecture
+#### 2.4 SRS Webhook Integration & Publish Token Architecture ✅
+
+**Status:** Complete (implemented 2026-07-08)
 
 **Why:** SRS must validate that a streamer is authorized to publish before accepting an RTMP connection. The stream service must auto-detect stream start/end via SRS webhooks and transition state accordingly.
 
-**Architecture (see [ADR-0004](adr/stream/0004-srs-webhook-publish-token.md)):**
+**Architecture (see [ADR-0004](adr/stream/0004-srs-webhook-publish-token.md), revised during implementation):**
 
 Three separate identifiers:
 - **Stream ID** (public, in REST URLs)
-- **SRS stream name** (semi-private UUID, in RTMP/HLS URLs; SHA-256 stored in `stream_key_hash`)
-- **Publish token** (JWT, in RTMP `?token=` query param; self-validating, short-lived)
+- **SRS stream name** (`srsName`, semi-private UUID stored as plaintext in `srs_name` column; SHA-256 stored in `stream_key_hash` for lookup)
+- **Publish token** (JWT, in RTMP `?token=` query param; self-validating, single 2h TTL)
 
 Flow:
 ```
-POST /streams → DRAFT + { publishUrl: "rtmp://srs/live/{srsName}?token={jwt}" }
+POST /streams → DRAFT + srsName + publish JWT (token issued once, stored nowhere server-side)
+Streamer calls GET /publish-key → receives rtmpUrl with ?token={jwt}
 Streamer pastes URL into OBS
-OBS → RTMP → SRS → on_publish webhook → stream service validates JWT → auto-goLive
+OBS → RTMP → SRS → on_publish webhook → gateway → stream service validates JWT → auto-goLive
 SRS → HLS → viewer browser (direct, no proxy)
 OBS stops → SRS → on_unpublish webhook → stream service → auto-end
 ```
 
-**What:**
+**Key design decisions (revised during implementation):**
+
+| Decision | Original ADR | Implemented | Rationale |
+|----------|-------------|-------------|-----------|
+| Token TTL | Dual: 2h (DRAFT) / 15m (LIVE) | **Single: 2h** | OBS only ever has one token (issued at DRAFT); no LIVE-specific token exists |
+| Expiry on reconnect | Always enforced | **Sol3: DRAFT=enforce, LIVE=skip** | Unbounded stream duration; exp only matters for DRAFT→LIVE authorization gate |
+| Key rotation (LIVE) | Rotate srsName + JWT | **JWT-only rotation, srsName stable** | Rotating srsName breaks HLS playback for all viewers |
+| Playback URL | In `StreamResponse` | **In `PublishKeyResponse` only** (Option B) | srsName not needed in list/detail responses; viewer discovery deferred to Phase 4 |
+| srsName storage | SHA-256 only (irreversible) | **Plaintext `srs_name` column + SHA-256 hash** | Needed for GET /publish-key URL reconstruction |
+| Webhook routing | Direct to stream-service | **Through gateway** | Gateway retry filter (3 retries with backoff) protects against transient failures |
+| Webhook shared secret | `X-Webhook-Secret` header | **Deferred to Phase 4** | SRS doesn't support custom HTTP headers; network isolation + JWT validation is sufficient for internal Docker network |
+
+**What was implemented:**
+
 - **2.4a — State machine revision:**
-  - Remove SCHEDULED transitions (already done in 2.3 revision)
-  - Add `POST /v1/streams/{id}/go-live` — SCHEDULED→DRAFT with fresh publish key
+  - Removed SCHEDULED transitions (`DRAFT→SCHEDULED`, `SCHEDULED→LIVE`, `SCHEDULED→CANCELLED`)
+  - SCHEDULED is creation-time-only terminal state
+  - Added `POST /v1/streams/{id}/go-live` — SCHEDULED→DRAFT with fresh publish key
   - SCHEDULED streams have no publish key until go-live
 - **2.4b — Publish token issuance:**
-  - Generate srsName (UUID) + publish JWT at DRAFT creation
-  - `GET /streams/{id}/publish-key` re-issues fresh srsName + JWT (key rotation)
-  - JWT TTL: 2h (DRAFT), 15m (LIVE)
-  - Publish token claims: `sub`, `streamId`, `srsName`, `exp`
+  - `PublishTokenService`: HS256 JWT with claims `sub`, `streamId`, `srsName`, `exp`(now+2h)
+  - srsName + token generated at DRAFT creation; SCHEDULED gets no key
+  - `GET /streams/{id}/publish-key` — view existing key (token masked); returns srsName, rtmpUrl, playUrl
+  - `POST /streams/{id}/publish-key` — rotate: DRAFT=full (new srsName+JWT), LIVE=JWT-only (same srsName)
+  - `PublishTokenProperties`: configurable TTL, SRS RTMP/HLS host URLs
 - **2.4c — Webhook endpoints:**
-  - `POST /v1/webhooks/srs/on_publish` — validate JWT + stream_key_hash → goLive → 200/403
-  - `POST /v1/webhooks/srs/on_unpublish` — end stream → 200
-  - Webhook auth: shared secret (`X-Webhook-Secret` header, internal Docker network)
-  - Security config: `/v1/webhooks/**` excluded from JWT auth
+  - `SrsWebhookController`: `POST /v1/webhooks/srs/on_publish`, `on_unpublish`
+  - `on_publish` Sol3 validation: verify JWT sig + srsName match; enforce exp for DRAFT, skip exp for LIVE
+  - `on_unpublish`: LIVE→ENDED; idempotent for non-LIVE states
+  - Gateway: webhook paths (`/api/streams/v1/webhooks/**`) added to public filter chain (no JWT required)
+  - Stream-service: `/v1/webhooks/**` permitted in SecurityConfig
 - **2.4d — Playback URL:**
-  - `StreamResponse.playUrl` — SRS HLS URL (`http://srs:8080/live/{srsName}.m3u8`)
-  - Direct browser→SRS connection; no proxy through stream service
+  - `PublishKeyResponse` includes `rtmpUrl` (with `?token=`), `playUrl` (`.m3u8`), `srsName`, raw `token`, `expiresAt`
+  - `GET /publish-key` shows URLs with masked token (`****`); `POST /publish-key` shows raw token once
 - **2.4e — Migration V5:**
-  - Reverse V3: `stream_key_hash` set NOT NULL (all DRAFT/LIVE streams have a key)
+  - Reverse V3: `stream_key_hash SET NOT NULL`
+  - Added `srs_name VARCHAR(36)` column for plain SRS stream name
+  - Backfill: legacy NULL hashes set to empty string
 
-**Files:**
-- `StreamStatus.java` (remove SCHEDULED transitions)
-- `StreamSessionEntity.java` (revise transition methods)
-- `StreamService.java` (goLiveFromSchedule, publish token issuance, webhook transition methods)
-- `StreamController.java` (go-live endpoint, webhook controller)
-- `SrsWebhookController.java` (new — on_publish, on_unpublish)
-- `PublishTokenService.java` (new — JWT issuance/validation)
-- `SrsWebhookProperties.java` (new — shared secret config)
-- `SecurityConfig.java` (permit webhook paths)
-- `V5__reverse_stream_key_hash_not_null.sql` (new)
-- `application.yml` (SRS config, webhook secret)
-- `main/docker/srs/conf/custom.conf` (http_hooks config)
-- `StreamServiceTest.java` (update for revised state machine)
-- `PublishTokenServiceTest.java` (new)
+**Files (15 changed):**
+- `StreamStatus.java`, `StreamSessionEntity.java` — state machine revision (2.4a)
+- `PublishTokenService.java` (new) — JWT issuance + Sol3 validation
+- `PublishTokenProperties.java` (new) — TTL + SRS host config
+- `SrsWebhookController.java` (new) — on_publish, on_unpublish
+- `SrsWebhookPayload.java` (new) — webhook body DTO with `extractToken()`
+- `StreamService.java` — goLiveFromSchedule, handlePublish, handleUnpublish, revised issuePublishKey/getPublishKey
+- `StreamController.java` — added POST /go-live endpoint
+- `PublishKeyResponse.java` — rewritten: srsName, rtmpUrl, playUrl, token, expiresAt
+- `StreamSessionRepository.java` — added `findByStreamKeyHash()`
+- `SecurityConfig.java` (stream-service) — permit `/v1/webhooks/**`
+- `SecurityConfig.java` (gateway-service) — webhook paths in public filter chain
+- `application.yml` — publish-token + SRS config
+- `V5__reverse_stream_key_hash_not_null.sql` (new) — NOT NULL + srs_name column
+- `PublishTokenServiceTest.java` (new) — 5 tests: issuance, Sol3 DRAFT/LIVE, sig/srsName validation
+- `StreamServiceTest.java` — +15 tests: goLiveFromSchedule, handlePublish, handleUnpublish
+- `ScheduleStreamRequest.java` — deleted (DRAFT→SCHEDULED transition removed)
 
-**Validate:** OBS publishes with valid token → accepted, stream auto-goes-live, STREAM_STARTED event fired. OBS publishes with invalid/expired token → rejected.
+**Validate:** `./gradlew :stream-service:test` — 54/54 pass. `./gradlew :stream-service:compileJava :gateway-service:compileJava` — BUILD SUCCESSFUL.
 
-**ADR:** [0004-srs-webhook-publish-token.md](adr/stream/0004-srs-webhook-publish-token.md)
+**ADR:** [0004-srs-webhook-publish-token.md](adr/stream/0004-srs-webhook-publish-token.md) (to be revised with Sol3 + single-TTL decisions)
 
 ---
 
@@ -335,11 +359,11 @@ OBS stops → SRS → on_unpublish webhook → stream service → auto-end
 - [x] 2.1 — Gateway path rewriting (not needed — base-path stripping handles routing)
 - [x] 2.2 — PBAC enforcement (ownership checks)
 - [x] 2.3 — Stream state machine + Kafka events
-- [ ] 2.4a — State machine revision (remove SCHEDULED transitions, add go-live)
-- [ ] 2.4b — Publish token issuance (JWT, srsName, TTL, re-issuance)
-- [ ] 2.4c — SRS webhook endpoints (on_publish, on_unpublish)
-- [ ] 2.4d — Playback URL in StreamResponse
-- [ ] 2.4e — Migration V5 (reverse stream_key_hash NOT NULL)
+- [x] 2.4a — State machine revision (remove SCHEDULED transitions, add go-live)
+- [x] 2.4b — Publish token issuance (single 2h TTL, Sol3 validation, key rotation)
+- [x] 2.4c — SRS webhook endpoints (Sol3 on_publish/on_unpublish, gateway routing)
+- [x] 2.4d — Playback URL in PublishKeyResponse (Option B)
+- [x] 2.4e — Migration V5 (reverse NOT NULL, add srs_name column)
 - [x] 2.5 — Frontend stream dashboard (partial: stream-create + channel pages exist)
 - [ ] 2.6 — Kafka integration testing
 - [ ] 2.7 — Schedule reminder batch (deferred — depends on notification + subscription)
@@ -352,7 +376,7 @@ OBS stops → SRS → on_unpublish webhook → stream service → auto-end
 | [0001](adr/stream/0001-stream-state-machine.md) | Stream state machine with entity domain methods, optimistic locking, one-live-stream rule (Revised 2026-07-07) |
 | [0002](adr/stream/0002-kafka-event-publishing.md) | Reactive Kafka publisher with at-most-once delivery, deferred DLQ/outbox concerns |
 | [0003](adr/stream/0003-categories-tags.md) | Managed `stream_category` lookup table + `TEXT[]` tags with GIN index |
-| [0004](adr/stream/0004-srs-webhook-publish-token.md) | SRS webhook integration with JWT publish token, srsName/SHA-256 lookup, auto-transition |
+| [0004](adr/stream/0004-srs-webhook-publish-token.md) | SRS webhook integration with JWT publish token, srsName/SHA-256 lookup, Sol3 contextual expiry (to be revised: single-TTL + Sol3 decisions)
 
 ---
 

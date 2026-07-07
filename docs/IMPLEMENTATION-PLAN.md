@@ -247,13 +247,21 @@ Each phase below now includes an **infrastructure setup** item (`.0`) that must 
 
 ### Phase 2 Checklist
 
-- [ ] 2.0 — Kafka connectivity verification + health checks
+- [x] 2.0 — Kafka connectivity verification + health checks
 - [x] 2.1 — Gateway path rewriting (not needed — base-path stripping handles routing)
 - [x] 2.2 — PBAC enforcement (ownership checks)
-- [ ] 2.3 — Stream state machine + Kafka events
+- [x] 2.3 — Stream state machine + Kafka events
 - [ ] 2.4 — SRS webhook (publish key validation)
 - [x] 2.5 — Frontend stream dashboard (partial: stream-create + channel pages exist; detail page with publish-key management still needed)
 - [ ] 2.6 — Kafka integration testing
+
+**New ADRs recorded for Phase 2.0/2.3 — see [docs/adr/stream/](adr/stream/):**
+
+| ADR | Decision |
+|-----|----------|
+| [0001](adr/stream/0001-stream-state-machine.md) | Stream state machine with entity domain methods, optimistic locking, one-live-stream rule |
+| [0002](adr/stream/0002-kafka-event-publishing.md) | Reactive Kafka publisher with at-most-once delivery, deferred DLQ/outbox concerns |
+| [0003](adr/stream/0003-categories-tags.md) | Managed `stream_category` lookup table + `TEXT[]` tags with GIN index |
 
 ---
 

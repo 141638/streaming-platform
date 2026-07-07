@@ -10,7 +10,8 @@
         [text]="errorMessage()"
       />
 
-      <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-column gap-3">
+      <form [formGroup]="form" class="flex flex-column gap-3">
+        <!-- Title -->
         <div class="flex flex-column gap-1">
           <label for="stream-create-title" class="text-sm font-semibold">
             Title <span class="text-color-error">*</span>
@@ -24,6 +25,7 @@
           />
         </div>
 
+        <!-- Description -->
         <div class="flex flex-column gap-1">
           <label for="stream-create-desc" class="text-sm font-semibold">
             Description
@@ -38,17 +40,21 @@
           ></textarea>
         </div>
 
+        <!-- Category + Max Viewers -->
         <div class="flex gap-3">
           <div class="flex flex-column gap-1 flex-1">
             <label for="stream-create-cat" class="text-sm font-semibold">
               Category
             </label>
-            <input
+            <p-select
               id="stream-create-cat"
-              pInputText
-              formControlName="category"
+              formControlName="categoryId"
               class="w-full"
-              autocomplete="off"
+              [options]="categories()"
+              optionLabel="name"
+              optionValue="id"
+              placeholder="Select a category"
+              [showClear]="true"
             />
           </div>
           <div class="flex flex-column gap-1" style="width: 140px">
@@ -64,6 +70,38 @@
           </div>
         </div>
 
+        <!-- Tags -->
+        <div class="flex flex-column gap-1">
+          <label for="stream-create-tags" class="text-sm font-semibold">
+            Tags
+          </label>
+          <p-chips
+            id="stream-create-tags"
+            formControlName="tags"
+            class="w-full"
+            placeholder="Add tags (e.g. ranked, speedrun)"
+            [allowDuplicate]="false"
+            [max]="10"
+          />
+        </div>
+
+        <!-- Scheduled Time -->
+        <div class="flex flex-column gap-1">
+          <label for="stream-create-schedule" class="text-sm font-semibold">
+            Scheduled Time <span class="text-sm text-color-secondary">(optional — for upcoming streams)</span>
+          </label>
+          <p-datePicker
+            id="stream-create-schedule"
+            formControlName="scheduledAt"
+            class="w-full"
+            [showTime]="true"
+            [minDate]="now"
+            placeholder="Pick a date and time"
+            [showClear]="true"
+          />
+        </div>
+
+        <!-- Actions -->
         <div class="flex justify-content-end gap-2 mt-2">
           <p-button
             label="Cancel"
@@ -72,10 +110,17 @@
             (onClick)="onCancel()"
           />
           <p-button
-            label="Create Stream"
-            type="submit"
+            label="Save as Draft"
+            severity="secondary"
+            (onClick)="onSaveDraft()"
             [loading]="loading()"
-            [disabled]="form.invalid || loading()"
+            [disabled]="form.get('title')?.invalid || loading()"
+          />
+          <p-button
+            label="Schedule Stream"
+            (onClick)="onSchedule()"
+            [loading]="loading()"
+            [disabled]="form.get('title')?.invalid || !scheduledAtIsFuture || loading()"
           />
         </div>
       </form>

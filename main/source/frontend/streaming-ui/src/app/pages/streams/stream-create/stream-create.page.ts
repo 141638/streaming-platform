@@ -8,10 +8,14 @@ import { Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ButtonModule } from 'primeng/button';
 import { CardModule } from 'primeng/card';
+import { ChipsModule } from 'primeng/chips';
+import { DatePickerModule } from 'primeng/datepicker';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
+import { SelectModule } from 'primeng/select';
 import { StreamService } from '../../../core/services/stream.service';
+import { CategoryResponseDto } from '../../../core/contracts/category-response.dto';
 
 @Component({
   selector: 'app-stream-create',
@@ -23,6 +27,9 @@ import { StreamService } from '../../../core/services/stream.service';
     InputTextModule,
     InputNumberModule,
     MessageModule,
+    SelectModule,
+    ChipsModule,
+    DatePickerModule,
   ],
   templateUrl: './stream-create.page.html',
   styleUrls: ['./stream-create.page.scss'],
@@ -33,18 +40,43 @@ export class StreamCreatePage {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
+  protected readonly now = new Date();
   protected readonly loading = signal(false);
   protected readonly errorMessage = signal<string | undefined>(undefined);
+  protected readonly categories = signal<CategoryResponseDto[]>([]);
 
   protected readonly form = this.fb.group({
     title: ['', [Validators.required, Validators.maxLength(256)]],
     description: ['', [Validators.maxLength(2048)]],
-    category: ['', [Validators.maxLength(64)]],
+    categoryId: [null as string | null],
+    tags: [[] as string[]],
     maxViewers: [null as number | null],
+    scheduledAt: [null as Date | null],
   });
 
-  protected onSubmit(): void {
-    if (this.form.invalid || this.loading()) {
+  constructor() {
+    this.streamService
+      .getCategories()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (data) => this.categories.set(data),
+        error: () =>
+          this.errorMessage.set('Failed to load categories. Please refresh.'),
+      });
+  }
+
+  protected get scheduledAtValue(): Date | null {
+    return this.form.get('scheduledAt')?.value ?? null;
+  }
+
+  protected get scheduledAtIsFuture(): boolean {
+    const val = this.scheduledAtValue;
+    if (!val) return false;
+    return new Date(val) > new Date();
+  }
+
+  protected onSaveDraft(): void {
+    if (this.form.get('title')?.invalid || this.loading()) {
       return;
     }
 
@@ -57,18 +89,59 @@ export class StreamCreatePage {
       .create({
         title: raw.title!,
         description: raw.description ?? '',
-        category: raw.category ?? '',
+        category: '',
+        categoryId: raw.categoryId ?? undefined,
+        tags: raw.tags?.length ? raw.tags : undefined,
         maxViewers: raw.maxViewers ?? 0,
       })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (res) => {
+        next: () => {
           this.loading.set(false);
           this.router.navigateByUrl('/home');
         },
         error: () => {
           this.loading.set(false);
           this.errorMessage.set('Failed to create stream. Please try again.');
+        },
+      });
+  }
+
+  protected onSchedule(): void {
+    const scheduledAt = this.scheduledAtValue;
+    if (
+      this.form.get('title')?.invalid ||
+      this.loading() ||
+      !scheduledAt ||
+      !this.scheduledAtIsFuture
+    ) {
+      return;
+    }
+
+    this.loading.set(true);
+    this.errorMessage.set(undefined);
+
+    const raw = this.form.getRawValue();
+
+    this.streamService
+      .create({
+        title: raw.title!,
+        description: raw.description ?? '',
+        category: '',
+        categoryId: raw.categoryId ?? undefined,
+        tags: raw.tags?.length ? raw.tags : undefined,
+        maxViewers: raw.maxViewers ?? 0,
+        scheduledAt: scheduledAt.toISOString(),
+      })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.loading.set(false);
+          this.router.navigateByUrl('/home');
+        },
+        error: () => {
+          this.loading.set(false);
+          this.errorMessage.set('Failed to schedule stream. Please try again.');
         },
       });
   }

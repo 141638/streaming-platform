@@ -54,8 +54,8 @@ public enum StreamStatus {
      */
     public Set<StreamStatus> allowedTransitions() {
         return switch (this) {
-            case DRAFT     -> Set.of(SCHEDULED, LIVE, CANCELLED);
-            case SCHEDULED -> Set.of(LIVE, CANCELLED);
+            case DRAFT     -> Set.of(LIVE, CANCELLED);
+            case SCHEDULED -> Set.of(); // terminal — only go-live action (dedicated service method) can move it to DRAFT
             case LIVE      -> Set.of(ENDED);
             case ENDED, CANCELLED -> Set.of();
         };

@@ -8,7 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.streaming.stream.api.dto.CreateStreamRequest;
-import com.streaming.stream.api.dto.ScheduleStreamRequest;
+
 import com.streaming.stream.api.dto.UpdateStreamRequest;
 import com.streaming.stream.messaging.StreamEventPublisher;
 import com.streaming.stream.persistence.entity.StreamSessionEntity;
@@ -376,34 +376,6 @@ class StreamServiceTest {
         }
     }
 
-    // ── scheduleStream ──────────────────────────────────────────────────────
-
-    @Nested
-    @DisplayName("scheduleStream")
-    class ScheduleStream {
-
-        @Test
-        @DisplayName("transitions DRAFT → SCHEDULED")
-        void transitionsDraftToScheduled() {
-            stubPublish();
-            Jwt j = jwt(OWNER_SUB);
-            StreamSessionEntity e = entity(STREAM_ID, OWNER_SUB, StreamStatus.DRAFT);
-            OffsetDateTime future = OffsetDateTime.now(ZoneOffset.UTC).plusDays(1);
-            ScheduleStreamRequest request = new ScheduleStreamRequest(future);
-            when(repository.findById(STREAM_ID)).thenReturn(Mono.just(e));
-            when(authorization.requireAccess(eq(j), eq(required(AuthAction.LIFECYCLE, OWNER_SUB))))
-                    .thenReturn(Mono.empty());
-            when(repository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
-
-            StepVerifier.create(service.scheduleStream(STREAM_ID, j, request))
-                    .assertNext(response -> {
-                        assertThat(response.status()).isEqualTo("scheduled");
-                        assertThat(response.scheduledAt()).isNotNull();
-                    })
-                    .verifyComplete();
-        }
-    }
-
     // ── deleteStream ────────────────────────────────────────────────────────
 
     @Nested
@@ -453,36 +425,12 @@ class StreamServiceTest {
         }
 
         @Test
-        @DisplayName("DRAFT → SCHEDULED succeeds")
-        void draftToScheduled() {
-            StreamSessionEntity e = entity(STREAM_ID, OWNER_SUB, StreamStatus.DRAFT);
-            e.schedule();
-            assertThat(e.getStatus()).isEqualTo(StreamStatus.SCHEDULED);
-        }
-
-        @Test
         @DisplayName("DRAFT → CANCELLED succeeds")
         void draftToCancelled() {
             StreamSessionEntity e = entity(STREAM_ID, OWNER_SUB, StreamStatus.DRAFT);
             e.cancel();
             assertThat(e.getStatus()).isEqualTo(StreamStatus.CANCELLED);
             assertThat(e.getEndedAt()).isNotNull();
-        }
-
-        @Test
-        @DisplayName("SCHEDULED → LIVE succeeds")
-        void scheduledToLive() {
-            StreamSessionEntity e = entity(STREAM_ID, OWNER_SUB, StreamStatus.SCHEDULED);
-            e.goLive();
-            assertThat(e.getStatus()).isEqualTo(StreamStatus.LIVE);
-        }
-
-        @Test
-        @DisplayName("SCHEDULED → CANCELLED succeeds")
-        void scheduledToCancelled() {
-            StreamSessionEntity e = entity(STREAM_ID, OWNER_SUB, StreamStatus.SCHEDULED);
-            e.cancel();
-            assertThat(e.getStatus()).isEqualTo(StreamStatus.CANCELLED);
         }
 
         @Test
@@ -535,7 +483,7 @@ class StreamServiceTest {
         void cancelledIsTerminal() {
             StreamSessionEntity e = entity(STREAM_ID, OWNER_SUB, StreamStatus.CANCELLED);
             try {
-                e.schedule();
+                e.goLive();
                 throw new AssertionError("Expected IllegalStateException");
             } catch (IllegalStateException ex) {
                 assertThat(ex.getMessage()).contains("Invalid transition");

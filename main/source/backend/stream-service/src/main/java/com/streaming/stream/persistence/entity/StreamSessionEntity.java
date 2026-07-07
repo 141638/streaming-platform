@@ -120,7 +120,7 @@ public class StreamSessionEntity implements Persistable<UUID> {
         this.updatedAt = now;
     }
 
-    /** DRAFT or SCHEDULED → LIVE. Sets {@code startedAt}. */
+    /** DRAFT → LIVE. Sets {@code startedAt}. SCHEDULED cannot transition directly to LIVE. */
     public void goLive() {
         transitionTo(StreamStatus.LIVE);
     }
@@ -130,13 +130,8 @@ public class StreamSessionEntity implements Persistable<UUID> {
         transitionTo(StreamStatus.ENDED);
     }
 
-    /** DRAFT or SCHEDULED → CANCELLED. Sets {@code endedAt}. */
+    /** DRAFT → CANCELLED. Sets {@code endedAt}. SCHEDULED cannot be cancelled directly. */
     public void cancel() {
         transitionTo(StreamStatus.CANCELLED);
-    }
-
-    /** DRAFT → SCHEDULED. Intended for scheduling a draft stream. */
-    public void schedule() {
-        transitionTo(StreamStatus.SCHEDULED);
     }
 }

@@ -4,13 +4,12 @@ import com.streaming.common.crypto.HashUtils;
 import com.streaming.stream.api.dto.CategoryResponse;
 import com.streaming.stream.api.dto.CreateStreamRequest;
 import com.streaming.stream.api.dto.PublishKeyResponse;
-import com.streaming.stream.api.dto.ScheduleStreamRequest;
+
 import com.streaming.stream.api.dto.StreamResponse;
 import com.streaming.stream.api.dto.StreamSummaryResponse;
 import com.streaming.stream.api.dto.UpdateStreamRequest;
 import com.streaming.stream.messaging.StreamEvent;
 import com.streaming.stream.messaging.StreamEventPublisher;
-import com.streaming.stream.persistence.entity.StreamCategoryEntity;
 import com.streaming.stream.persistence.entity.StreamSessionEntity;
 import com.streaming.stream.persistence.entity.StreamStatus;
 import com.streaming.stream.persistence.repository.StreamCategoryRepository;
@@ -60,7 +59,7 @@ public class StreamService {
                 .then(Mono.defer(() -> {
                     StreamSessionEntity entity = buildEntity(id, sub, request, now);
                     if (request.scheduledAt() != null) {
-                        entity.schedule();
+                        entity.setStatus(StreamStatus.SCHEDULED);
                         entity.setScheduledAt(request.scheduledAt());
                     }
                     if (request.categoryId() != null) {
@@ -176,30 +175,6 @@ public class StreamService {
         return lifecycleTransition(id, jwt, StreamSessionEntity::cancel,
                 entity -> StreamEvent.cancelled(entity.getId(), entity.getBroadcasterSubject()),
                 "cancelled");
-    }
-
-    /** Transition a stream to SCHEDULED. */
-    public Mono<StreamResponse> scheduleStream(UUID id, Jwt jwt, ScheduleStreamRequest request) {
-        return repository.findById(id)
-                .switchIfEmpty(Mono.error(new StreamNotFoundException(id)))
-                .flatMap(entity -> authorization
-                        .requireAccess(jwt, new RequiredAuthority(
-                                AuthResourceDomain.STREAM, AuthResourceKind.SESSION,
-                                AuthAction.LIFECYCLE, entity.getBroadcasterSubject()))
-                        .thenReturn(entity))
-                .flatMap(entity -> {
-                    entity.schedule();
-                    entity.setScheduledAt(request.scheduledAt());
-                    return repository.save(entity);
-                })
-                .doOnSuccess(saved -> {
-                    eventPublisher.publish(StreamEvent.scheduled(saved.getId(),
-                            saved.getBroadcasterSubject())).subscribe();
-                    log.info("Stream scheduled: id={}", saved.getId());
-                })
-                .map(StreamResponse::from)
-                .onErrorMap(OptimisticLockingFailureException.class,
-                        ex -> new StreamConflictException("Stream was modified by another operation. Reload and try again."));
     }
 
     // ── Delete (soft-delete via cancel) ─────────────────────────────────────

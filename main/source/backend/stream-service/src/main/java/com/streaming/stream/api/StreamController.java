@@ -4,7 +4,7 @@ import com.streaming.common.api.ApiMessage;
 import com.streaming.stream.api.dto.CategoryResponse;
 import com.streaming.stream.api.dto.CreateStreamRequest;
 import com.streaming.stream.api.dto.PublishKeyResponse;
-import com.streaming.stream.api.dto.ScheduleStreamRequest;
+
 import com.streaming.stream.api.dto.StreamResponse;
 import com.streaming.stream.api.dto.StreamSummaryResponse;
 import com.streaming.stream.api.dto.UpdateStreamRequest;
@@ -112,14 +112,6 @@ public class StreamController {
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID id) {
         return streamService.cancelStream(id, jwt).map(ResponseEntity::ok);
-    }
-
-    @PostMapping(path = "/streams/{id}/schedule", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<StreamResponse>> schedule(
-            @AuthenticationPrincipal Jwt jwt,
-            @PathVariable UUID id,
-            @Valid @RequestBody ScheduleStreamRequest body) {
-        return streamService.scheduleStream(id, jwt, body).map(ResponseEntity::ok);
     }
 
     // ── Publish Key ─────────────────────────────────────────────────────────

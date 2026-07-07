@@ -4,30 +4,24 @@ services:
     extends:
       file: compose-config/broker1.yml
       service: kafka-kraft-1
-    environment:
-      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka-kraft-1:9093,2@kafka-kraft-2:9093,3@kafka-kraft-3:9093
     volumes:
-      - broker_1_data:/bitnami/kafka
-  
+      - broker_1_data:/var/lib/kafka/data
+
   # broker 2
   kafka-kraft-2:
     extends:
       file: compose-config/broker2.yml
       service: kafka-kraft-2
-    environment:
-      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka-kraft-1:9093,2@kafka-kraft-2:9093,3@kafka-kraft-3:9093
     volumes:
-      - broker_2_data:/bitnami/kafka
-  
+      - broker_2_data:/var/lib/kafka/data
+
   # broker 3
   kafka-kraft-3:
     extends:
       file: compose-config/broker3.yml
       service: kafka-kraft-3
-    environment:
-      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka-kraft-1:9093,2@kafka-kraft-2:9093,3@kafka-kraft-3:9093
     volumes:
-      - broker_3_data:/bitnami/kafka
+      - broker_3_data:/var/lib/kafka/data
 
   # kafka ui
   kafka-ui:

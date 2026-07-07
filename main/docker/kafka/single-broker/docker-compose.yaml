@@ -1,13 +1,33 @@
 services:
-  # broker 1
   kafka-kraft-1:
-    extends:
-      file: ../compose-config/broker1.yml
-      service: kafka-kraft-1
+    image: apache/kafka:4.1.2
+    container_name: kafka-kraft-1
+    hostname: kafka-kraft-1
+    ports:
+      - "9094:9092"
     environment:
-      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka-kraft-1:9093
+      # KRaft settings
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-kraft-1:9093
+      CLUSTER_ID: 'abcdefgh12345678'
+
+      # Listeners
+      KAFKA_INTER_BROKER_LISTENER_NAME: BROKER
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: BROKER://kafka-kraft-1:9099,CONTROLLER://kafka-kraft-1:9093,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: BROKER://kafka-kraft-1:9099,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,BROKER:PLAINTEXT,EXTERNAL:PLAINTEXT
+
+      # Topic/offset config (single-broker: replication factor = 1)
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: true
     volumes:
-      - broker_1_data:/bitnami/kafka
+      - broker_1_data:/var/lib/kafka/data
+
   # kafka ui
   kafka-ui:
     image: provectuslabs/kafka-ui
@@ -22,9 +42,11 @@ services:
       - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka-kraft-1:9099
     networks:
       - hieuht1_kafka_network
+
 networks:
   hieuht1_kafka_network:
     driver: bridge
+
 volumes:
   broker_1_data:
     driver: local

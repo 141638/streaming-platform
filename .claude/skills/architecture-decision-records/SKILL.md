@@ -161,6 +161,50 @@ proposed → accepted → [deprecated | superseded by ADR-NNNN]
 - **deprecated**: decision is no longer relevant (e.g., feature removed)
 - **superseded**: a newer ADR replaces this one (always link the replacement)
 
+### Revising ADRs During Implementation
+
+When coding reveals that an accepted ADR has a gap, an unreachable design,
+or a decision that must change:
+
+1. **Don't silently diverge** — code that contradicts the ADR without
+   updating it creates confusion for future readers.
+
+2. **Discuss first** — use `/consult` to analyze the gap, evaluate
+   alternatives, and reach consensus before rewriting the ADR.
+
+3. **Add a "Revision Notes" subsection** at the top of the ADR (after
+   Context, before Decision sections). Format:
+   ```markdown
+   ### Revision Notes (YYYY-MM-DD)
+
+   During implementation, [N] design gaps were discovered:
+   1. **[Gap summary]** — [what was wrong and why]
+   2. ...
+
+   These drove [the new approach] documented below.
+   ```
+
+4. **Update the status line**: `**Status:** Accepted (Revised YYYY-MM-DD)`
+
+5. **Expand the Alternatives table** — add entries for approaches
+   that were considered and rejected *during implementation*, not just
+   during initial design. Mark them as **"Rejected during implementation"**
+   to distinguish them from upfront alternatives.
+
+6. **Update the implementation plan** — the corresponding work-item
+   section in `docs/IMPLEMENTATION-PLAN.md` should reflect what was
+   actually built, not what was originally planned.
+
+7. **Reference the new code** — update the References section with
+   the concrete files and methods that implement the revised decision.
+
+**Example:** ADR-0004 originally specified dual TTL (2h DRAFT / 15m LIVE).
+Implementation revealed OBS only ever receives one token — a LIVE-specific
+TTL never reaches it. After `/consult`, Sol3 contextual expiry was adopted.
+The ADR was revised with a "Revision Notes (2026-07-08)" subsection,
+dual-TTL and Sol2 were added to Alternatives as rejected, and the
+implementation plan section 2.4 was rewritten to match.
+
 ## Categories of Decisions Worth Recording
 
 | Category | Examples |

@@ -71,7 +71,7 @@ Every phase that depends on a Docker-based service follows this pattern:
 | 1.8 | Route guards (auth + guest) with `CanMatch` | `auth.guard.ts`, `guest.guard.ts` |
 | 1.9 | App shell with toolbar and router outlet | `AppShellComponent`, `HomePage` (placeholder) |
 | 1.10 | Eureka discovery, gateway routing to all services | `discovery-service`, gateway `application.yml` routes |
-| 1.11 | Docker Compose infrastructure (PostgreSQL, Redis, Kafka, SRS) | ⚠️ **Partial** — Kafka and Redis have compose files; PostgreSQL, SRS, and discovery are env-file-only (see [Infrastructure Status](#infrastructure-status)) |
+| 1.11 | Docker Compose infrastructure (PostgreSQL, Redis, Kafka, SRS, Discovery) | ⚠️ **Partial** — Kafka, Redis, and Discovery have compose files; PostgreSQL and SRS are env-file-only (see [Infrastructure Status](#infrastructure-status)) |
 
 ### Reference Docs
 
@@ -87,7 +87,7 @@ Every phase that depends on a Docker-based service follows this pattern:
 
 ## Infrastructure Status
 
-As of 2026-07-05, the root `compose.yaml` (Phase 1.11) has **not been created**. The following third-party services are used across phases:
+As of 2026-07-08, the root `compose.yaml` (Phase 1.11) has **not been created**. The following third-party services are used across phases:
 
 | Service | Phase | Compose Defined? | Env File? | Health Check? | Volume? |
 |---------|-------|------------------|-----------|---------------|---------|
@@ -95,7 +95,7 @@ As of 2026-07-05, the root `compose.yaml` (Phase 1.11) has **not been created**.
 | Kafka | 2–5 | ✅ `main/docker/kafka/` | ✅ `main/env/kafka.env` | ❌ | ✅ (broker data) |
 | Redis | 3 | ✅ `main/docker/redis/` | ✅ `main/env/redis.env` | ✅ `redis-cli ping` | ❌ (disposable per ADR-0002) |
 | SRS | 4 | ❌ | ❌ (in `spring.env.template`) | ❌ | ❌ |
-| Discovery (Eureka) | 1–6 | ❌ (Dockerfile only) | ✅ `main/env/discovery.env` | ❌ | ❌ |
+| Discovery (Eureka) | 1–6 | ✅ `main/docker/discovery/` | ✅ `main/env/discovery.env` | ✅ `curl /actuator/health` | ❌ |
 
 Each phase below now includes an **infrastructure setup** item (`.0`) that must be completed before the phase is considered done. These items collectively drive the creation of the root `compose.yaml`.
 

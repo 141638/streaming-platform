@@ -1,0 +1,29 @@
+services:
+  discovery:
+    build:
+      context: ../../source/backend
+      dockerfile: ../../docker/discovery/Dockerfile
+    image: streaming-discovery:latest
+    container_name: streaming-discovery
+    restart: unless-stopped
+    ports:
+      - "${DISCOVERY_PUBLISH_PORT:-8761}:8761"
+    env_file:
+      - ../../env/discovery.env
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8761/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - streaming_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  streaming_network:
+    driver: bridge

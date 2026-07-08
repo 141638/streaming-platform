@@ -21,9 +21,9 @@ Streamer signs in → creates stream → gets publish key → OBS publishes to S
 ## Phase Overview
 
 ```
-Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 ──► Phase 6
-(Auth)      (Stream)    (Chat)      (Viewer)    (Notify)    (Harden)
-  ✅          ⚡           ⚡           ○           ○           ⚡
+Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 ──► Phase 6 ──► Phase 7
+(Auth)      (Stream)    (Chat)      (Viewer)    (Notify)    (Harden)    (AI/LLM)
+  ✅          ⚡           ⚡           ○           ○           ⚡           ○
 ```
 
 | Phase | Status | Goal | Third-Party Services |
@@ -34,6 +34,7 @@ Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 
 | [4 — Viewer Experience](#phase-4--viewer-experience) | ○ Planned | Stream discovery, HLS player, embedded chat, viewer presence | **SRS** |
 | [5 — Notifications](#phase-5--notifications) | ○ Planned | Email notifications, subscription management, Kafka-driven dispatch | Kafka, SMTP |
 | [6 — Production Hardening](#phase-6--production-hardening) | ⚡ In Progress | Idempotency, shared pbac-common, rate limiting, WebSocket, observability. Redis infrastructure hardened, structured logging done, refresh tokens migrated to Redis. | — |
+| [7 — AI / LLM Layer](#phase-7--ai--llm-layer-insight-service-) | ○ Planned (final) | `insight-service`: LLM summaries, moderation, semantic search, RAG — built in a 4-rung capability ladder. **Scaffolding only so far** (ADRs + sketch). | LLM provider, **pgvector** |
 
 ---
 
@@ -774,14 +775,71 @@ V2__add_room_status.sql                   ← new: status + archived_at on chat.
 
 ---
 
-## Future (Phase 7+)
+## Phase 7 — AI / LLM Layer (`insight-service`) ○
+
+**Status:** Planned — final phase. **Scaffolding only exists today** (ADRs + design
+sketch); no code, no Gradle module, no build impact. This phase is intentionally
+deferred so it doesn't add complexity to the core streaming phases, while the design
+decisions are captured now to make the eventual build fast and consistent.
+
+**Goal:** Add LLM-powered capabilities — chat/stream summarization, chat moderation,
+semantic search, and retrieval-augmented Q&A ("ask this stream") — as a new,
+isolated control-plane service.
+
+**Guiding principle: a 4-rung capability ladder, delivered in order.** RAG is the
+*destination* (rung 4), not the starting point. Each rung ships one working feature and
+teaches one new concept. See [ADR-0004](adr/insight/0004-capability-ladder.md).
+
+### Design Decisions (all **Proposed** — see [docs/adr/insight/](adr/insight/))
+
+| ADR | Decision |
+|-----|----------|
+| [0001](adr/insight/0001-insight-service-architecture.md) | New standalone `insight-service`, layered-reactive + hexagonal ports at the two swappable edges (LLM provider, vector store) |
+| [0002](adr/insight/0002-llm-provider-port.md) | LLM provider behind a vendor-neutral `LlmPort`; timeout/retry/fallback/cost wrap the port in the application layer |
+| [0003](adr/insight/0003-pgvector-over-dedicated-vector-db.md) | `pgvector` on the existing PostgreSQL for vectors — no new datastore; swap to a dedicated vector DB only on a measured trigger |
+| [0004](adr/insight/0004-capability-ladder.md) | Incremental ladder: plain call → classify → embed → RAG (**read this first**) |
+
+> Full module/data-flow sketch: [INSIGHT-SERVICE-SKETCH.md](INSIGHT-SERVICE-SKETCH.md)
+> (illustrative pseudocode, not compilable).
+
+### Work Items (rungs)
+
+| Rung | Item | New concept | Depends on |
+|------|------|-------------|-----------|
+| 7.0 | **Infrastructure** — `insight-service` Gradle module, Eureka + gateway route, `pgvector`-enabled Postgres image (rung 3+), `insight` schema | Five-step service lifecycle | — |
+| 7.1 | **Rung 1 — Plain LLM call**: "catch me up" chat summary + auto title/tags. Token streaming (`Flux<String>` → SSE), structured JSON output, timeout/retry/fallback, cost accounting | LLM as unreliable dependency | 3.x (chat), `LlmPort` |
+| 7.2 | **Rung 2 — Classification**: chat moderation as a Kafka consumer, off the hot path, batched, best-effort | Async LLM in event pipeline | 7.1, chat events |
+| 7.3 | **Rung 3 — Embeddings + retrieval** (no generation): semantic VOD search via `EmbeddingPort` + `VectorStorePort` (pgvector); measurable recall | Embeddings, chunking, similarity search | 7.0 (pgvector), **ASR transcripts*** |
+| 7.4 | **Rung 4 — Full RAG**: "ask this stream" — retrieval + grounded generation with timestamp citations | Grounded generation on top of retrieval | 7.3 |
+
+> **\*ASR / transcript pipeline** (media-plane-owned) is a prerequisite for rungs 3–4
+> and is tracked outside this ladder. Rungs 1–2 have no such dependency and can ship first.
+
+### Deliberately deferred to Phase-7 start (not decided now)
+
+- Which LLM provider / model (hosted vs. local; per-rung choice) → follow-up ADR.
+- Embedding model + vector dimension → decided with the pgvector schema at rung 3.
+- Cost ceilings and per-feature rate limits → set when the first billed feature ships.
+
+### Phase 7 Checklist
+
+- [ ] 7.0 — Infrastructure: module, discovery/gateway wiring, pgvector image, `insight` schema
+- [ ] 7.1 — Rung 1: plain LLM call (summary + title/tags, streaming, fallback)
+- [ ] 7.2 — Rung 2: classification (moderation via Kafka)
+- [ ] 7.3 — Rung 3: embeddings + semantic search (pgvector)
+- [ ] 7.4 — Rung 4: full RAG ("ask this stream")
+
+---
+
+## Future (Phase 8+)
 
 Not planned yet — candidates:
 
 | Feature | Notes |
 |---------|-------|
-| VOD / Archives | Record streams, playback on demand |
+| VOD / Archives | Record streams, playback on demand (also a prerequisite for AI rungs 3–4 transcripts) |
 | Transcoding (FFmpeg) | Adaptive bitrate via SRS/FFmpeg pipeline |
+| ASR / transcription pipeline | Speech-to-text on recordings — feeds Phase 7 rungs 3–4 |
 | Monetization | Subscriptions, tips, ads |
 | Moderation dashboard | Admin UI for chat moderation, stream takedowns |
 | Mobile app | Ionic/Capacitor or native, reusing existing API |
@@ -801,6 +859,8 @@ Not planned yet — candidates:
                     │  Redis ─────── (3,6.3)    │
                     │  SRS ───────── (4)        │
                     │  SMTP ──────── (5)        │
+                    │  LLM provider  (7)        │
+                    │  pgvector ──── (7.3+)     │
                     └──────┬───────────────────┘
                            │
 Phase 1 (DONE) ───────────┘
@@ -837,6 +897,13 @@ Phase 5
 │
 Phase 6
 │  6.1-6.6 Hardening                ◄── can run in parallel with earlier phases
+│
+Phase 7 (final — scaffolding only today)
+│  7.0 insight-service infra + pgvector image
+│  7.1 Rung 1 plain LLM call        ◄── needs chat (3.x)
+│  7.2 Rung 2 classification        ◄── needs chat events
+│  7.3 Rung 3 embeddings + search   ◄── needs pgvector (7.0) + ASR transcripts (Phase 8)
+│  7.4 Rung 4 full RAG              ◄── needs 7.3
 ```
 
 ---
@@ -890,3 +957,5 @@ Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`
 - [RXJS-SINGLE-FLIGHT-PATTERN.md](RXJS-SINGLE-FLIGHT-PATTERN.md) — Concurrent dedup pattern
 - [AUTH-INTERCEPTOR-PATTERN.md](AUTH-INTERCEPTOR-PATTERN.md) — Frontend 401 handling
 - [IDEMPOTENCY-PATTERN.md](IDEMPOTENCY-PATTERN.md) — Idempotency key design
+- [INSIGHT-SERVICE-SKETCH.md](INSIGHT-SERVICE-SKETCH.md) — Phase 7 AI/LLM layer design sketch (deferred)
+- [docs/adr/insight/](adr/insight/) — AI/LLM layer ADRs (all Proposed)

@@ -3,12 +3,9 @@
     <div class="flex flex-column gap-3">
       <h2 class="mt-0 mb-2 text-xl font-semibold">Create Stream</h2>
 
-      <p-message
-        *ngIf="errorMessage()"
-        severity="error"
-        styleClass="w-full"
-        [text]="errorMessage()"
-      />
+      @if(errorMessage()){
+      <p-message severity="error" styleClass="w-full" [text]="errorMessage()" />
+      }
 
       <form [formGroup]="form" class="flex flex-column gap-3">
         <!-- Title -->
@@ -88,7 +85,10 @@
         <!-- Scheduled Time -->
         <div class="flex flex-column gap-1">
           <label for="stream-create-schedule" class="text-sm font-semibold">
-            Scheduled Time <span class="text-sm text-color-secondary">(optional — for upcoming streams)</span>
+            Scheduled Time
+            <span class="text-sm text-color-secondary"
+              >(optional — for upcoming streams)</span
+            >
           </label>
           <p-datePicker
             id="stream-create-schedule"

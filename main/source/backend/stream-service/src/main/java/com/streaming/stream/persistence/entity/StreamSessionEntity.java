@@ -79,6 +79,14 @@ public class StreamSessionEntity implements Persistable<UUID> {
     @Column("ended_at")
     private OffsetDateTime endedAt;
 
+    /**
+     * URL of the stream thumbnail; {@code null} until an SRS snapshot is
+     * generated (Phase 2.9). Client-read-only in Phase 2.5. See
+     * {@code docs/adr/stream/0005-stream-thumbnails.md}.
+     */
+    @Column("thumbnail_url")
+    private String thumbnailUrl;
+
     @Version
     @Column("version")
     private Long version;

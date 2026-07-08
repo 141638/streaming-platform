@@ -284,26 +284,43 @@ OBS stops → SRS → on_unpublish webhook → stream service → auto-end
 
 ---
 
-#### 2.5 Frontend: Stream Dashboard
+#### 2.5 Frontend: Stream Dashboard ✅
+
+**Status:** Done (implemented 2026-07-08)
 
 **Why:** Streamers need a UI to manage their streams. Currently only a placeholder home page exists.
 
-**What:**
-- `StreamService` (frontend) — HTTP client for stream API endpoints
-- `StreamListComponent` — lists user's streams with status badges (draft/scheduled/live/ended)
-- `StreamCreateComponent` — form: title, description, category, max viewers
-- `StreamDetailComponent` — stream info, publish key management (generate, copy, show RTMP URL), start/end controls
-- `StreamDashboardPage` — container with tab navigation (My Streams / Create)
-- Lazy-loaded route under `/dashboard/streams`
+**What was implemented:**
+- `StreamService` (frontend) — repaired: removed dead `scheduleStream()` (backend `/schedule` removed in 2.4a); added `goLive()`, `getPublishKey()`, `issuePublishKey()`; added `PublishKeyResponseDto`
+- `StreamStatusBadgeComponent` (molecule) — reusable `p-tag` badge, `OnPush`, `computed` severity per status (DRAFT/SCHEDULED/LIVE/ENDED/CANCELLED)
+- `StreamListComponent` — real card grid with status badges + thumbnail (placeholder while null); rows deep-link to `/channel/:id`. Replaced the raw-JSON channel dump
+- `StreamDashboardPage` — `p-tabs` (PrimeNG 19) container: "My Streams" (list) + "Create" (existing `StreamCreatePage`)
+- `StreamDetailPage` — stream info, thumbnail, lifecycle controls (start/go-live/end/cancel gated by status), publish-key management (generate/rotate, copy RTMP, reveal/mask token). Route `/channel/:id` via `withComponentInputBinding()`
+- Thumbnail display wired throughout with `img/stream-placeholder.svg` fallback
+- Routing: `/dashboard/streams`, `/channel/:id`, `/channel` → redirect; shell "Channel"/"Go Live" menu retargeted to dashboard; old `channel` page deleted
 
-**Files (new):**
-- `frontend/streaming-ui/src/app/core/services/stream.service.ts`
-- `frontend/streaming-ui/src/app/features/streams/stream-list/`
-- `frontend/streaming-ui/src/app/features/streams/stream-create/`
-- `frontend/streaming-ui/src/app/features/streams/stream-detail/`
-- `frontend/streaming-ui/src/app/features/streams/stream-dashboard-page/`
+**Deviations from original plan:**
+- Files live under `pages/streams/` (existing convention), not `features/streams/`
+- Thumbnail field + display added (see 2.5 thumbnail note below and [2.9](#29--srs-snapshot-thumbnails))
 
-**Validate:** `ng build` + manual flow: login → navigate to dashboard → create stream → view stream → generate publish key
+**Thumbnail (field + display only; capture deferred to 2.9):**
+- Backend: migration `V6__add_thumbnail_url.sql` (nullable `thumbnail_url VARCHAR(512)`), entity field, `thumbnailUrl` on `StreamResponse` + `StreamSummaryResponse`
+- Field is **client-read-only** — create/update requests do not accept it; stays NULL until an SRS snapshot is generated
+- Frontend renders a placeholder image while NULL — so every card shows the placeholder until 2.9 + Phase 4 SRS land
+- Decision recorded in [ADR-0005](adr/stream/0005-stream-thumbnails.md); custom-upload via MinIO deferred to planned ADR-0006
+
+**Files:**
+- `frontend/streaming-ui/src/app/core/services/stream.service.ts` (repaired)
+- `frontend/streaming-ui/src/app/core/contracts/publish-key-response.dto.ts` (new)
+- `frontend/streaming-ui/src/app/core/contracts/schedule-stream-request.dto.ts` (deleted — dead)
+- `frontend/streaming-ui/src/app/shared/molecules/stream-status-badge/`
+- `frontend/streaming-ui/src/app/pages/streams/stream-list/`
+- `frontend/streaming-ui/src/app/pages/streams/stream-dashboard/`
+- `frontend/streaming-ui/src/app/pages/streams/stream-detail/`
+- `frontend/streaming-ui/public/img/stream-placeholder.svg` (new)
+- `stream-service`: `V6__add_thumbnail_url.sql`, `StreamSessionEntity.java`, `StreamResponse.java`, `StreamSummaryResponse.java`
+
+**Validate:** `ng build` + manual flow: login → dashboard → create stream → open detail → generate publish key → start
 
 ---
 
@@ -369,6 +386,7 @@ OBS stops → SRS → on_unpublish webhook → stream service → auto-end
 - [ ] 2.6 — Kafka integration testing
 - [ ] 2.7 — Schedule reminder batch (deferred — depends on notification + subscription)
 - [ ] 2.8 — Stream templates (deferred — separate ADR needed)
+- [ ] 2.9 — SRS snapshot thumbnails (deferred — depends on Phase 4.0 SRS)
 
 **Architecture Decisions — see [docs/adr/stream/](adr/stream/):**
 
@@ -377,7 +395,28 @@ OBS stops → SRS → on_unpublish webhook → stream service → auto-end
 | [0001](adr/stream/0001-stream-state-machine.md) | Stream state machine with entity domain methods, optimistic locking, one-live-stream rule (Revised 2026-07-07) |
 | [0002](adr/stream/0002-kafka-event-publishing.md) | Reactive Kafka publisher with at-most-once delivery, deferred DLQ/outbox concerns |
 | [0003](adr/stream/0003-categories-tags.md) | Managed `stream_category` lookup table + `TEXT[]` tags with GIN index |
-| [0004](adr/stream/0004-srs-webhook-publish-token.md) | SRS webhook integration with JWT publish token, srsName/SHA-256 lookup, Sol3 contextual expiry (to be revised: single-TTL + Sol3 decisions)
+| [0004](adr/stream/0004-srs-webhook-publish-token.md) | SRS webhook integration with JWT publish token, srsName/SHA-256 lookup, Sol3 contextual expiry (to be revised: single-TTL + Sol3 decisions) |
+| [0005](adr/stream/0005-stream-thumbnails.md) | Stream thumbnails via SRS auto-snapshot; field+display in 2.5, capture in 2.9; custom-upload via MinIO deferred (Proposed) |
+
+#### 2.9 — SRS Snapshot Thumbnails
+
+**Status:** Deferred — depends on Phase 4.0 (SRS Docker service must exist and run).
+
+**Why:** Phase 2.5 added the `thumbnail_url` field and UI display, but nothing populates
+it — every card shows the placeholder. This item generates the actual thumbnail from the
+live feed.
+
+**What:**
+- Add snapshot capability to SRS config ([custom.conf](../main/docker/srs/conf/custom.conf)) — SRS `exec`/ffmpeg frame grab, or SRS snapshot hook
+- On snapshot generated → stream-service persists `thumbnail_url` pointing at the SRS-served image path (served from the media tier like HLS, not proxied through Spring)
+- Decide refresh cadence: once-on-live vs periodic (record in ADR-0005 revision)
+- Verify ffmpeg is present in the SRS image tag
+
+**Depends on:** Phase 4.0 (SRS Docker service)
+
+**ADR:** [0005](adr/stream/0005-stream-thumbnails.md)
+
+**Validate:** stream goes LIVE → snapshot generated → `thumbnail_url` populated → dashboard card shows real thumbnail instead of placeholder
 
 ---
 
@@ -838,6 +877,7 @@ Not planned yet — candidates:
 | Feature | Notes |
 |---------|-------|
 | VOD / Archives | Record streams, playback on demand (also a prerequisite for AI rungs 3–4 transcripts) |
+| MinIO object storage | S3-compatible blob store for custom stream cover-art upload (ADR-0006, planned) and future VOD assets |
 | Transcoding (FFmpeg) | Adaptive bitrate via SRS/FFmpeg pipeline |
 | ASR / transcription pipeline | Speech-to-text on recordings — feeds Phase 7 rungs 3–4 |
 | Monetization | Subscriptions, tips, ads |

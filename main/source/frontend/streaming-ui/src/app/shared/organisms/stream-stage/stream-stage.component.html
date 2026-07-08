@@ -1,0 +1,11 @@
+<div class="stream-stage flex flex-column lg:flex-row gap-3 w-full h-full">
+  <!-- Player takes the remaining width -->
+  <div class="stream-stage-player flex-auto">
+    <app-stream-player [stream]="stream()" [playUrl]="playUrl()" />
+  </div>
+
+  <!-- Chat is a fixed-width column beside the player -->
+  <div class="stream-stage-chat flex-none">
+    <app-stream-chat-shell [live]="isLive()" />
+  </div>
+</div>

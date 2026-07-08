@@ -3,7 +3,7 @@ import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { CategoryResponseDto } from '../contracts/category-response.dto';
 import { CreateStreamRequestDto } from '../contracts/create-stream-request.dto';
-import { ScheduleStreamRequestDto } from '../contracts/schedule-stream-request.dto';
+import { PublishKeyResponseDto } from '../contracts/publish-key-response.dto';
 import { StreamResponseDto } from '../contracts/stream-response.dto';
 import { StreamSummaryResponseDto } from '../contracts/stream-summary-response.dto';
 
@@ -62,13 +62,28 @@ export class StreamService {
     );
   }
 
-  public scheduleStream(
-    id: string,
-    request: ScheduleStreamRequestDto,
-  ): Observable<StreamResponseDto> {
+  /** SCHEDULED → DRAFT with a fresh publish key (see stream ADR-0001/0004). */
+  public goLive(id: string): Observable<StreamResponseDto> {
     return this.http.post<StreamResponseDto>(
-      `${this.base}/streams/${id}/schedule`,
-      request,
+      `${this.base}/streams/${id}/go-live`,
+      null,
+    );
+  }
+
+  // ── Publish key ─────────────────────────────────────────────────────────
+
+  /** View the existing publish key; the raw token is masked as {@code ****}. */
+  public getPublishKey(id: string): Observable<PublishKeyResponseDto> {
+    return this.http.get<PublishKeyResponseDto>(
+      `${this.base}/streams/${id}/publish-key`,
+    );
+  }
+
+  /** Issue or rotate the publish key; returns the raw token once. */
+  public issuePublishKey(id: string): Observable<PublishKeyResponseDto> {
+    return this.http.post<PublishKeyResponseDto>(
+      `${this.base}/streams/${id}/publish-key`,
+      null,
     );
   }
 }

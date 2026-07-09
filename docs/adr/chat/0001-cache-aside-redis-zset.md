@@ -1,4 +1,4 @@
-# ADR-0002: Cache-Aside Pattern with Redis ZSET for Chat Messages
+# ADR-0001: Cache-Aside Pattern with Redis ZSET for Chat Messages
 
 **Date**: 2026-07-02
 **Status**: accepted

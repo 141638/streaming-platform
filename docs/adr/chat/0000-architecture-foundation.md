@@ -1,8 +1,14 @@
-# ADR-0001: Layered Reactive Architecture for Chat Service
+# ADR-0000: Architecture Foundation — Chat Service
 
-**Date**: 2026-07-02
+**Date**: 2026-07-02 (renumbered 2026-07-09)
 **Status**: accepted
 **Deciders**: hieuht, Claude
+
+> **Entry point.** Read this before modifying any code in `chat-service/`.
+> It covers the architectural style decision, package structure, entity patterns,
+> and how each third-party service is integrated. Deeper ADRs
+> ([0001](0001-cache-aside-redis-zset.md), [0002](0002-jwt-derived-author-identity.md))
+> build on this foundation.
 
 ## Context
 
@@ -53,3 +59,69 @@ We use **Layered Reactive** architecture with the package structure `api/` → `
 ### Risks
 - **Layered vs. DDD creep**: If the chat domain grows complex (rich moderation, room permissions, message threading), the anemic-ish `ChatRoom`/`ChatMessage` entities may become god objects. **Mitigation**: monitor entity size; introduce domain services or aggregates when entities exceed ~100 lines of behavior.
 - **Duplication with stream-service**: Both services share `JwtProperties`, `SecurityConfig`, `Persistable<UUID>` patterns. **Mitigation**: the planned `pbac-common` shared library ([PBAC-AUTHORIZATION.md §12](../../PBAC-AUTHORIZATION.md#12-shared-pbac-library--extraction-plan)) will extract these when per-service `ent` enforcement is implemented.
+
+## Third-Party Integration Catalog
+
+How each external dependency is integrated into this service.
+
+### PostgreSQL
+
+| Aspect | Detail |
+|--------|--------|
+| **Role** | System of record — all chat rooms and messages are durable here |
+| **Schema** | `chat` — owned exclusively by this service |
+| **Driver** | R2DBC (`r2dbc-postgresql`) — reactive, non-blocking |
+| **Migrations** | Flyway via JDBC side-channel (`spring.flyway.url` — a separate blocking connection, not the primary `DataSource`) |
+| **Repositories** | `ReactiveCrudRepository` with derived query methods (`findByRoomIdOrderByCreatedAtDesc`) |
+| **Entity pattern** | `Persistable<UUID>` + `@Transient isNew` (UUID assigned pre-persist) |
+
+### Redis
+
+| Aspect | Detail |
+|--------|--------|
+| **Role** | Hot cache (disposable latency buffer) — NOT the system of record |
+| **Pattern** | Cache-aside: PG-first writes, Redis-first reads with PG fallback + async backfill |
+| **Data structure** | ZSET per room (`chat:room:{roomKey}:recent`), scored by epoch-millis |
+| **Retention** | 100 messages per room, trimmed on each write via `ZREMRANGEBYRANK` |
+| **Resilience** | All Redis operations wrapped in `.onErrorResume()` — failures return empty/`false`, never propagate |
+| **Serialization** | Jackson JSON with `JavaTimeModule` |
+| **ADR** | [0001 — Cache-Aside Pattern with Redis ZSET](0001-cache-aside-redis-zset.md) |
+
+### Kafka _(planned — not yet implemented)_
+
+| Aspect | Detail |
+|--------|--------|
+| **Role** | Consumer of `stream.control` topic — drives room lifecycle |
+| **Pattern** | `StreamControlListener` (reactive Kafka consumer): `STREAM_CREATED` → create room, `STREAM_ENDED` → archive room |
+| **Status** | Phase 3.3 — not yet built; documented in [IMPLEMENTATION-PLAN.md](../../IMPLEMENTATION-PLAN.md#33--room-lifecycle-from-stream-events) |
+| **Out-of-order safety** | Archive-before-create = no-op; duplicate creates are idempotent via existing `getOrCreate` |
+
+### Service Registry (Eureka)
+
+| Aspect | Detail |
+|--------|--------|
+| **Role** | Client-side service discovery — registers with Eureka, resolved by gateway via `lb://chat-service` |
+| **Library** | `spring-cloud-starter-netflix-eureka-client` |
+
+## Forward-Looking Sketch
+
+What's planned but not yet built. See [IMPLEMENTATION-PLAN.md](../../IMPLEMENTATION-PLAN.md) for the
+authoritative phase checklist.
+
+| Item | Phase | Description |
+|------|-------|-------------|
+| Room lifecycle from Kafka | 3.3 | `StreamControlListener` — rooms auto-created on `STREAM_CREATED`, auto-archived on `STREAM_ENDED` |
+| PBAC enforcement | 3.4 | `EntitlementMatcher` mapping `chat:room:{key}` / `chat:message:room:{key}` to `read`/`send` actions |
+| Cache integration tests | 3.6 | 8 Testcontainers-based test scenarios covering hot/cold/error paths |
+| Cache warm-up completion | 3.7 | Backfill cache from `getMessagesBefore()` PG fallback (currently only `getRecentMessages` backfills) |
+| WebSocket upgrade | 6.4 | Replace REST polling with WebSocket (STOMP or raw) + Redis Pub/Sub for cross-instance fan-out |
+| `pbac-common` extraction | 6.2 | Extract duplicated `JwtProperties`, `EntitlementMatcher`, `Persistable<UUID>` patterns into a shared Gradle module |
+
+## References
+
+- [SERVICE-ARCHITECTURE.md](../../SERVICE-ARCHITECTURE.md) — per-service architectural style recommendations
+- [PBAC-AUTHORIZATION.md](../../PBAC-AUTHORIZATION.md) — authorization model and JWT claims design
+- [IMPLEMENTATION-PLAN.md](../../IMPLEMENTATION-PLAN.md) — master phase plan; Phase 3 checklist
+- [ADR-0001](0001-cache-aside-redis-zset.md) — Redis ZSET cache-aside pattern (deep dive)
+- [ADR-0002](0002-jwt-derived-author-identity.md) — JWT `sub` as author identity
+- [chat-service source](../../../main/source/backend/chat-service/src/main/java/com/streaming/chat/)

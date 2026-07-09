@@ -1,4 +1,4 @@
-# ADR-0003: JWT-Derived Author Identity for Chat Messages
+# ADR-0002: JWT-Derived Author Identity for Chat Messages
 
 **Date**: 2026-07-02
 **Status**: accepted

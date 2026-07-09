@@ -1,5 +1,20 @@
 # Agent Orchestration
 
+## Service Context Loading
+
+Before modifying files in any backend service, read that service's architecture ADR-0000
+as the first survey step. These ADRs document the architectural style, package structure,
+entity patterns, and third-party integration patterns — reading them prevents agents from
+violating conventions or re-discovering what's already documented.
+
+| Service directory | ADR |
+|-------------------|-----|
+| `stream-service/` | `docs/adr/stream/0000-architecture-foundation.md` |
+| `chat-service/` | `docs/adr/chat/0000-architecture-foundation.md` |
+| `auth-service/` | `docs/adr/auth/0000-architecture-foundation.md` |
+
+Skip if the same ADR-0000 was already read earlier in the same session.
+
 ## Available Agents
 
 Located in `~/.claude/agents/`:

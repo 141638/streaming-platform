@@ -7,6 +7,7 @@ The Feature Implementation Workflow describes the development pipeline: research
 ## Feature Implementation Workflow
 
 0. **Research & Reuse** _(mandatory before any new implementation)_
+   - **Read the service ADR-0000 first:** `docs/adr/<service>/0000-architecture-foundation.md` — understand the architectural style, package structure, entity patterns, and third-party integrations before writing any code.
    - **GitHub code search first:** Run `gh search repos` and `gh search code` to find existing implementations, templates, and patterns before writing anything new.
    - **Library docs second:** Use Context7 or primary vendor docs to confirm API behavior, package usage, and version-specific details before implementing.
    - **Exa only when the first two are insufficient:** Use Exa for broader web research or discovery after GitHub search and primary docs.

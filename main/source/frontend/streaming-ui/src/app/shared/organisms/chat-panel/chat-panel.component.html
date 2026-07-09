@@ -1,4 +1,4 @@
-<div class="chat-panel flex flex-column overflow-auto h-full surface-card">
+<div class="chat-panel flex flex-column overflow-auto flex-auto surface-card">
   <!-- Archived banner -->
   @if (roomStatus() === 'archived') {
     <div class="px-3 pt-3">
@@ -63,22 +63,22 @@
         *cdkVirtualFor="let msg of messages(); trackBy: trackByClientId"
         class="flex-auto pb-2"
       >
-        @if (msg.authorSubject === currentUserSub()) {
+        @if (msg.messageType === messageType.SYSTEM) {
+          <!-- System message: centered badge -->
+          <div class="flex justify-content-center py-1">
+            <span class="text-xs px-3 py-1 border-round-xl" style="background: var(--surface-200); color: var(--color-text-muted)">
+              {{ msg.body }}
+            </span>
+          </div>
+        } @else if (msg.authorSubject === currentUserSub()) {
           <!-- Own message: right-aligned -->
           <div class="flex justify-content-end">
             <div
               class="chat-bubble chat-bubble-own flex flex-column gap-1 p-2 border-round-lg"
+              [class.chat-bubble-super]="msg.messageType === messageType.SUPER_CHAT"
             >
-              @if (msg.authorSubject) {
-                <span class="text-xs font-medium">
-                  {{ msg.authorSubject }}
-                </span>
-              }
               <span class="text-sm white-space-pre-line">{{ msg.body }}</span>
               <div class="flex align-items-center gap-2">
-                <span class="text-xs" style="color: var(--color-text-dim)">
-                  {{ msg.createdAt | date: 'shortTime' }}
-                </span>
                 @if (msg.status === 'sending') {
                   <span
                     class="text-xs italic"
@@ -101,22 +101,38 @@
                     ></button>
                   </div>
                 }
+                <span
+                  class="text-xs chat-timestamp"
+                  [title]="timestampTooltip(msg.createdAt)"
+                  style="color: var(--color-text-dim)"
+                >
+                  {{ msg.createdAt | date: 'shortTime' }}
+                </span>
               </div>
             </div>
           </div>
         } @else {
           <!-- Other user's message: left-aligned -->
-          <div class="flex justify-content-start">
+          <div class="flex justify-content-start gap-2">
+            <img
+              class="chat-avatar"
+              [src]="avatarUrlFor(msg)"
+              [alt]="displayNameFor(msg) + ' avatar'"
+              loading="lazy"
+            />
             <div
               class="chat-bubble chat-bubble-other flex flex-column gap-1 p-2 border-round-lg"
+              [class.chat-bubble-super]="msg.messageType === messageType.SUPER_CHAT"
             >
-              @if (msg.authorSubject) {
-                <span class="text-xs font-medium">
-                  {{ msg.authorSubject }}
-                </span>
-              }
+              <span class="text-xs font-medium">
+                {{ displayNameFor(msg) }}
+              </span>
               <span class="text-sm white-space-pre-line">{{ msg.body }}</span>
-              <span class="text-xs" style="color: var(--color-text-dim)">
+              <span
+                class="text-xs chat-timestamp"
+                [title]="timestampTooltip(msg.createdAt)"
+                style="color: var(--color-text-dim)"
+              >
                 {{ msg.createdAt | date: 'shortTime' }}
               </span>
             </div>

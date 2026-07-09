@@ -22,7 +22,10 @@ import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
 import { catchError, finalize, interval, of, switchMap } from 'rxjs';
-import { ChatMessageResponseDto } from '../../../core/contracts/chat-message-response.dto';
+import {
+  ChatMessageResponseDto,
+  MessageType,
+} from '../../../core/contracts/chat-message-response.dto';
 import { RoomResponseDto } from '../../../core/contracts/room-response.dto';
 import { AuthService } from '../../../core/services/auth.service';
 import { ChatService } from '../../../core/services/chat.service';
@@ -33,6 +36,19 @@ type MessageStatus = 'sending' | 'failed' | 'sent';
 interface DisplayMessage extends ChatMessageResponseDto {
   readonly status: MessageStatus;
   readonly clientId: string;
+}
+
+/**
+ * Build a DiceBear avatar URL from a seed string.
+ * Deterministic — same seed always produces the same avatar.
+ */
+function dicebearAvatarUrl(seed: string): string {
+  return `https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(seed)}`;
+}
+
+/** Truncate a UUID-style sub to a shorter display-safe label. */
+function truncateSub(sub: string): string {
+  return sub.length > 12 ? sub.substring(0, 8) + '…' : sub;
 }
 
 const INITIAL_PAGE_SIZE = 50;
@@ -69,6 +85,7 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
   private readonly destroyRef = inject(DestroyRef);
   private readonly fb = inject(FormBuilder);
 
+  protected readonly messageType = MessageType;
   protected readonly messages = signal<DisplayMessage[]>([]);
   protected readonly loading = signal(true);
   protected readonly sending = signal(false);
@@ -84,6 +101,7 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
   protected readonly messageInput = this.fb.control('');
 
   protected readonly currentUserSub = signal<string | null>(null);
+  protected readonly currentUsername = signal<string | null>(null);
   private clientIdCounter = 0;
   private isNearBottom = true;
   private oldestCursor: string | null = null;
@@ -139,7 +157,13 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
       id: clientId,
       roomKey: this.roomKey,
       authorSubject: this.currentUserSub() ?? 'you',
+      authorUsername: this.currentUsername(),
+      authorAvatarUrl: null,
       body: content,
+      messageType: MessageType.NORMAL,
+      giftAmount: null,
+      giftCurrency: null,
+      giftMessage: null,
       createdAt: new Date().toISOString(),
       status: 'sending',
       clientId,
@@ -214,6 +238,31 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
     return msg.clientId;
   }
 
+  /**
+   * Get the avatar URL for a message's author.
+   * Uses authorUsername (deterministic DiceBear) with authorSubject fallback.
+   */
+  protected avatarUrlFor(msg: DisplayMessage): string {
+    const seed = msg.authorUsername ?? msg.authorSubject;
+    return dicebearAvatarUrl(seed);
+  }
+
+  /**
+   * Get the display name for a message's author.
+   * Prefers authorUsername; falls back to truncated authorSubject.
+   */
+  protected displayNameFor(msg: DisplayMessage): string {
+    return msg.authorUsername ?? truncateSub(msg.authorSubject);
+  }
+
+  /**
+   * Format the hover tooltip for a message timestamp in UTC.
+   */
+  protected timestampTooltip(createdAt: string): string {
+    const d = new Date(createdAt);
+    return d.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+  }
+
   // ── Private helpers: init ──────────────────────────────────────────────
 
   /**
@@ -264,6 +313,11 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
       const sub: string | undefined = payload?.sub;
       if (sub) {
         this.currentUserSub.set(sub);
+      }
+      const attr = payload?.attr;
+      const username: string | undefined = attr?.username;
+      if (username) {
+        this.currentUsername.set(username);
       }
     } catch {
       // JWT payload is not critical — ignore parse failures

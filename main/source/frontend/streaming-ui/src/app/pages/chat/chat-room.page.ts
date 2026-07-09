@@ -10,6 +10,15 @@ import { ChatLoadTestComponent } from '../../shared/molecules/chat-load-test/cha
   standalone: true,
   imports: [ChatPanelComponent, ChatLoadTestComponent],
   templateUrl: './chat-room.page.html',
+  styles: `
+    :host {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      overflow-y: auto;
+    }
+  `,
 })
 export class ChatRoomPage {
   private readonly route = inject(ActivatedRoute);

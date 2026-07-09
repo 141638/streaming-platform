@@ -1,13 +1,40 @@
+:host {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
 .chat-panel {
-  // own messages: blue tint, right-aligned
+  // Own messages: blue tint, right-aligned
   .chat-bubble-own {
     max-width: 80%;
     background-color: var(--blue-100);
   }
 
-  // other users' messages: white, left-aligned
+  // Other users' messages: white, left-aligned
   .chat-bubble-other {
     max-width: 80%;
     background-color: var(--surface-0);
+  }
+
+  // Superchat: colored highlight (real amounts will drive gradient intensity)
+  .chat-bubble-super {
+    border: 2px solid var(--orange-400);
+    box-shadow: 0 0 8px rgba(255, 165, 0, 0.3);
+  }
+
+  // Timestamps: show cursor to hint hover tooltip
+  .chat-timestamp {
+    cursor: help;
+  }
+
+  // Author avatar: small + circular (for other users' messages)
+  .chat-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 2px;
   }
 }

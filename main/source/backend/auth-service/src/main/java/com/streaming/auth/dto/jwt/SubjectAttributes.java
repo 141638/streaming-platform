@@ -11,5 +11,6 @@ import java.util.List;
 public record SubjectAttributes(
         @JsonProperty("roles") List<String> roles,
         @JsonProperty("tier") String tier,
-        @JsonProperty("verified_streamer") Boolean verifiedStreamer
+        @JsonProperty("verified_streamer") Boolean verifiedStreamer,
+        @JsonProperty("username") String username
 ) {}

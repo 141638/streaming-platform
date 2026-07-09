@@ -25,6 +25,7 @@ public class SubjectAttributeResolver {
     private static final String KEY_ROLES = "roles";
     private static final String KEY_TIER = "tier";
     private static final String KEY_VERIFIED_STREAMER = "verified_streamer";
+    private static final String KEY_USERNAME = "username";
 
     /**
      * Resolve all catalog-defined attribute keys to their values for {@code user}.
@@ -51,6 +52,7 @@ public class SubjectAttributeResolver {
             case KEY_ROLES -> resolveRoles(roleSlugs);
             case KEY_TIER -> resolveTier(user);
             case KEY_VERIFIED_STREAMER -> resolveVerifiedStreamer(user);
+            case KEY_USERNAME -> resolveUsername(user);
             default -> null; // unknown attribute keys are silently skipped
         };
     }
@@ -69,5 +71,9 @@ public class SubjectAttributeResolver {
 
     private Boolean resolveVerifiedStreamer(UserAccountEntity user) {
         return user.isVerifiedStreamer() ? Boolean.TRUE : null;
+    }
+
+    private String resolveUsername(UserAccountEntity user) {
+        return user.getUsername(); // NEVER null per schema (NOT NULL constraint)
     }
 }

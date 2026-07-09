@@ -38,21 +38,43 @@ public class ChatMessage implements Persistable<UUID> {
     @Column("author_subject")
     private String authorSubject;
 
+    /** Denormalized from JWT {@code attr.username} at write time. */
+    @Column("author_username")
+    private String authorUsername;
+
+    /** Future: user-uploaded avatar URL. Falls back to DiceBear in the frontend. */
+    @Column("author_avatar_url")
+    private String authorAvatarUrl;
+
     private String body;
 
     @Column("created_at")
     private OffsetDateTime createdAt;
 
+    @Column("message_type")
+    private MessageType messageType;
+
+    @Column("gift_amount")
+    private java.math.BigDecimal giftAmount;
+
+    @Column("gift_currency")
+    private String giftCurrency;
+
+    @Column("gift_message")
+    private String giftMessage;
+
     // -- factory -----------------------------------------------------------
 
-    public static ChatMessage create(UUID roomId, String authorSubject, String body, OffsetDateTime now) {
+    public static ChatMessage create(UUID roomId, String authorSubject, String authorUsername, String body, OffsetDateTime now) {
         ChatMessage msg = new ChatMessage();
         msg.setId(UUID.randomUUID());
         msg.setNew(true);
         msg.setRoomId(roomId);
         msg.setAuthorSubject(authorSubject);
+        msg.setAuthorUsername(authorUsername);
         msg.setBody(body);
         msg.setCreatedAt(now);
+        msg.setMessageType(MessageType.NORMAL);
         return msg;
     }
 

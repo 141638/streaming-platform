@@ -35,6 +35,10 @@ public class ChatRoom implements Persistable<UUID> {
     @Column("external_key")
     private String externalKey;
 
+    /** JWT sub of the streamer who owns this room. Set from STREAM_CREATED event. */
+    @Column("broadcaster_subject")
+    private String broadcasterSubject;
+
     private RoomStatus status;
 
     @Column("created_at")
@@ -46,10 +50,15 @@ public class ChatRoom implements Persistable<UUID> {
     // -- factory -----------------------------------------------------------
 
     public static ChatRoom create(String externalKey, OffsetDateTime now) {
+        return create(externalKey, null, now);
+    }
+
+    public static ChatRoom create(String externalKey, String broadcasterSubject, OffsetDateTime now) {
         ChatRoom room = new ChatRoom();
         room.setId(UUID.randomUUID());
         room.setNew(true);
         room.setExternalKey(externalKey);
+        room.setBroadcasterSubject(broadcasterSubject);
         room.setStatus(RoomStatus.ACTIVE);
         room.setCreatedAt(now);
         return room;

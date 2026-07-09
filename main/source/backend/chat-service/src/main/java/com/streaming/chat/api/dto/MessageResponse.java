@@ -1,6 +1,9 @@
 package com.streaming.chat.api.dto;
 
 import com.streaming.chat.domain.ChatMessage;
+import com.streaming.chat.domain.MessageType;
+
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -11,7 +14,13 @@ public record MessageResponse(
         UUID id,
         String roomKey,
         String authorSubject,
+        String authorUsername,
+        String authorAvatarUrl,
         String body,
+        String messageType,
+        BigDecimal giftAmount,
+        String giftCurrency,
+        String giftMessage,
         OffsetDateTime createdAt
 ) {
     /**
@@ -22,7 +31,13 @@ public record MessageResponse(
                 msg.getId(),
                 roomExternalKey,
                 msg.getAuthorSubject(),
+                msg.getAuthorUsername(),
+                msg.getAuthorAvatarUrl(),
                 msg.getBody(),
+                msg.getMessageType() != null ? msg.getMessageType().wireValue() : MessageType.NORMAL.wireValue(),
+                msg.getGiftAmount(),
+                msg.getGiftCurrency(),
+                msg.getGiftMessage(),
                 msg.getCreatedAt()
         );
     }

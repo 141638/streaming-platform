@@ -20,7 +20,6 @@ public record MessageResponse(
         String messageType,
         BigDecimal giftAmount,
         String giftCurrency,
-        String giftMessage,
         OffsetDateTime createdAt
 ) {
     /**
@@ -37,7 +36,6 @@ public record MessageResponse(
                 msg.getMessageType() != null ? msg.getMessageType().wireValue() : MessageType.NORMAL.wireValue(),
                 msg.getGiftAmount(),
                 msg.getGiftCurrency(),
-                msg.getGiftMessage(),
                 msg.getCreatedAt()
         );
     }

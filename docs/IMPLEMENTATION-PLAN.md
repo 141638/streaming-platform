@@ -709,7 +709,7 @@ V2__add_room_status.sql                   ← new: status + archived_at on chat.
 | Item | Description |
 |------|-------------|
 | auth-service V9 | `username` registered in `catalog_subject_attribute`; emitted in JWT `attr` |
-| chat-service V3 | `chat.message_type` enum (NORMAL/SUPER_CHAT/SYSTEM); `chat_message.author_username`, `author_avatar_url`, gift columns; `chat_room.broadcaster_subject`; `chat_ban` table |
+| chat-service V3 | `chat_message.author_username`, `author_avatar_url`, `gift_amount`/`gift_currency` (superchat shell); `chat_room.broadcaster_subject`; `chat_ban` table |
 | Identity enrichment | `ChatService.sendMessage()` reads `attr.username` from JWT → stores as `author_username` on `ChatMessage`; `MessageResponse` includes all new fields |
 | Kafka consumer | `StreamControlListener` — `STREAM_CREATED` → `RoomService.getOrCreate()`, `STREAM_ENDED` → archive + cache eviction; `ChatService.sendMessage()` now requires a pre-existing room |
 | Cache warm-up (3.7) | `getMessagesBefore()` PG fallback now backfills Redis asynchronously |
@@ -719,7 +719,7 @@ V2__add_room_status.sql                   ← new: status + archived_at on chat.
 
 | Feature | Schema Done? | Deferred To | Notes |
 |---------|-------------|-------------|-------|
-| Superchat (real payments) | ✅ `message_type`, `gift_amount`, `gift_currency`, `gift_message` | Phase 5+ | Payment infra needed; frontend renders SUPER_CHAT bubbles as highlighted |
+| Superchat (real payments) | ✅ `message_type`, `gift_amount`, `gift_currency` | Phase 5+ | Payment infra needed; `gift_amount` drives color intensity + pin duration; `giftMessage` dropped — redundant with `body` |
 | User banning enforcement | ✅ `chat_ban` table | 3.4 | `sendMessage()` ban check + moderator REST endpoints needed |
 | System messages (producer) | ✅ `message_type = SYSTEM` | 3.4 or later | Business design needed: which events generate system messages? |
 | @mentions | ❌ (no schema — user ID embedded in text) | Later | Needs autocomplete UI + notification integration |

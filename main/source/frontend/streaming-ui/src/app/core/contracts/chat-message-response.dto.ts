@@ -12,7 +12,6 @@ export interface ChatMessageResponseDto {
   readonly messageType: MessageType;
   readonly giftAmount: number | null;
   readonly giftCurrency: string | null;
-  readonly giftMessage: string | null;
   readonly createdAt: string;
 }
 

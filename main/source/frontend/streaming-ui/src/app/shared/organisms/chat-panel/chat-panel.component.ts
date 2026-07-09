@@ -163,7 +163,6 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
       messageType: MessageType.NORMAL,
       giftAmount: null,
       giftCurrency: null,
-      giftMessage: null,
       createdAt: new Date().toISOString(),
       status: 'sending',
       clientId,

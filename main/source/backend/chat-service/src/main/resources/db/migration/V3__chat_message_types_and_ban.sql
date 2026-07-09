@@ -20,7 +20,6 @@ ALTER TABLE chat.chat_message
     -- Superchat gift columns (NULL for NORMAL/SYSTEM).
     ADD COLUMN IF NOT EXISTS gift_amount      DECIMAL(10, 2),
     ADD COLUMN IF NOT EXISTS gift_currency    VARCHAR(3),         -- ISO 4217, e.g. 'USD'
-    ADD COLUMN IF NOT EXISTS gift_message     TEXT,
     ADD CONSTRAINT ck_chat_message_type
         CHECK (message_type IN ('NORMAL', 'SUPER_CHAT', 'SYSTEM'));
 

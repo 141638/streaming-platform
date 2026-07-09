@@ -60,9 +60,6 @@ public class ChatMessage implements Persistable<UUID> {
     @Column("gift_currency")
     private String giftCurrency;
 
-    @Column("gift_message")
-    private String giftMessage;
-
     // -- factory -----------------------------------------------------------
 
     public static ChatMessage create(UUID roomId, String authorSubject, String authorUsername, String body, OffsetDateTime now) {

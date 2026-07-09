@@ -13,6 +13,7 @@ public record StreamSummaryResponse(
         String category,
         UUID categoryId,
         List<String> tags,
+        String thumbnailUrl,
         OffsetDateTime createdAt,
         OffsetDateTime scheduledAt
 ) {
@@ -24,6 +25,7 @@ public record StreamSummaryResponse(
                 entity.getCategory(),
                 entity.getCategoryId(),
                 entity.getTags() != null ? List.copyOf(Arrays.asList(entity.getTags())) : List.of(),
+                entity.getThumbnailUrl(),
                 entity.getCreatedAt(),
                 entity.getScheduledAt()
         );

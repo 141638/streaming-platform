@@ -1,0 +1,83 @@
+<div class="stream-dashboard-page flex flex-column h-full overflow-auto p-4 gap-3">
+  @if (loading()) {
+    <div class="flex justify-content-center p-4">
+      <p-progressSpinner />
+    </div>
+  }
+
+  @if (errorMessage()) {
+    <p-message severity="error" [text]="errorMessage()" styleClass="w-full" />
+  }
+
+  @if (!loading() && !errorMessage()) {
+    @if (currentStream(); as current) {
+      <!-- Stage: player + chat (~38vh) -->
+      <section class="stream-dashboard-stage flex-none">
+        <app-stream-stage [stream]="current" />
+      </section>
+
+      <!-- Lazy tabs -->
+      <p-tabs [value]="selectedTab()" (valueChange)="onTabChange($any($event))">
+        <p-tablist>
+          <p-tab value="home">Home</p-tab>
+          <p-tab value="about">About</p-tab>
+          <p-tab value="vod">VOD</p-tab>
+        </p-tablist>
+        <p-tabpanels>
+          <p-tabpanel value="home">
+            @if (selectedTab() === 'home') {
+              <div class="flex align-items-center gap-3">
+                <h2 class="m-0 text-xl font-semibold">{{ current.title }}</h2>
+                <app-stream-status-badge [status]="current.status" />
+              </div>
+              <p class="text-color-secondary mt-2">
+                {{ current.category || 'Uncategorized' }}
+                · {{ current.createdAt | date: 'medium' }}
+              </p>
+            }
+          </p-tabpanel>
+
+          <p-tabpanel value="about">
+            @if (selectedTab() === 'about') {
+              <div class="flex flex-column gap-2 text-color-secondary">
+                <div>
+                  <span class="font-semibold text-color">Category: </span>
+                  {{ current.category || 'Uncategorized' }}
+                </div>
+                @if (current.tags.length > 0) {
+                  <div>
+                    <span class="font-semibold text-color">Tags: </span>
+                    {{ current.tags.join(', ') }}
+                  </div>
+                }
+                <div>
+                  <span class="font-semibold text-color">Created: </span>
+                  {{ current.createdAt | date: 'medium' }}
+                </div>
+                @if (current.scheduledAt) {
+                  <div>
+                    <span class="font-semibold text-color">Scheduled: </span>
+                    {{ current.scheduledAt | date: 'medium' }}
+                  </div>
+                }
+              </div>
+            }
+          </p-tabpanel>
+
+          <p-tabpanel value="vod">
+            @if (selectedTab() === 'vod') {
+              <app-stream-list />
+            }
+          </p-tabpanel>
+        </p-tabpanels>
+      </p-tabs>
+    } @else {
+      <div class="flex flex-column align-items-center justify-content-center p-6 gap-3">
+        <span class="pi pi-video text-4xl text-color-secondary"></span>
+        <p class="text-color-secondary m-0">
+          No streams yet. Use the "Create" button in the header to start one.
+        </p>
+      </div>
+    }
+  }
+</div>

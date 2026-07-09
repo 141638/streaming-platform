@@ -1,0 +1,48 @@
+<div class="flex flex-column gap-3">
+  @if (loading()) {
+    <div class="flex justify-content-center p-4">
+      <p-progressSpinner />
+    </div>
+  }
+
+  @if (errorMessage()) {
+    <p-message severity="error" [text]="errorMessage()" styleClass="w-full" />
+  }
+
+  @if (!loading() && !errorMessage() && streams().length === 0) {
+    <p class="text-color-secondary">
+      No streams yet. Use the "Create" button in the header to start one.
+    </p>
+  }
+
+  <div class="grid">
+    @for (stream of streams(); track stream.id) {
+      <div class="col-12 md:col-6 lg:col-3">
+        <a
+          class="no-underline text-color"
+          [routerLink]="['/channel', stream.id]"
+        >
+          <p-card styleClass="stream-list-card h-full cursor-pointer">
+            <img
+              class="w-full border-round mb-2 stream-list-thumb"
+              [src]="stream.thumbnailUrl || placeholder"
+              [alt]="stream.title"
+              width="640"
+              height="360"
+            />
+            <div class="flex align-items-start justify-content-between gap-2">
+              <span class="font-semibold text-overflow-ellipsis overflow-hidden white-space-nowrap">
+                {{ stream.title }}
+              </span>
+              <app-stream-status-badge [status]="stream.status" />
+            </div>
+            <div class="text-sm text-color-secondary mt-1">
+              {{ stream.category || 'Uncategorized' }}
+              · {{ stream.createdAt | date: 'medium' }}
+            </div>
+          </p-card>
+        </a>
+      </div>
+    }
+  </div>
+</div>

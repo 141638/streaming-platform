@@ -149,7 +149,7 @@ For a credible client conversation, distinguish **demo** vs **production**:
 ## 8. Suggested demo script (5–10 minutes)
 
 1. Start **infra** (Compose): Postgres, Redis, Kafka, SRS, Eureka.
-2. Start **discovery**, then **microservices**, then **gateway**, then **Angular**.
+2. Start **microservices**, then **gateway**, then **Angular**.
 3. Show **Eureka dashboard**: registered instances and multiple replicas if spun up.
 4. Hit SPA **health** panel or **gateway** routes to prove routing through discovery.
 5. (Optional) Show **OBS** publishing to SRS and playback URL in browser.

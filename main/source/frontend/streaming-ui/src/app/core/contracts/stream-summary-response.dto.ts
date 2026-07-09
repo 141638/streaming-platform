@@ -5,6 +5,7 @@ export interface StreamSummaryResponseDto {
   readonly category: string;
   readonly categoryId: string | null;
   readonly tags: readonly string[];
+  readonly thumbnailUrl: string | null;
   readonly createdAt: string;
   readonly scheduledAt: string | null;
 }

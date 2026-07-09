@@ -1,0 +1,28 @@
+<div class="stream-player relative w-full h-full overflow-hidden border-round bg-black">
+  <img
+    class="w-full h-full stream-player-poster"
+    [src]="poster()"
+    [alt]="stream().title"
+    width="1280"
+    height="720"
+  />
+
+  <!-- Top-left status pill overlaid on the poster -->
+  <div class="absolute top-0 left-0 p-3">
+    <app-stream-status-badge [status]="stream().status" />
+  </div>
+
+  <!-- Center overlay: LIVE indicator or OFFLINE treatment -->
+  <div
+    class="absolute top-0 left-0 w-full h-full flex flex-column align-items-center justify-content-center stream-player-overlay"
+  >
+    @if (isLive()) {
+      <span class="pi pi-circle-fill text-3xl stream-player-live-dot"></span>
+      <span class="mt-2 font-semibold text-white">LIVE</span>
+    } @else {
+      <span class="pi pi-video text-4xl text-white-alpha-70"></span>
+      <span class="mt-2 font-medium text-white-alpha-70">Offline</span>
+      <small class="text-white-alpha-50">Player preview — playback lands in a later phase</small>
+    }
+  </div>
+</div>

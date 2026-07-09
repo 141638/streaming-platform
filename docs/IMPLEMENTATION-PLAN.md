@@ -21,9 +21,9 @@ Streamer signs in → creates stream → gets publish key → OBS publishes to S
 ## Phase Overview
 
 ```
-Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 ──► Phase 6
-(Auth)      (Stream)    (Chat)      (Viewer)    (Notify)    (Harden)
-  ✅          ⚡           ⚡           ○           ○           ⚡
+Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 ──► Phase 6 ──► Phase 7
+(Auth)      (Stream)    (Chat)      (Viewer)    (Notify)    (Harden)    (AI/LLM)
+  ✅          ⚡           ⚡           ○           ○           ⚡           ○
 ```
 
 | Phase | Status | Goal | Third-Party Services |
@@ -34,6 +34,7 @@ Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 
 | [4 — Viewer Experience](#phase-4--viewer-experience) | ○ Planned | Stream discovery, HLS player, embedded chat, viewer presence | **SRS** |
 | [5 — Notifications](#phase-5--notifications) | ○ Planned | Email notifications, subscription management, Kafka-driven dispatch | Kafka, SMTP |
 | [6 — Production Hardening](#phase-6--production-hardening) | ⚡ In Progress | Idempotency, shared pbac-common, rate limiting, WebSocket, observability. Redis infrastructure hardened, structured logging done, refresh tokens migrated to Redis. | — |
+| [7 — AI / LLM Layer](#phase-7--ai--llm-layer-insight-service-) | ○ Planned (final) | `insight-service`: LLM summaries, moderation, semantic search, RAG — built in a 4-rung capability ladder. **Scaffolding only so far** (ADRs + sketch). | LLM provider, **pgvector** |
 
 ---
 
@@ -71,7 +72,7 @@ Every phase that depends on a Docker-based service follows this pattern:
 | 1.8 | Route guards (auth + guest) with `CanMatch` | `auth.guard.ts`, `guest.guard.ts` |
 | 1.9 | App shell with toolbar and router outlet | `AppShellComponent`, `HomePage` (placeholder) |
 | 1.10 | Eureka discovery, gateway routing to all services | `discovery-service`, gateway `application.yml` routes |
-| 1.11 | Docker Compose infrastructure (PostgreSQL, Redis, Kafka, SRS) | ⚠️ **Partial** — Kafka and Redis have compose files; PostgreSQL, SRS, and discovery are env-file-only (see [Infrastructure Status](#infrastructure-status)) |
+| 1.11 | Docker Compose infrastructure (PostgreSQL, Redis, Kafka, SRS, Discovery) | ⚠️ **Partial** — Kafka, Redis, and Discovery have compose files; PostgreSQL and SRS are env-file-only (see [Infrastructure Status](#infrastructure-status)) |
 
 ### Reference Docs
 
@@ -87,7 +88,7 @@ Every phase that depends on a Docker-based service follows this pattern:
 
 ## Infrastructure Status
 
-As of 2026-07-05, the root `compose.yaml` (Phase 1.11) has **not been created**. The following third-party services are used across phases:
+As of 2026-07-08, the root `compose.yaml` (Phase 1.11) has **not been created**. The following third-party services are used across phases:
 
 | Service | Phase | Compose Defined? | Env File? | Health Check? | Volume? |
 |---------|-------|------------------|-----------|---------------|---------|
@@ -95,7 +96,7 @@ As of 2026-07-05, the root `compose.yaml` (Phase 1.11) has **not been created**.
 | Kafka | 2–5 | ✅ `main/docker/kafka/` | ✅ `main/env/kafka.env` | ❌ | ✅ (broker data) |
 | Redis | 3 | ✅ `main/docker/redis/` | ✅ `main/env/redis.env` | ✅ `redis-cli ping` | ❌ (disposable per ADR-0002) |
 | SRS | 4 | ❌ | ❌ (in `spring.env.template`) | ❌ | ❌ |
-| Discovery (Eureka) | 1–6 | ❌ (Dockerfile only) | ✅ `main/env/discovery.env` | ❌ | ❌ |
+| Discovery (Eureka) | 1–6 | ✅ `main/docker/discovery/` | ✅ `main/env/discovery.env` | ✅ `curl /actuator/health` | ❌ |
 
 Each phase below now includes an **infrastructure setup** item (`.0`) that must be completed before the phase is considered done. These items collectively drive the creation of the root `compose.yaml`.
 
@@ -283,26 +284,43 @@ OBS stops → SRS → on_unpublish webhook → stream service → auto-end
 
 ---
 
-#### 2.5 Frontend: Stream Dashboard
+#### 2.5 Frontend: Stream Dashboard ✅
+
+**Status:** Done (implemented 2026-07-08)
 
 **Why:** Streamers need a UI to manage their streams. Currently only a placeholder home page exists.
 
-**What:**
-- `StreamService` (frontend) — HTTP client for stream API endpoints
-- `StreamListComponent` — lists user's streams with status badges (draft/scheduled/live/ended)
-- `StreamCreateComponent` — form: title, description, category, max viewers
-- `StreamDetailComponent` — stream info, publish key management (generate, copy, show RTMP URL), start/end controls
-- `StreamDashboardPage` — container with tab navigation (My Streams / Create)
-- Lazy-loaded route under `/dashboard/streams`
+**What was implemented:**
+- `StreamService` (frontend) — repaired: removed dead `scheduleStream()` (backend `/schedule` removed in 2.4a); added `goLive()`, `getPublishKey()`, `issuePublishKey()`; added `PublishKeyResponseDto`
+- `StreamStatusBadgeComponent` (molecule) — reusable `p-tag` badge, `OnPush`, `computed` severity per status (DRAFT/SCHEDULED/LIVE/ENDED/CANCELLED)
+- `StreamListComponent` — real card grid with status badges + thumbnail (placeholder while null); rows deep-link to `/channel/:id`. Replaced the raw-JSON channel dump
+- `StreamDashboardPage` — `p-tabs` (PrimeNG 19) container: "My Streams" (list) + "Create" (existing `StreamCreatePage`)
+- `StreamDetailPage` — stream info, thumbnail, lifecycle controls (start/go-live/end/cancel gated by status), publish-key management (generate/rotate, copy RTMP, reveal/mask token). Route `/channel/:id` via `withComponentInputBinding()`
+- Thumbnail display wired throughout with `img/stream-placeholder.svg` fallback
+- Routing: `/dashboard/streams`, `/channel/:id`, `/channel` → redirect; shell "Channel"/"Go Live" menu retargeted to dashboard; old `channel` page deleted
 
-**Files (new):**
-- `frontend/streaming-ui/src/app/core/services/stream.service.ts`
-- `frontend/streaming-ui/src/app/features/streams/stream-list/`
-- `frontend/streaming-ui/src/app/features/streams/stream-create/`
-- `frontend/streaming-ui/src/app/features/streams/stream-detail/`
-- `frontend/streaming-ui/src/app/features/streams/stream-dashboard-page/`
+**Deviations from original plan:**
+- Files live under `pages/streams/` (existing convention), not `features/streams/`
+- Thumbnail field + display added (see 2.5 thumbnail note below and [2.9](#29--srs-snapshot-thumbnails))
 
-**Validate:** `ng build` + manual flow: login → navigate to dashboard → create stream → view stream → generate publish key
+**Thumbnail (field + display only; capture deferred to 2.9):**
+- Backend: migration `V6__add_thumbnail_url.sql` (nullable `thumbnail_url VARCHAR(512)`), entity field, `thumbnailUrl` on `StreamResponse` + `StreamSummaryResponse`
+- Field is **client-read-only** — create/update requests do not accept it; stays NULL until an SRS snapshot is generated
+- Frontend renders a placeholder image while NULL — so every card shows the placeholder until 2.9 + Phase 4 SRS land
+- Decision recorded in [ADR-0005](adr/stream/0005-stream-thumbnails.md); custom-upload via MinIO deferred to planned ADR-0006
+
+**Files:**
+- `frontend/streaming-ui/src/app/core/services/stream.service.ts` (repaired)
+- `frontend/streaming-ui/src/app/core/contracts/publish-key-response.dto.ts` (new)
+- `frontend/streaming-ui/src/app/core/contracts/schedule-stream-request.dto.ts` (deleted — dead)
+- `frontend/streaming-ui/src/app/shared/molecules/stream-status-badge/`
+- `frontend/streaming-ui/src/app/pages/streams/stream-list/`
+- `frontend/streaming-ui/src/app/pages/streams/stream-dashboard/`
+- `frontend/streaming-ui/src/app/pages/streams/stream-detail/`
+- `frontend/streaming-ui/public/img/stream-placeholder.svg` (new)
+- `stream-service`: `V6__add_thumbnail_url.sql`, `StreamSessionEntity.java`, `StreamResponse.java`, `StreamSummaryResponse.java`
+
+**Validate:** `ng build` + manual flow: login → dashboard → create stream → open detail → generate publish key → start
 
 ---
 
@@ -368,6 +386,7 @@ OBS stops → SRS → on_unpublish webhook → stream service → auto-end
 - [ ] 2.6 — Kafka integration testing
 - [ ] 2.7 — Schedule reminder batch (deferred — depends on notification + subscription)
 - [ ] 2.8 — Stream templates (deferred — separate ADR needed)
+- [ ] 2.9 — SRS snapshot thumbnails (deferred — depends on Phase 4.0 SRS)
 
 **Architecture Decisions — see [docs/adr/stream/](adr/stream/):**
 
@@ -376,7 +395,28 @@ OBS stops → SRS → on_unpublish webhook → stream service → auto-end
 | [0001](adr/stream/0001-stream-state-machine.md) | Stream state machine with entity domain methods, optimistic locking, one-live-stream rule (Revised 2026-07-07) |
 | [0002](adr/stream/0002-kafka-event-publishing.md) | Reactive Kafka publisher with at-most-once delivery, deferred DLQ/outbox concerns |
 | [0003](adr/stream/0003-categories-tags.md) | Managed `stream_category` lookup table + `TEXT[]` tags with GIN index |
-| [0004](adr/stream/0004-srs-webhook-publish-token.md) | SRS webhook integration with JWT publish token, srsName/SHA-256 lookup, Sol3 contextual expiry (to be revised: single-TTL + Sol3 decisions)
+| [0004](adr/stream/0004-srs-webhook-publish-token.md) | SRS webhook integration with JWT publish token, srsName/SHA-256 lookup, Sol3 contextual expiry (to be revised: single-TTL + Sol3 decisions) |
+| [0005](adr/stream/0005-stream-thumbnails.md) | Stream thumbnails via SRS auto-snapshot; field+display in 2.5, capture in 2.9; custom-upload via MinIO deferred (Proposed) |
+
+#### 2.9 — SRS Snapshot Thumbnails
+
+**Status:** Deferred — depends on Phase 4.0 (SRS Docker service must exist and run).
+
+**Why:** Phase 2.5 added the `thumbnail_url` field and UI display, but nothing populates
+it — every card shows the placeholder. This item generates the actual thumbnail from the
+live feed.
+
+**What:**
+- Add snapshot capability to SRS config ([custom.conf](../main/docker/srs/conf/custom.conf)) — SRS `exec`/ffmpeg frame grab, or SRS snapshot hook
+- On snapshot generated → stream-service persists `thumbnail_url` pointing at the SRS-served image path (served from the media tier like HLS, not proxied through Spring)
+- Decide refresh cadence: once-on-live vs periodic (record in ADR-0005 revision)
+- Verify ffmpeg is present in the SRS image tag
+
+**Depends on:** Phase 4.0 (SRS Docker service)
+
+**ADR:** [0005](adr/stream/0005-stream-thumbnails.md)
+
+**Validate:** stream goes LIVE → snapshot generated → `thumbnail_url` populated → dashboard card shows real thumbnail instead of placeholder
 
 ---
 
@@ -774,14 +814,72 @@ V2__add_room_status.sql                   ← new: status + archived_at on chat.
 
 ---
 
-## Future (Phase 7+)
+## Phase 7 — AI / LLM Layer (`insight-service`) ○
+
+**Status:** Planned — final phase. **Scaffolding only exists today** (ADRs + design
+sketch); no code, no Gradle module, no build impact. This phase is intentionally
+deferred so it doesn't add complexity to the core streaming phases, while the design
+decisions are captured now to make the eventual build fast and consistent.
+
+**Goal:** Add LLM-powered capabilities — chat/stream summarization, chat moderation,
+semantic search, and retrieval-augmented Q&A ("ask this stream") — as a new,
+isolated control-plane service.
+
+**Guiding principle: a 4-rung capability ladder, delivered in order.** RAG is the
+*destination* (rung 4), not the starting point. Each rung ships one working feature and
+teaches one new concept. See [ADR-0004](adr/insight/0004-capability-ladder.md).
+
+### Design Decisions (all **Proposed** — see [docs/adr/insight/](adr/insight/))
+
+| ADR | Decision |
+|-----|----------|
+| [0001](adr/insight/0001-insight-service-architecture.md) | New standalone `insight-service`, layered-reactive + hexagonal ports at the two swappable edges (LLM provider, vector store) |
+| [0002](adr/insight/0002-llm-provider-port.md) | LLM provider behind a vendor-neutral `LlmPort`; timeout/retry/fallback/cost wrap the port in the application layer |
+| [0003](adr/insight/0003-pgvector-over-dedicated-vector-db.md) | `pgvector` on the existing PostgreSQL for vectors — no new datastore; swap to a dedicated vector DB only on a measured trigger |
+| [0004](adr/insight/0004-capability-ladder.md) | Incremental ladder: plain call → classify → embed → RAG (**read this first**) |
+
+> Full module/data-flow sketch: [INSIGHT-SERVICE-SKETCH.md](INSIGHT-SERVICE-SKETCH.md)
+> (illustrative pseudocode, not compilable).
+
+### Work Items (rungs)
+
+| Rung | Item | New concept | Depends on |
+|------|------|-------------|-----------|
+| 7.0 | **Infrastructure** — `insight-service` Gradle module, Eureka + gateway route, `pgvector`-enabled Postgres image (rung 3+), `insight` schema | Five-step service lifecycle | — |
+| 7.1 | **Rung 1 — Plain LLM call**: "catch me up" chat summary + auto title/tags. Token streaming (`Flux<String>` → SSE), structured JSON output, timeout/retry/fallback, cost accounting | LLM as unreliable dependency | 3.x (chat), `LlmPort` |
+| 7.2 | **Rung 2 — Classification**: chat moderation as a Kafka consumer, off the hot path, batched, best-effort | Async LLM in event pipeline | 7.1, chat events |
+| 7.3 | **Rung 3 — Embeddings + retrieval** (no generation): semantic VOD search via `EmbeddingPort` + `VectorStorePort` (pgvector); measurable recall | Embeddings, chunking, similarity search | 7.0 (pgvector), **ASR transcripts*** |
+| 7.4 | **Rung 4 — Full RAG**: "ask this stream" — retrieval + grounded generation with timestamp citations | Grounded generation on top of retrieval | 7.3 |
+
+> **\*ASR / transcript pipeline** (media-plane-owned) is a prerequisite for rungs 3–4
+> and is tracked outside this ladder. Rungs 1–2 have no such dependency and can ship first.
+
+### Deliberately deferred to Phase-7 start (not decided now)
+
+- Which LLM provider / model (hosted vs. local; per-rung choice) → follow-up ADR.
+- Embedding model + vector dimension → decided with the pgvector schema at rung 3.
+- Cost ceilings and per-feature rate limits → set when the first billed feature ships.
+
+### Phase 7 Checklist
+
+- [ ] 7.0 — Infrastructure: module, discovery/gateway wiring, pgvector image, `insight` schema
+- [ ] 7.1 — Rung 1: plain LLM call (summary + title/tags, streaming, fallback)
+- [ ] 7.2 — Rung 2: classification (moderation via Kafka)
+- [ ] 7.3 — Rung 3: embeddings + semantic search (pgvector)
+- [ ] 7.4 — Rung 4: full RAG ("ask this stream")
+
+---
+
+## Future (Phase 8+)
 
 Not planned yet — candidates:
 
 | Feature | Notes |
 |---------|-------|
-| VOD / Archives | Record streams, playback on demand |
+| VOD / Archives | Record streams, playback on demand (also a prerequisite for AI rungs 3–4 transcripts) |
+| MinIO object storage | S3-compatible blob store for custom stream cover-art upload (ADR-0006, planned) and future VOD assets |
 | Transcoding (FFmpeg) | Adaptive bitrate via SRS/FFmpeg pipeline |
+| ASR / transcription pipeline | Speech-to-text on recordings — feeds Phase 7 rungs 3–4 |
 | Monetization | Subscriptions, tips, ads |
 | Moderation dashboard | Admin UI for chat moderation, stream takedowns |
 | Mobile app | Ionic/Capacitor or native, reusing existing API |
@@ -801,6 +899,8 @@ Not planned yet — candidates:
                     │  Redis ─────── (3,6.3)    │
                     │  SRS ───────── (4)        │
                     │  SMTP ──────── (5)        │
+                    │  LLM provider  (7)        │
+                    │  pgvector ──── (7.3+)     │
                     └──────┬───────────────────┘
                            │
 Phase 1 (DONE) ───────────┘
@@ -837,6 +937,13 @@ Phase 5
 │
 Phase 6
 │  6.1-6.6 Hardening                ◄── can run in parallel with earlier phases
+│
+Phase 7 (final — scaffolding only today)
+│  7.0 insight-service infra + pgvector image
+│  7.1 Rung 1 plain LLM call        ◄── needs chat (3.x)
+│  7.2 Rung 2 classification        ◄── needs chat events
+│  7.3 Rung 3 embeddings + search   ◄── needs pgvector (7.0) + ASR transcripts (Phase 8)
+│  7.4 Rung 4 full RAG              ◄── needs 7.3
 ```
 
 ---
@@ -890,3 +997,5 @@ Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`
 - [RXJS-SINGLE-FLIGHT-PATTERN.md](RXJS-SINGLE-FLIGHT-PATTERN.md) — Concurrent dedup pattern
 - [AUTH-INTERCEPTOR-PATTERN.md](AUTH-INTERCEPTOR-PATTERN.md) — Frontend 401 handling
 - [IDEMPOTENCY-PATTERN.md](IDEMPOTENCY-PATTERN.md) — Idempotency key design
+- [INSIGHT-SERVICE-SKETCH.md](INSIGHT-SERVICE-SKETCH.md) — Phase 7 AI/LLM layer design sketch (deferred)
+- [docs/adr/insight/](adr/insight/) — AI/LLM layer ADRs (all Proposed)

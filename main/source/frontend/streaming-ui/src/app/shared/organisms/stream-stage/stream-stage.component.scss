@@ -1,0 +1,11 @@
+.stream-stage-chat {
+  width: 320px;
+}
+
+/* Below lg the layout stacks; let chat take full width and a sensible height. */
+@media (width <= 991px) {
+  .stream-stage-chat {
+    width: 100%;
+    height: 320px;
+  }
+}

@@ -47,12 +47,20 @@ export const routes: Routes = [
           ),
       },
       {
-        path: 'channel',
+        path: 'dashboard/streams',
         loadComponent: () =>
-          import('./pages/streams/channel/channel.page').then(
-            (m) => m.ChannelPage,
+          import('./pages/streams/stream-dashboard/stream-dashboard.page').then(
+            (m) => m.StreamDashboardPage,
           ),
       },
+      {
+        path: 'channel/:id',
+        loadComponent: () =>
+          import('./pages/streams/stream-detail/stream-detail.page').then(
+            (m) => m.StreamDetailPage,
+          ),
+      },
+      { path: 'channel', redirectTo: 'dashboard/streams', pathMatch: 'full' },
       {
         path: 'chat/:roomKey',
         loadComponent: () =>

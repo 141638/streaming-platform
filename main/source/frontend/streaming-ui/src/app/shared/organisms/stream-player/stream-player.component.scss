@@ -1,0 +1,41 @@
+.stream-player {
+  aspect-ratio: 16 / 9;
+}
+
+.stream-player-poster {
+  object-fit: cover;
+  display: block;
+}
+
+.stream-player-overlay {
+  background: linear-gradient(
+    180deg,
+    rgb(0 0 0 / 15%) 0%,
+    rgb(0 0 0 / 45%) 100%
+  );
+  pointer-events: none;
+}
+
+.stream-player-live-dot {
+  color: var(--red-500);
+  animation: stream-player-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes stream-player-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.55;
+    transform: scale(1.15);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stream-player-live-dot {
+    animation: none;
+  }
+}

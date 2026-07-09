@@ -696,11 +696,46 @@ V2__add_room_status.sql                   ← new: status + archived_at on chat.
 - [x] 3.0 — Infrastructure: Redis Docker Compose service + health check + connectivity
 - [x] 3.1 — Service layer + PG persistence + Redis cache-aside (extended: cursor pagination, Redis resilience, room status, archived enforcement)
 - [x] 3.2 — JWT-based author identity
-- [ ] 3.3 — Room auto-creation from stream events (blocked by 2.3)
-- [ ] 3.4 — PBAC enforcement
-- [x] 3.5 — Frontend chat experience (extended: virtual scroll, lazy load, smart scroll, optimistic send; remaining: unit tests + OnPush)
+- [x] 3.3 — Room lifecycle from stream events + schema V3 + identity enrichment + cache warm-up (2026-07-09)
+- [ ] 3.4 — PBAC enforcement + moderation (ban check in sendMessage, moderator REST API)
+- [x] 3.5 — Frontend chat experience (extended: virtual scroll, lazy load, smart scroll, optimistic send + avatars + timestamps; remaining: unit tests + OnPush)
 - [ ] 3.6 — Cache integration testing (zero tests exist)
-- [ ] 3.7 — Cache warm-up completion (`getMessagesBefore` backfill gap)
+- [x] 3.7 — Cache warm-up completion (`getMessagesBefore` backfill gap)
+
+### 3.3 Implementation Notes (2026-07-09)
+
+**What was built:**
+
+| Item | Description |
+|------|-------------|
+| auth-service V9 | `username` registered in `catalog_subject_attribute`; emitted in JWT `attr` |
+| chat-service V3 | `chat.message_type` enum (NORMAL/SUPER_CHAT/SYSTEM); `chat_message.author_username`, `author_avatar_url`, gift columns; `chat_room.broadcaster_subject`; `chat_ban` table |
+| Identity enrichment | `ChatService.sendMessage()` reads `attr.username` from JWT → stores as `author_username` on `ChatMessage`; `MessageResponse` includes all new fields |
+| Kafka consumer | `StreamControlListener` — `STREAM_CREATED` → `RoomService.getOrCreate()`, `STREAM_ENDED` → archive + cache eviction; `ChatService.sendMessage()` now requires a pre-existing room |
+| Cache warm-up (3.7) | `getMessagesBefore()` PG fallback now backfills Redis asynchronously |
+| Frontend identity | DiceBear avatars from `authorUsername`; display name preference; timestamps with hover UTC tooltip; system message rendering; superchat bubble style |
+
+**What was deferred (schema ready, implementation later):**
+
+| Feature | Schema Done? | Deferred To | Notes |
+|---------|-------------|-------------|-------|
+| Superchat (real payments) | ✅ `message_type`, `gift_amount`, `gift_currency`, `gift_message` | Phase 5+ | Payment infra needed; frontend renders SUPER_CHAT bubbles as highlighted |
+| User banning enforcement | ✅ `chat_ban` table | 3.4 | `sendMessage()` ban check + moderator REST endpoints needed |
+| System messages (producer) | ✅ `message_type = SYSTEM` | 3.4 or later | Business design needed: which events generate system messages? |
+| @mentions | ❌ (no schema — user ID embedded in text) | Later | Needs autocomplete UI + notification integration |
+| Emoji input | ❌ (no schema) | Later | Needs PrimeNG emoji picker evaluation |
+| Reply threading | ❌ (needs `parent_message_id`) | Later | Schema impact review needed |
+| Real avatar upload (MinIO) | ❌ | Phase 4+ | ADR-0006; DiceBear is the fallback for now |
+| `ChangeDetectionStrategy.OnPush` | N/A | Tech debt | Noted in 3.5 known gaps |
+| Unit tests for ChatPanelComponent | N/A | 3.6 | Zero test coverage currently |
+
+### How to Resume (cold start)
+
+1. Read [chat ADR-0000](adr/chat/0000-architecture-foundation.md) — architecture + third-party catalog
+2. Read this checklist — what's done vs. remaining
+3. V3 migration includes all deferred schema; no ALTER needed later
+4. DiceBear avatar is the fallback; real avatars need `author_avatar_url` populated at write time (same pattern as `author_username`)
+5. Stream team's Phase A (`username` in JWT) was implemented by chat team (auth-service V9); stream team owns aligning their plan + the `broadcaster_username` denormalization in stream-service
 
 ---
 

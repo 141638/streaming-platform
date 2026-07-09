@@ -52,15 +52,16 @@ public class ChatService {
      * @param body the message content
      * @return the sent message as a response DTO
      */
-    public Mono<MessageResponse> sendMessage(String roomKey, String authorSubject, String body) {
+    public Mono<MessageResponse> sendMessage(String roomKey, String authorSubject, String authorUsername, String body) {
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
 
-        return getOrCreateRoom(roomKey, now)
+        return roomRepository.findByExternalKey(roomKey)
+                .switchIfEmpty(Mono.error(new RoomNotFoundException(roomKey)))
                 .filter(ChatRoom::isActive)
                 .switchIfEmpty(Mono.error(new RoomArchivedException(roomKey)))
                 .flatMap(room -> {
                     log.info("Message hit.");
-                    ChatMessage msg = ChatMessage.create(room.getId(), authorSubject, body, now);
+                    ChatMessage msg = ChatMessage.create(room.getId(), authorSubject, authorUsername, body, now);
                     return messageRepository.save(msg)
                             .map(saved -> MessageResponse.from(saved, room.getExternalKey()));
                 })
@@ -146,7 +147,18 @@ public class ChatService {
                                             parseCursorToInstant(cursor))
                                     .take(limit)
                                     .map(msg -> MessageResponse.from(msg, room.getExternalKey())))
-                            .collectList();
+                            .collectList()
+                            .flatMap(fromPg -> {
+                                // async backfill — don't block the response
+                                Flux.fromIterable(fromPg)
+                                        .flatMap(m -> cache.addToRecent(roomKey, m))
+                                        .subscribe(
+                                                count -> {},
+                                                err -> log.warn("Backfill cache write failed for roomKey={}", roomKey,
+                                                        err)
+                                        );
+                                return Mono.just(fromPg);
+                            });
                 });
     }
 
@@ -165,16 +177,6 @@ public class ChatService {
         } catch (Exception e) {
             return Instant.now();
         }
-    }
-
-    // -- internal ----------------------------------------------------------
-
-    private Mono<ChatRoom> getOrCreateRoom(String externalKey, OffsetDateTime now) {
-        return roomRepository.findByExternalKey(externalKey)
-                .switchIfEmpty(Mono.defer(() -> {
-                    log.info("Auto-creating chat room for externalKey={}", externalKey);
-                    return roomRepository.save(ChatRoom.create(externalKey, now));
-                }));
     }
 
     // -- exceptions --------------------------------------------------------

@@ -38,17 +38,20 @@ public class RoomService {
      * Create a chat room for the given external key.
      *
      * <p>Idempotent — if a room with the key already exists, it is returned
-     * as-is rather than failing.
+     * as-is rather than failing. The {@code broadcasterSubject} is set at
+     * creation time and ignored on subsequent calls (the first writer wins).
      *
      * @param externalKey the stream session external key
+     * @param broadcasterSubject the streamer's JWT sub (from STREAM_CREATED event)
      * @return the new or existing room
      */
-    public Mono<ChatRoom> getOrCreate(String externalKey) {
+    public Mono<ChatRoom> getOrCreate(String externalKey, String broadcasterSubject) {
         return roomRepository.findByExternalKey(externalKey)
                 .switchIfEmpty(Mono.defer(() -> {
-                    log.info("Creating chat room for externalKey={}", externalKey);
+                    log.info("Creating chat room for externalKey={} broadcasterSubject={}",
+                            externalKey, broadcasterSubject);
                     return roomRepository.save(
-                            ChatRoom.create(externalKey, OffsetDateTime.now(ZoneOffset.UTC)));
+                            ChatRoom.create(externalKey, broadcasterSubject, OffsetDateTime.now(ZoneOffset.UTC)));
                 }));
     }
 

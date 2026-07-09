@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.streaming.chat.api.dto.MessageResponse;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import org.slf4j.Logger;
@@ -34,6 +35,7 @@ public class RedisMessageCache {
     private static final String KEY_PREFIX = "chat:room:";
     private static final String RECENT_SUFFIX = ":recent";
     private static final int MAX_RECENT = 100;
+    private static final Duration REDIS_TIMEOUT = Duration.ofSeconds(2);
 
     private final ReactiveStringRedisTemplate redis;
     private final ObjectMapper objectMapper;
@@ -63,6 +65,7 @@ public class RedisMessageCache {
         return redis.opsForZSet()
                 .add(key, json, score)
                 .flatMap(added -> trimToRetention(key).thenReturn(added))
+                .timeout(REDIS_TIMEOUT)
                 .onErrorResume(ex -> {
                     log.warn("Redis write failed for key={}, message already persisted to PG. Error: {}",
                             key, ex.getMessage());
@@ -74,6 +77,11 @@ public class RedisMessageCache {
         long stop = -(MAX_RECENT + 1L); // remove elements from rank 0 down to -101 (keep last 100)
         return redis.opsForZSet()
                 .removeRange(key, Range.closed(0L, stop))
+                .timeout(REDIS_TIMEOUT)
+                .onErrorResume(ex -> {
+                    log.debug("Redis trim failed for key={}: {}", key, ex.getMessage());
+                    return Mono.just(0L);
+                })
                 .doOnNext(removed -> {
                     if (removed > 0) {
                         log.debug("Trimmed {} old messages from cache key={}", removed, key);
@@ -101,6 +109,7 @@ public class RedisMessageCache {
                         log.debug("Cache miss for key={}", key);
                     }
                 })
+                .timeout(REDIS_TIMEOUT)
                 .onErrorResume(ex -> {
                     log.warn("Redis read failed for key={}, falling back to PG. Error: {}", key,
                             ex.getMessage());
@@ -124,6 +133,7 @@ public class RedisMessageCache {
                 .reverseRangeByScore(key, before, Limit.limit().count(limit))
                 .collectList()
                 .map(this::deserializeList)
+                .timeout(REDIS_TIMEOUT)
                 .onErrorResume(ex -> {
                     log.warn("Redis before-query failed for key={}, maxScore={}. Error: {}",
                             key, maxScore, ex.getMessage());
@@ -138,6 +148,7 @@ public class RedisMessageCache {
         String key = recentKey(roomKey);
         return redis.delete(key)
                 .map(count -> count > 0)
+                .timeout(REDIS_TIMEOUT)
                 .onErrorResume(ex -> {
                     log.warn("Redis evict failed for key={}. Error: {}", key, ex.getMessage());
                     return Mono.just(false);

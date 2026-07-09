@@ -23,8 +23,10 @@ import reactor.core.publisher.Mono;
 /**
  * REST controller for chat operations.
  *
- * <p>The author identity is always extracted from the JWT {@code sub} claim,
- * never from the request body. This prevents author impersonation.
+ * <p>The author identity is always extracted from the JWT, never from the
+ * request body. The {@code authorSubject} comes from {@code sub};
+ * {@code authorUsername} is a convenience denormalization from
+ * {@code attr.username}.
  */
 @RestController
 @RequiredArgsConstructor
@@ -42,7 +44,8 @@ public class ChatController {
      * Send a message to a chat room.
      *
      * <p>If the room does not exist yet, it is auto-created. The author is
-     * derived from {@code jwt.subject}, not from the request body.
+     * derived from {@code jwt.subject} and {@code jwt.attr.username}, not
+     * from the request body.
      */
     @PostMapping(path = "/rooms/{roomKey}/messages", consumes = MediaType.APPLICATION_JSON_VALUE)
     public Mono<MessageResponse> sendMessage(
@@ -51,7 +54,8 @@ public class ChatController {
             @Valid @RequestBody SendMessageRequest body
     ) {
         String authorSubject = jwt.getSubject();
-        return chatService.sendMessage(roomKey, authorSubject, body.content());
+        String authorUsername = JwtAttr.username(jwt);
+        return chatService.sendMessage(roomKey, authorSubject, authorUsername, body.content());
     }
 
     /**

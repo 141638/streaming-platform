@@ -1,10 +1,72 @@
-# Channel Page — Pre-Implementation Scope Review
+# Channel Page — Scope & Vision (authoritative planning doc)
 
 **Date:** 2026-07-09
-**Status:** Awaiting your review before implementation
-**Supersedes framing in:** `channel-page-phase-a-b-blueprint.md` (this doc adjusts it for the "authenticated-only" decision)
+**Status:** Approved — implementation starts at commit #2 (see execution order)
+**Companion:** [`channel-page-phase-a-b-blueprint.md`](channel-page-phase-a-b-blueprint.md) holds the file-level how-to; this doc holds the *why*, the *scope boundaries*, and the *full vision*. On any conflict, **this doc wins** (the blueprint body was reconciled to match it).
 
-This is a temporary decision doc. Once you approve, I'll apply the ADR edits and start Phase A.
+This is the entry point for anyone (incl. a cold session) picking up the channel work.
+
+---
+
+## 0. North Star — the full vision (what a channel ultimately becomes)
+
+The end goal is a **Twitch-style channel** at `/@username`: a creator's home on the platform,
+**stream-focused** (not a general video site — no shorts/reels).
+
+The complete picture, once every phase is done:
+
+- **A live/last-session stage as the backdrop.** The current stream (or the latest when
+  offline) plays full-height behind the page; header and body float over it.
+- **An identity header** — avatar, channel name, **verified** check, follower count (K/M/B
+  formatted), subscriber & video counts, and the username handle. Action cluster on the
+  right: **Follow** (free), **Subscribe** (paid membership), **Gift Sub** (buy a sub for
+  another viewer/named user).
+- **A body of tabs** — **Home** first:
+  - a horizontal, drag/chevron-scrollable rail of the **latest 10–15 stream sessions**;
+  - **manager-curated playlists** — the channel owner picks which of their playlists (a
+    playlist = a wrapper around any videos) render here, each as its own horizontal rail;
+  - a strip of the channel's **recently-streamed categories**.
+- **One page, two audiences** — a *viewer* sees Follow/Subscribe/Gift; the *owner* (channel
+  manager) sees manage affordances (edit channel, manage playlists, and a link into the
+  existing publish-key/lifecycle control panel). Same page, ownership-gated — not two pages.
+- **Eventually, possibly public** — today the whole platform is login-gated; opening channels
+  to guests (for discovery/SEO) is a deliberately deferred, revisitable decision.
+
+**How we get there without over-building:** this round ships the *shell* of that vision —
+real where it's cheap (identity, session rail, categories), disabled/empty placeholders
+where it's expensive (followers, subscribe, gift, playlists). Those expensive domains are
+built later in a dedicated **channel-service**. The section below is the exact line between
+*now*, *shell now*, and *later*.
+
+---
+
+## 0.1 Full feature → scope map (every piece of the vision)
+
+| Vision piece | This round | How | Later phase |
+|---|---|---|---|
+| `/@username` route + channel page | ✅ Build | Angular `ChannelPage`, authenticated route | — |
+| Full-height stage backdrop | ✅ Build | Reuse existing `StreamStageComponent` | — |
+| Avatar + channel name | ✅ Build | From `ChannelResponse` | — |
+| **Verified** check | ✅ Build (real) | `verified_streamer` already in JWT → denormalized | — |
+| Username handle display | ✅ Build (real) | New `username` JWT claim → denormalized | — |
+| Latest 10–15 sessions rail | ✅ Build (real) | Existing session data + new `getChannel` | — |
+| Recently-streamed categories strip | ✅ Build (real) | Existing categories, distinct-by-broadcaster | — |
+| Follower **count** | 🟡 Shell | Static/placeholder number, visibly disabled | **channel-service** (social graph) |
+| Subscriber / video counts | 🟡 Shell | Static/placeholder | channel-service |
+| **Follow** button | 🟡 Shell | Disabled button in header action slot | channel-service (followers) |
+| **Subscribe** (paid membership) | 🟡 Shell | Disabled button | channel-service + **payments** |
+| **Gift Sub** | 🟡 Shell | Disabled button | channel-service + payments |
+| **Playlists** (manager-curated rails) | 🟡 Shell | Empty "No playlists yet" rail | channel-service (playlist domain + manager CRUD) |
+| Owner manage affordances | ✅ Build (minimal) | `@if(isOwner)` → link into existing `/channel/:id` panel | richer manage UI later |
+| Guest / public (no-login) access | ❌ Not now | — | **Own future ADR** (revisitable) |
+| Rename-drift reconciliation | ❌ Not now | — | channel-service (`UserRenamed` event / job) |
+| Login rate-limiter + uniform-401 | ✅ Build | auth-hardening, its own commits (auth/0003) | — |
+
+Legend: ✅ real & working this round · 🟡 visible shell, no backend this round · ❌ deferred.
+
+**One-line summary of the scope boundary:** *this round = identity + read + the visual shell
+of the whole channel; everything that needs a social graph, payments, or a playlist store is
+a disabled/empty placeholder now and a `channel-service` job later.*
 
 ---
 
@@ -42,19 +104,11 @@ This is a temporary decision doc. Once you approve, I'll apply the ADR edits and
 
 ## 2. ADR impact
 
-### Already written (keep)
-- **auth/0002** — username→JWT claim + login hardening. Core decision still valid.
-- **stream/0007** — denormalize identity + channel-service extraction seam. Core decision still valid.
-
-### Needs updating (I'll edit after you approve)
-- **auth/0002** — reframe from "public username handle" to **"authenticated-visible username handle"**:
-  - Context: username becomes visible to *authenticated users*, not the open internet.
-  - Login hardening: keep, but reframe as **general login hygiene + enumeration-oracle fix**, not a gate for public exposure. Note guest/public access as an explicit **deferred decision** (its own future ADR).
-  - Decision on errors: lock in **single 401** (drop the "different messages/status" language).
-- **stream/0007** — change "public read" → **"authenticated read"**:
-  - Remove the gateway-allowlist consequence and the `permitAll` step.
-  - Keep and emphasize the safe-projection requirement (now protecting cross-user leakage, not guest leakage).
-  - Note guest access deferred.
+### Written & committed (done — `487afa1`)
+- **auth/0002** — *Authenticated-Visible Username Handle*: username→JWT claim + uniform-401 enumeration fix; guest access noted as deferred.
+- **auth/0003** — *Redis-Lua Login Brute-Force Rate Limiting*.
+- **stream/0007** — *Authenticated Channel Read*: denormalize identity + safe cross-user projection + channel-service extraction seam.
+- Both ADR README indexes updated.
 
 ### Future planned ADRs (write when the phase starts — like the reserved MinIO ADR-0006)
 - **channel-service extraction** — when social/playlist becomes real (referenced already in stream/0007).

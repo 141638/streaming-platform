@@ -1,0 +1,37 @@
+# Test profile — Testcontainers-driven Postgres (R2DBC + Flyway) and Redis.
+# Container host/port/credentials are injected at runtime via @DynamicPropertySource
+# in AbstractCacheIntegrationTest; this file only carries static overrides that
+# keep the Spring context lightweight for integration tests.
+spring:
+  flyway:
+    enabled: true
+    schemas: chat
+    default-schema: chat
+    locations: classpath:db/migration
+    # url / user / password injected by @DynamicPropertySource
+  data:
+    redis:
+      # host / port injected by @DynamicPropertySource; test container has no auth
+      password:
+      timeout: 2s
+      connect-timeout: 2s
+  kafka:
+    # The StreamControlListener consumer is not exercised by the cache tests;
+    # keep it from attempting a broker connection during context startup.
+    listener:
+      auto-startup: false
+    consumer:
+      group-id: chat-service-test
+      auto-offset-reset: earliest
+
+# Discovery is irrelevant to the cache test suite — do not contact Eureka.
+eureka:
+  client:
+    enabled: false
+    register-with-eureka: false
+    fetch-registry: false
+
+logging:
+  level:
+    org.testcontainers: INFO
+    com.github.dockerjava: WARN

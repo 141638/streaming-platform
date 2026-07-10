@@ -1,7 +1,7 @@
 # Implementation Plan
 
-**Last updated:** 2026-07-08
-**Current phase:** 2 — Stream Lifecycle (2.4 complete) / 3 — Real-time Chat (partial)
+**Last updated:** 2026-07-10
+**Current phase:** 2 — Stream Lifecycle (2.4–2.5 complete, channel page shipped) / 3 — Real-time Chat (partial)
 
 ## End Goal
 
@@ -324,6 +324,69 @@ OBS stops → SRS → on_unpublish webhook → stream service → auto-end
 
 ---
 
+#### 2.5b — Channel Page `/@username` (Authenticated) ✅
+
+**Status:** Done (implemented 2026-07-09–10)
+
+**Why:** The platform needed a Twitch-style channel page at `/@username` where viewers can see a broadcaster's recent streams, categories, bio, social links, and channel stats. All authenticated users can view any channel; owner-only edit affordances are gated client-side with server-side enforcement on writes.
+
+**Architecture decisions — see [docs/adr/stream/0007](adr/stream/0007-public-channel-read-and-channel-service-seam.md) and [channel-page-retrospective](../docs/plans/channel-page-retrospective.md):**
+
+| Decision | Where | Summary |
+|----------|-------|---------|
+| Denormalized identity | V7 migration | `broadcaster_username` + `broadcaster_verified` on `stream_session`, populated from JWT `attr` at create time |
+| Safe cross-user projection | `ChannelResponse` | Excludes `broadcasterSubject`, publish key, `rtmpUrl` — never leaked to other users |
+| Broadcaster profile | V8+V9 migrations | Separate `broadcaster_profile` table keyed by username: `bio TEXT` + `social_links JSONB` |
+| JSONB converter pattern | `R2dbcConfig` | `@ReadingConverter`/`@WritingConverter` using `io.r2dbc.postgresql.codec.Json` for correct `jsonb` wire type |
+| Channel stats (derived) | `ChannelStats` | Computed on-the-fly from session data: totalStreams, totalHoursStreamed, topCategory, firstStreamedAt, categoryBreakdown |
+| Client-side owner gating | `ChannelPage` | `isOwner = computed(() => myUsername() === username())` — server enforces ownership on write endpoints |
+
+**Backend deliverables:**
+
+| # | Item | Files |
+|---|------|-------|
+| 1 | JWT `username` claim (auth-service) | V9 seed + `SubjectAttributeResolver` + `SubjectAttributes` |
+| 2 | Denormalized broadcaster identity | V7 migration, `StreamSessionEntity`, `StreamService.buildEntity()` |
+| 3 | `JwtAttr` utility | `JwtAttr.java` — static helpers for reading `attr.username` / `attr.verified_streamer` |
+| 4 | `GET /v1/channels/{username}` | `ChannelResponse`, `ChannelStats`, `CategoryCount`, `StreamController.getChannel()` |
+| 5 | Broadcaster profile (bio + social links) | V8+V9 migrations, `BroadcasterProfileEntity`, `BroadcasterProfileRepository` |
+| 6 | `POST /v1/channels/{username}/profile` | `UpdateProfileRequest`, `StreamService.updateProfile()` — owner-only (JWT username check) |
+| 7 | JSONB converters | `SocialLinksReadingConverter`, `SocialLinksWritingConverter`, `R2dbcConfig` |
+| 8 | `SocialLink` DTO | `record SocialLink(String platform, String url)` |
+| 9 | Repo finder by username | `StreamSessionRepository.findAllByBroadcasterUsernameOrderByCreatedAtDesc()` |
+
+**Frontend deliverables:**
+
+| # | Component | Type | Description |
+|---|-----------|------|-------------|
+| 1 | `ChannelPage` | Page | Smart container, route input `username`, owner gating, bio + social links editing |
+| 2 | `ChannelHeaderComponent` | Organism | DiceBear avatar, verified badge, content-projected viewer/owner action slots |
+| 3 | `SessionRailComponent` | Organism | 20rem cards, 8rem thumbnails, drag-to-scroll + chevrons, floating date labels, category portrait thumbnails |
+| 4 | `CategoryStripComponent` | Molecule | 3.2/4 portrait cards, gradient backgrounds from name hash, pseudo-subscriber counts |
+| 5 | `PlaylistRailComponent` | Organism | Empty "No playlists yet" shell |
+| 6 | `SocialLinksComponent` | Molecule | Platform→PrimeIcon mapping, tooltip `<a>` buttons, null-safe |
+| 7 | `formatCount` util | Lib | K/M/B number formatting |
+| 8 | Contracts (5 new) | DTOs | `ChannelResponseDto`, `ChannelStatsDto`, `SocialLinkDto`, `CategoryCountDto`; `TokenAttrDto` extended |
+
+**Deferred to later phases (documented in [scope review](plans/channel-page-scope-review.md)):**
+
+| Item | Deferred to | Reason |
+|------|------------|--------|
+| Login rate limiter + uniform 401 | Phase 6.3 or standalone | ADR'd (auth/0003), not implemented |
+| Real followers / subscriptions / gifting | channel-service extraction | Needs social graph + payments |
+| Playlist domain | channel-service | Needs VOD/video upload first |
+| Videos tab | Phase 4+ (VOD) | Tab disabled; needs video infrastructure |
+| Guest/public access | Future ADR | Platform is login-gated |
+| SRS snapshot thumbnails (2.9) | Phase 4.0 | SRS Docker service required |
+
+**ADR:** [0007](adr/stream/0007-public-channel-read-and-channel-service-seam.md) (Accepted 2026-07-10)
+
+**Retrospective:** [channel-page-retrospective.md](plans/channel-page-retrospective.md)
+
+**Validate:** `./gradlew :stream-service:test` (all channel tests pass), `ng build` (BUILD SUCCESSFUL), manual flow: visit `/@<username>` → header + verified badge + session rail + category strip + About tab with bio/links/stats render from real data.
+
+---
+
 #### 2.6 — Kafka Integration Testing
 
 **Why:** The stream state machine (2.3) publishes events to Kafka, and downstream services (chat-service 3.3, notification-service 5.2) consume them. There are currently no tests verifying that Kafka produce/consume works end-to-end.
@@ -382,7 +445,8 @@ OBS stops → SRS → on_unpublish webhook → stream service → auto-end
 - [x] 2.4c — SRS webhook endpoints (Sol3 on_publish/on_unpublish, gateway routing)
 - [x] 2.4d — Playback URL in PublishKeyResponse (Option B)
 - [x] 2.4e — Migration V5 (reverse NOT NULL, add srs_name column)
-- [x] 2.5 — Frontend stream dashboard (partial: stream-create + channel pages exist)
+- [x] 2.5 — Frontend stream dashboard (card grid, lifecycle controls, publish-key management)
+- [x] 2.5b — Channel page `/@username` (identity, session rail, category strip, About tab with bio/social links/stats, JSONB converter pattern)
 - [ ] 2.6 — Kafka integration testing
 - [ ] 2.7 — Schedule reminder batch (deferred — depends on notification + subscription)
 - [ ] 2.8 — Stream templates (deferred — separate ADR needed)
@@ -397,6 +461,7 @@ OBS stops → SRS → on_unpublish webhook → stream service → auto-end
 | [0003](adr/stream/0003-categories-tags.md) | Managed `stream_category` lookup table + `TEXT[]` tags with GIN index |
 | [0004](adr/stream/0004-srs-webhook-publish-token.md) | SRS webhook integration with JWT publish token, srsName/SHA-256 lookup, Sol3 contextual expiry (to be revised: single-TTL + Sol3 decisions) |
 | [0005](adr/stream/0005-stream-thumbnails.md) | Stream thumbnails via SRS auto-snapshot; field+display in 2.5, capture in 2.9; custom-upload via MinIO deferred (Proposed) |
+| [0007](adr/stream/0007-public-channel-read-and-channel-service-seam.md) | Authenticated channel read in stream-service with channel-service extraction seam; denormalized identity + safe cross-user projection + BroadcasterProfile (Accepted) |
 
 #### 2.9 — SRS Snapshot Thumbnails
 
@@ -770,7 +835,7 @@ V2__add_room_status.sql                   ← new: status + archived_at on chat.
 
 | # | Item | Depends on |
 |---|------|-----------|
-| 4.1 | **Frontend: Browse/discovery page** — list live streams with thumbnails, filter by category, search | 2.3 |
+| 4.1 | **Frontend: Browse/discovery page** — list live streams with thumbnails, filter by category, search. Channel page (`/@username`) is already built (2.5b) — this page links into it. | 2.3, 2.5b |
 | 4.2 | **Frontend: Stream viewing page** — HLS player (hls.js), embedded chat panel (`ChatPanelComponent` already built), stream info sidebar | 2.4, 3.5, 4.1 |
 | 4.3 | **Playback URL generation** — stream service returns HLS URL per stream, gateway proxies or redirects to SRS | 2.4 |
 | 4.4 | **Viewer count / presence** — Redis-based ephemeral presence per room (`SETEX` with TTL), shown in UI | 4.2 |

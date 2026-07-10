@@ -1,8 +1,9 @@
 # Channel Page — Scope & Vision (authoritative planning doc)
 
 **Date:** 2026-07-09
-**Status:** Approved — implementation starts at commit #2 (see execution order)
-**Companion:** [`channel-page-phase-a-b-blueprint.md`](channel-page-phase-a-b-blueprint.md) holds the file-level how-to; this doc holds the *why*, the *scope boundaries*, and the *full vision*. On any conflict, **this doc wins** (the blueprint body was reconciled to match it).
+**Updated:** 2026-07-10 (post-implementation review)
+**Status:** Phase A+B shipped. About tab expanded beyond original scope (see §0.1).
+**Companion:** [`channel-page-phase-a-b-blueprint.md`](channel-page-phase-a-b-blueprint.md) holds the file-level how-to; [`channel-page-retrospective.md`](channel-page-retrospective.md) holds the full post-implementation analysis. On any conflict, **this doc wins** (the blueprint body was reconciled to match it).
 
 This is the entry point for anyone (incl. a cold session) picking up the channel work.
 
@@ -58,7 +59,7 @@ built later in a dedicated **channel-service**. The section below is the exact l
 | **Gift Sub** | 🟡 Shell | Disabled button | channel-service + payments |
 | **Playlists** (manager-curated rails) | 🟡 Shell | Empty "No playlists yet" rail — deferred until VOD/video upload is available | channel-service (playlist domain + manager CRUD) |
 | **Videos** tab | 🟡 Shell | Disabled tab — requires VOD upload + video management backend | Phase 4+ (VOD infrastructure) |
-| **About** tab | ✅ Build (real) | Bio display + owner edit; V8 `broadcaster_profile` table + `POST /v1/channels/{username}/profile` | Social links, schedule (unspecced) |
+| **About** tab | ✅ Build (real) | Bio display + owner inline edit (V8 `broadcaster_profile`); social links display + owner add/remove edit (V9 `social_links JSONB` + R2DBC converters); derived channel stats sidebar with total streams, hours streamed, top category, streaming-since date, and per-category breakdown; `POST /v1/channels/{username}/profile` | Schedule, achievements (unspecced) |
 | Owner manage affordances | ✅ Build (minimal) | `@if(isOwner)` → link into existing `/channel/:id` panel | richer manage UI later |
 | Guest / public (no-login) access | ❌ Not now | — | **Own future ADR** (revisitable) |
 | Rename-drift reconciliation | ❌ Not now | — | channel-service (`UserRenamed` event / job) |
@@ -127,8 +128,10 @@ a disabled/empty placeholder now and a `channel-service` job later.*
 - Uniform 401 login error (auth-service).
 - Denormalized `broadcaster_username` / `broadcaster_verified` on `stream_session`.
 - Authenticated `GET /v1/channels/{username}` + safe `ChannelResponse` projection.
-- Channel bio via `broadcaster_profile` table (V8) + `POST /v1/channels/{username}/profile` (owner-only).
-- Angular `ChannelPage` + shared organisms; session rail (real data), category strip (real), About tab (bio display + owner edit).
+- Channel bio via `broadcaster_profile` table (V8) + social links via `social_links JSONB` column (V9) with R2DBC custom converters.
+- `POST /v1/channels/{username}/profile` (owner-only upsert for bio + social links).
+- Derived `ChannelStats` (totalStreams, totalHoursStreamed, topCategory, firstStreamedAt, categoryBreakdown) computed on-the-fly from session data.
+- Angular `ChannelPage` + shared organisms; session rail (real data), category strip (real), About tab (bio display + owner edit, social links display + owner add/remove, stats sidebar with category breakdown).
 
 ### Scaffolded shells now (no backend, visibly disabled)
 - Follower / subscriber / video counts.
@@ -181,16 +184,22 @@ standalone auth-hardening step independent of the channel feature. Captured in
 
 ---
 
-## Proposed execution order (after approval), committed feature-by-feature
+## Execution order (actual, post-implementation)
 
-Each numbered item is its own focused commit (per the feature-by-feature commit preference):
+Each numbered item was its own focused commit (per the feature-by-feature commit preference).
+Items marked ❌ were deferred.
 
-1. **ADR edits** — auth/0002 reframe, stream/0007 reframe, new auth/0003 + README indexes. *(done)*
-2. **feat(auth): username in JWT attr claim** — V9 seed + resolver + `SubjectAttributes`.
-3. **fix(auth): uniform 401 on login** — collapse 404-vs-401 enumeration oracle.
-4. **feat(auth): Redis-Lua login rate limiter** — Lua script + service + 429 exception + wiring.
-5. **feat(stream): denormalize broadcaster identity** — V7 columns + populate from `attr` at create.
-6. **feat(stream): authenticated channel read endpoint** — `ChannelResponse` safe projection + repo finder + controller.
-7. **feat(ui): username signal + channel contracts** — `TokenAttrDto.username`, `myUsername`, `channel-response.dto`, `getChannel`.
-8. **feat(ui): channel page route + container + organisms** — `/@:username`, shared organisms, owner-mode gating.
-9. **feat(ui): channel header entry point** — app-shell "Channel" → own handle; retire/redirect `dashboard/streams`.
+1. ✅ **ADR edits** — `487afa1`, `339c449`, `da556f0`: auth/0002, stream/0007, auth/0003 + README indexes + insight/0000.
+2. ✅ **feat(auth): username in JWT attr claim** — `1a0617f`: V9 seed + resolver + `SubjectAttributes`.
+3. ❌ **fix(auth): uniform 401 on login** — deferred. ADR'd (auth/0002) but not implemented.
+4. ❌ **feat(auth): Redis-Lua login rate limiter** — deferred. ADR'd (auth/0003) but not implemented.
+5. ✅ **feat(stream): denormalize broadcaster identity** — `e12d3d1`: V7 columns + `JwtAttr` helper.
+6. ✅ **feat(stream): authenticated channel read endpoint** — `158b5c9`, `50e9cb1`: `ChannelResponse` + stats + categories.
+7. ✅ **feat(ui): username signal + channel contracts** — `e0120ee`: contracts + auth service + `getChannel()`.
+8. ✅ **feat(ui): channel page route + container + organisms** — `e0120ee`, `1d5de98`, `4dd62ca`: `/@:username` + all components + About tab + UI polish.
+9. ✅ **feat(ui): channel header entry point** — `e0120ee`: app-shell "Channel" → `/@<myUsername>`.
+
+**Beyond planned scope (shipped):**
+- ✅ **feat(stream): broadcaster profile + social links + channel stats** — `158b5c9`: V8+V9 migrations, profile endpoint, `ChannelStats`, JSONB converters.
+- ✅ **fix(stream): JSONB converter wire-type** — `af1f62c`, `991c67d`: `Json.of()` for write, `Json` input for read.
+- ✅ **feat(ui): two-column About tab with stats sidebar + category breakdown** — `1d5de98`, `4dd62ca`.

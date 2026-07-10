@@ -1,7 +1,8 @@
 # Blueprint: `/@username` Channel Page — Phase A (Identity + Authenticated Read) & Phase B (Channel Shell)
 
-**Status:** Ready for review
+**Status:** Implemented (2026-07-09–10)
 **Date:** 2026-07-09
+**Post-implementation notes:** See [retrospective](channel-page-retrospective.md). About tab (bio, social links, stats) was added beyond original blueprint scope. Login hardening (A2: uniform 401 + rate limiter) was deferred — ADR'd but not implemented.
 **Decisions locked:** route `/@username`; denormalize username into stream-service; **authenticated-only** (no guest access this round); login rate-limiter + uniform-401 kept this round (auth/0003); social/playlist features are **shells** this round.
 **ADRs:** [auth/0002](../adr/auth/0002-public-username-handle-and-login-hardening.md), [auth/0003](../adr/auth/0003-login-rate-limiting.md), [stream/0007](../adr/stream/0007-public-channel-read-and-channel-service-seam.md)
 **Authoritative scope:** [channel-page-scope-review.md](channel-page-scope-review.md) holds the vision, the full feature→scope map, and the execution order. This blueprint has been reconciled to match it (authenticated-only: no gateway allowlist, no permitAll, safe projection guards cross-user leakage).

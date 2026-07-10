@@ -39,6 +39,52 @@ Quick reference for PostgreSQL best practices. For detailed guidance, use the `d
 | Money | `numeric(10,2)` | `float` |
 | Flags | `boolean` | `varchar`, `int` |
 
+### Type Selection — Two-Tier Preference
+
+Prefer simple types. Complex types cost framework friction, migration complexity, and query opacity.
+
+**Tier 1 — Default choice (primitive, universally supported):**
+
+| Type | PostgreSQL | Java (R2DBC native) |
+|------|-----------|---------------------|
+| Variable text | `VARCHAR(n)`, `TEXT` | `String` |
+| Boolean flag | `BOOLEAN` | `Boolean` |
+| Integer / long | `INTEGER`, `BIGINT` | `Integer`, `Long` |
+| UUID | `UUID` | `java.util.UUID` |
+| Timestamp with TZ | `TIMESTAMPTZ` | `OffsetDateTime`, `Instant` |
+| Fixed-precision decimal | `NUMERIC(p,s)` | `BigDecimal` |
+
+**Tier 2 — Use only when tier 1 is genuinely insufficient:**
+
+| Type | PostgreSQL | Java (needs converter) | When justified |
+|------|-----------|----------------------|----------------|
+| JSON object/array | `JSONB` | Domain type via `Converter<Json, T>` | Semi-structured data: variable keys, nested objects, optional fields that change shape |
+| Text array | `TEXT[]` | Domain type via `Converter<String[], T>` | GIN-indexed containment queries (`@>`, `&&`) |
+| Binary | `BYTEA` | `byte[]` or `ByteBuffer` | Binary data co-located with row (small files only; large blobs → object storage) |
+| Custom ENUM | `CREATE TYPE ... AS ENUM` | `String` + `CHECK` constraint preferred | Rare. Usually a lookup table is better (extensible without DDL) |
+
+**Decision rule:** Start at tier 1. Escalate to tier 2 ONLY when you can name the specific query or constraint that tier 1 cannot satisfy. "It would be cleaner as JSON" is not sufficient justification.
+
+### Verifying Tier 2 Framework Compatibility (Spring Data R2DBC)
+
+This project uses **Spring Data R2DBC** with the **PostgreSQL reactive dialect** — NOT Hibernate/JPA. R2DBC does NOT automatically map JSONB to POJOs.
+
+**For every tier 2 column, verify:**
+
+1. **Is there a Spring Data R2DBC `Converter` registered?** R2DBC requires explicit `@ReadingConverter` and `@WritingConverter` pairs registered in `AbstractR2dbcConfiguration.getCustomConverters()`.
+2. **Does the converter use the correct wire type?** For JSONB: the writing converter MUST return `io.r2dbc.postgresql.codec.Json` (via `Json.of(jsonString)`), NOT a plain `String`. A `String` return type causes `"column is of type jsonb but expression is of type character varying"`.
+3. **Is the converter in the right package?** All converters must live under `config/converter/` for discoverability:
+   ```
+   config/
+   ├── R2dbcConfig.java
+   └── converter/
+       ├── SocialLinksReadingConverter.java
+       ├── SocialLinksWritingConverter.java
+       └── ...
+   ```
+
+**Existing converter pattern:** [`docs/R2DBC-JSONB-CONVERTER-PATTERN.md`](../../docs/R2DBC-JSONB-CONVERTER-PATTERN.md) — full template, common pitfalls, and existing implementations.
+
 ### Common Patterns
 
 **Composite Index Order:**

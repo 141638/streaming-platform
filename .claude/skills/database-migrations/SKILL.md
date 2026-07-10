@@ -21,14 +21,19 @@ Safe, reversible database schema changes for production systems.
 1. **Every change is a migration** — never alter production databases manually
 2. **Migrations are forward-only in production** — rollbacks use new forward migrations
 3. **Schema and data migrations are separate** — never mix DDL and DML in one migration
-4. **Test migrations against production-sized data** — a migration that works on 100 rows may lock on 10M
-5. **Migrations are immutable once deployed** — never edit a migration that has run in production
+4. **Prefer simple types (tier 1)** — `VARCHAR`, `BOOLEAN`, `BIGINT`, `UUID`, `TIMESTAMPTZ` are universally supported. Only use complex types (`JSONB`, `TEXT[]`, `BYTEA`, custom ENUM) when tier 1 cannot satisfy the query or constraint requirements.
+5. **Verify framework compatibility for tier 2 types** — when a complex type is chosen, confirm the framework/driver supports it natively. If not (e.g., Spring Data R2DBC + JSONB), create a converter pair and register it. See `docs/R2DBC-JSONB-CONVERTER-PATTERN.md`.
+6. **Test migrations against production-sized data** — a migration that works on 100 rows may lock on 10M
+7. **Migrations are immutable once deployed** — never edit a migration that has run in production
 
 ## Migration Safety Checklist
 
 Before applying any migration:
 
 - [ ] Migration has both UP and DOWN (or is explicitly marked irreversible)
+- [ ] New columns use tier 1 types unless tier 2 is justified
+- [ ] Tier 2 columns (JSONB, array, bytea, enum) have a corresponding R2DBC converter pair verified
+- [ ] Converters are grouped in `config/converter/` subfolder
 - [ ] No full table locks on large tables (use concurrent operations)
 - [ ] New columns have defaults or are nullable (never add NOT NULL without default)
 - [ ] Indexes created concurrently (not inline with CREATE TABLE for existing tables)

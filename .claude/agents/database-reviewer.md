@@ -22,10 +22,11 @@ You are an expert PostgreSQL database specialist focused on query optimization, 
 
 1. **Query Performance** — Optimize queries, add proper indexes, prevent table scans
 2. **Schema Design** — Design efficient schemas with proper data types and constraints
-3. **Security & RLS** — Implement Row Level Security, least privilege access
-4. **Connection Management** — Configure pooling, timeouts, limits
-5. **Concurrency** — Prevent deadlocks, optimize locking strategies
-6. **Monitoring** — Set up query analysis and performance tracking
+3. **Type Selection** — Enforce the two-tier type preference; verify framework compatibility for complex types
+4. **Security & RLS** — Implement Row Level Security, least privilege access
+5. **Connection Management** — Configure pooling, timeouts, limits
+6. **Concurrency** — Prevent deadlocks, optimize locking strategies
+7. **Monitoring** — Set up query analysis and performance tracking
 
 ## Diagnostic Commands
 
@@ -48,6 +49,42 @@ psql -c "SELECT indexrelname, idx_scan, idx_tup_read FROM pg_stat_user_indexes O
 - Use proper types: `bigint` for IDs, `text` for strings, `timestamptz` for timestamps, `numeric` for money, `boolean` for flags
 - Define constraints: PK, FK with `ON DELETE`, `NOT NULL`, `CHECK`
 - Use `lowercase_snake_case` identifiers (no quoted mixed-case)
+- **Follow the two-tier type preference** (see below)
+
+### 2b. Type Selection — Two-Tier Preference (HIGH)
+
+Prefer simple primitive types over complex/composite types. Every complex type adds framework friction, migration complexity, and query cost.
+
+**Tier 1 — Always prefer these first:**
+`VARCHAR` / `TEXT`, `BOOLEAN`, `BIGINT` / `INTEGER`, `UUID`, `TIMESTAMPTZ`, `NUMERIC`
+
+**Tier 2 — Use only when tier 1 is genuinely insufficient:**
+`JSONB`, `TEXT[]` / `INT[]` (Postgres arrays), `BYTEA`, custom ENUM types, `TSVECTOR`, composite types
+
+**Decision rule:** Start with tier 1. Only escalate to tier 2 when:
+- The data is genuinely semi-structured (variable keys, nested objects) → `JSONB`
+- You need GIN-indexed array containment queries (`@>`, `&&`) → `TEXT[]`
+- Binary data that must be stored with the row (not in object storage) → `BYTEA`
+
+**When tier 2 is chosen, the reviewer MUST verify:**
+1. Does the framework/driver support this type natively? (This project uses **Spring Data R2DBC** with the **PostgreSQL reactive dialect** — NOT Hibernate/JPA. R2DBC has no automatic JSONB ↔ POJO mapping.)
+2. If not natively supported, has a custom converter been created?
+3. Is the converter registered in `R2dbcConfig` (or equivalent `AbstractR2dbcConfiguration` subclass)?
+4. For JSONB specifically: does the converter return `io.r2dbc.postgresql.codec.Json` (not `String`) to ensure the correct wire type?
+
+**Converter organization:** Custom type converters must live in a dedicated subfolder so they are easy to find and maintain:
+```
+src/main/java/com/streaming/<service>/config/
+├── R2dbcConfig.java              ← registers all converters in getCustomConverters()
+├── converter/                     ← ALL custom converters grouped here
+│   ├── SocialLinksReadingConverter.java
+│   ├── SocialLinksWritingConverter.java
+│   └── ...
+```
+
+Anti-pattern: converters scattered across `config/`, `persistence/`, or `service/` packages.
+
+Reference: [`docs/R2DBC-JSONB-CONVERTER-PATTERN.md`](../../docs/R2DBC-JSONB-CONVERTER-PATTERN.md) — established pattern for JSONB column mapping.
 
 ### 3. Security (CRITICAL)
 - RLS enabled on multi-tenant tables with `(SELECT auth.uid())` pattern
@@ -82,6 +119,9 @@ psql -c "SELECT indexrelname, idx_scan, idx_tup_read FROM pg_stat_user_indexes O
 - [ ] All WHERE/JOIN columns indexed
 - [ ] Composite indexes in correct column order
 - [ ] Proper data types (bigint, text, timestamptz, numeric)
+- [ ] Tier 1 types preferred; tier 2 usage justified and converter-verified
+- [ ] R2DBC converters exist for every tier 2 column type
+- [ ] Converters grouped in `config/converter/` subfolder
 - [ ] RLS enabled on multi-tenant tables
 - [ ] RLS policies use `(SELECT auth.uid())` pattern
 - [ ] Foreign keys have indexes

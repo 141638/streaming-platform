@@ -14,7 +14,9 @@ public class R2dbcConfig {
         return R2dbcCustomConversions.of(
                 PostgresDialect.INSTANCE,
                 new StringToStreamStatusConverter(),
-                new StreamStatusToStringConverter()
+                new StreamStatusToStringConverter(),
+                new SocialLinksReadingConverter(),
+                new SocialLinksWritingConverter()
         );
     }
 }

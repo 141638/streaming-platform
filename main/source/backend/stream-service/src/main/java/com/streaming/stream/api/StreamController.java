@@ -2,11 +2,13 @@ package com.streaming.stream.api;
 
 import com.streaming.common.api.ApiMessage;
 import com.streaming.stream.api.dto.CategoryResponse;
+import com.streaming.stream.api.dto.ChannelResponse;
 import com.streaming.stream.api.dto.CreateStreamRequest;
 import com.streaming.stream.api.dto.PublishKeyResponse;
 
 import com.streaming.stream.api.dto.StreamResponse;
 import com.streaming.stream.api.dto.StreamSummaryResponse;
+import com.streaming.stream.api.dto.UpdateProfileRequest;
 import com.streaming.stream.api.dto.UpdateStreamRequest;
 import com.streaming.stream.service.StreamService;
 import jakarta.validation.Valid;
@@ -73,6 +75,27 @@ public class StreamController {
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID id) {
         return streamService.getStream(id, jwt).map(ResponseEntity::ok);
+    }
+
+    // ── Channel page (authenticated, cross-user read) ────────────────────────
+
+    @GetMapping("/channels/{username}")
+    public Mono<ResponseEntity<ChannelResponse>> getChannel(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String username) {
+        return streamService.getChannel(username).map(ResponseEntity::ok);
+    }
+
+    // ── Channel profile (owner-only write) ────────────────────────────────────
+
+    @PostMapping(path = "/channels/{username}/profile",
+            consumes = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<Void>> updateProfile(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String username,
+            @Valid @RequestBody UpdateProfileRequest body) {
+        return streamService.updateProfile(username, body, jwt)
+                .then(Mono.just(ResponseEntity.ok().build()));
     }
 
     @PatchMapping(path = "/streams/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)

@@ -2,26 +2,38 @@ package com.streaming.stream.service;
 
 import com.streaming.common.crypto.HashUtils;
 import com.streaming.stream.api.dto.CategoryResponse;
+import com.streaming.stream.api.dto.ChannelResponse;
+import com.streaming.stream.api.dto.ChannelStats;
 import com.streaming.stream.api.dto.CreateStreamRequest;
 import com.streaming.stream.api.dto.PublishKeyResponse;
+import com.streaming.stream.api.dto.SocialLink;
 import com.streaming.stream.api.dto.StreamResponse;
 import com.streaming.stream.api.dto.StreamSummaryResponse;
+import com.streaming.stream.api.dto.UpdateProfileRequest;
 import com.streaming.stream.api.dto.UpdateStreamRequest;
 import com.streaming.stream.config.PublishTokenProperties;
 import com.streaming.stream.messaging.StreamEvent;
 import com.streaming.stream.messaging.StreamEventPublisher;
+import com.streaming.stream.persistence.entity.BroadcasterProfileEntity;
 import com.streaming.stream.persistence.entity.StreamSessionEntity;
 import com.streaming.stream.persistence.entity.StreamStatus;
+import com.streaming.stream.persistence.repository.BroadcasterProfileRepository;
 import com.streaming.stream.persistence.repository.StreamCategoryRepository;
 import com.streaming.stream.persistence.repository.StreamSessionRepository;
 import com.streaming.stream.security.AuthAction;
 import com.streaming.stream.security.AuthResourceDomain;
 import com.streaming.stream.security.AuthResourceKind;
+import com.streaming.stream.security.JwtAttr;
 import com.streaming.stream.security.RequiredAuthority;
 import com.streaming.stream.security.StreamAuthorization;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.OptimisticLockingFailureException;
@@ -37,6 +49,7 @@ public class StreamService {
 
     private final StreamSessionRepository repository;
     private final StreamCategoryRepository categoryRepository;
+    private final BroadcasterProfileRepository profileRepository;
     private final StreamAuthorization authorization;
     private final StreamEventPublisher eventPublisher;
     private final PublishTokenService publishTokenService;
@@ -44,12 +57,14 @@ public class StreamService {
 
     public StreamService(StreamSessionRepository repository,
                          StreamCategoryRepository categoryRepository,
+                         BroadcasterProfileRepository profileRepository,
                          StreamAuthorization authorization,
                          StreamEventPublisher eventPublisher,
                          PublishTokenService publishTokenService,
                          PublishTokenProperties publishTokenProps) {
         this.repository = repository;
         this.categoryRepository = categoryRepository;
+        this.profileRepository = profileRepository;
         this.authorization = authorization;
         this.eventPublisher = eventPublisher;
         this.publishTokenService = publishTokenService;
@@ -65,6 +80,8 @@ public class StreamService {
      */
     public Mono<StreamResponse> createStream(CreateStreamRequest request, Jwt jwt) {
         final String sub = jwt.getSubject();
+        final String username = JwtAttr.username(jwt);
+        final Boolean verified = JwtAttr.verifiedStreamer(jwt);
         final UUID id = UUID.randomUUID();
         final OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
 
@@ -72,7 +89,8 @@ public class StreamService {
                         AuthResourceDomain.STREAM, AuthResourceKind.SESSION,
                         AuthAction.CREATE, sub))
                 .then(Mono.defer(() -> {
-                    StreamSessionEntity entity = buildEntity(id, sub, request, now);
+                    StreamSessionEntity entity = buildEntity(id, sub, username, verified,
+                            request, now);
                     if (request.scheduledAt() != null) {
                         entity.setStatus(StreamStatus.SCHEDULED);
                         entity.setScheduledAt(request.scheduledAt());
@@ -127,6 +145,133 @@ public class StreamService {
                                 e -> new StreamNotFoundException(id))
                         .thenReturn(entity))
                 .map(StreamResponse::from);
+    }
+
+    // ── Channel read (authenticated, cross-user safe) ─────────────────────────
+
+    private static final int CHANNEL_SESSION_CAP = 15;
+
+    /**
+     * Return the safe cross-user channel projection for {@code /@username}.
+     *
+     * <p>Any authenticated user may read any channel — this is not owner-scoped.
+     * Identity (username / verified) is resolved from the newest session with
+     * a non-null {@code broadcaster_username} to tolerate backfill-gap rows.
+     * Always returns 200 (possibly with an empty session list).
+     */
+    public Mono<ChannelResponse> getChannel(String username) {
+        Mono<List<StreamSessionEntity>> sessionsMono = repository
+                .findAllByBroadcasterUsernameOrderByCreatedAtDesc(username)
+                .collectList();
+        Mono<BroadcasterProfileEntity> profileMono = profileRepository
+                .findByUsername(username)
+                .defaultIfEmpty(new BroadcasterProfileEntity());
+
+        return Mono.zip(sessionsMono, profileMono)
+                .map(tuple -> {
+                    List<StreamSessionEntity> allSessions = tuple.getT1();
+                    BroadcasterProfileEntity profile = tuple.getT2();
+
+                    // Resolve identity from the newest session with non-null username
+                    String resolvedUsername = null;
+                    Boolean resolvedVerified = null;
+                    for (var s : allSessions) {
+                        if (s.getBroadcasterUsername() != null) {
+                            resolvedUsername = s.getBroadcasterUsername();
+                            resolvedVerified = s.getBroadcasterVerified();
+                            break;
+                        }
+                    }
+                    if (resolvedUsername == null) {
+                        resolvedUsername = username;
+                    }
+
+                    // Cap session list for the rail
+                    List<StreamSummaryResponse> rail = allSessions.stream()
+                            .limit(CHANNEL_SESSION_CAP)
+                            .map(StreamSummaryResponse::from)
+                            .collect(Collectors.toCollection(ArrayList::new));
+
+                    // Distinct recent categories from all sessions (not just the rail)
+                    List<String> recentCategories = allSessions.stream()
+                            .map(StreamSessionEntity::getCategory)
+                            .filter(c -> c != null && !c.isBlank())
+                            .distinct()
+                            .collect(Collectors.toCollection(ArrayList::new));
+
+                    // Social links deserialized by R2DBC converter
+                    List<SocialLink> links = profile.getSocialLinks() != null
+                            ? profile.getSocialLinks() : List.of();
+
+                    // Compute channel stats from all sessions
+                    ChannelStats stats = computeStats(allSessions);
+
+                    return ChannelResponse.of(resolvedUsername, resolvedVerified,
+                            rail, recentCategories, profile.getBio(), links, stats);
+                });
+    }
+
+    // ── Stats computation ──────────────────────────────────────────────────
+
+    /**
+     * Compute derived channel statistics from the full (uncapped) session list.
+     * Zero-allocation when the list is empty.
+     */
+    private static ChannelStats computeStats(List<StreamSessionEntity> allSessions) {
+        if (allSessions.isEmpty()) {
+            return new ChannelStats(0, 0, null);
+        }
+
+        int totalStreams = allSessions.size();
+
+        long totalHours = 0;
+        for (var s : allSessions) {
+            if (s.getStartedAt() != null && s.getEndedAt() != null) {
+                long seconds = java.time.Duration.between(
+                        s.getStartedAt(), s.getEndedAt()).toSeconds();
+                if (seconds > 0) {
+                    totalHours += seconds;
+                }
+            }
+        }
+        long totalHoursStreamed = totalHours / 3600;
+
+        String topCategory = allSessions.stream()
+                .map(StreamSessionEntity::getCategory)
+                .filter(c -> c != null && !c.isBlank())
+                .collect(Collectors.groupingBy(c -> c, Collectors.counting()))
+                .entrySet()
+                .stream()
+                .max(Comparator.comparingLong(Map.Entry::getValue))
+                .map(Map.Entry::getKey)
+                .orElse(null);
+
+        return new ChannelStats(totalStreams, totalHoursStreamed, topCategory);
+    }
+
+    /**
+     * Upsert the channel bio for the authenticated owner.
+     *
+     * <p>Only the channel owner (JWT username must match the URL username)
+     * may update the bio. Creates the profile row on first write.
+     */
+    public Mono<Void> updateProfile(String username, UpdateProfileRequest request, Jwt jwt) {
+        String jwtUsername = JwtAttr.username(jwt);
+        if (jwtUsername == null || !jwtUsername.equals(username)) {
+            return Mono.error(new ProfileOwnershipException(username));
+        }
+
+        return profileRepository.findByUsername(username)
+                .defaultIfEmpty(BroadcasterProfileEntity.create(username, null))
+                .flatMap(entity -> {
+                    entity.setBio(request.bio());
+                    entity.setSocialLinks(request.socialLinks() != null
+                            ? request.socialLinks() : List.of());
+                    entity.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+                    return profileRepository.save(entity);
+                })
+                .doOnSuccess(saved -> log.info("Profile updated: username={}", username))
+                .then();
     }
 
     // ── Update (metadata only) ──────────────────────────────────────────────
@@ -415,12 +560,16 @@ public class StreamService {
 
     // ── Private helpers ─────────────────────────────────────────────────────
 
-    private StreamSessionEntity buildEntity(UUID id, String sub, CreateStreamRequest request,
+    private StreamSessionEntity buildEntity(UUID id, String sub,
+                                            String username, Boolean verified,
+                                            CreateStreamRequest request,
                                             OffsetDateTime now) {
         StreamSessionEntity entity = new StreamSessionEntity();
         entity.setId(id);
         entity.setNew(true);
         entity.setBroadcasterSubject(sub);
+        entity.setBroadcasterUsername(username);
+        entity.setBroadcasterVerified(verified);
         entity.setTitle(request.title());
         entity.setDescription(request.description());
         entity.setMaxViewers(request.maxViewers());
@@ -549,6 +698,13 @@ public class StreamService {
     public static class InvalidPublishTokenException extends RuntimeException {
         public InvalidPublishTokenException(String message) {
             super(message);
+        }
+    }
+
+    /** Thrown when a non-owner tries to update a channel profile. */
+    public static class ProfileOwnershipException extends RuntimeException {
+        public ProfileOwnershipException(String username) {
+            super("You do not own the channel: " + username);
         }
     }
 }

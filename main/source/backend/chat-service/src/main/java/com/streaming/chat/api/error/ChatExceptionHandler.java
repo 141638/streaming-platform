@@ -1,7 +1,9 @@
 package com.streaming.chat.api.error;
 
+import com.streaming.chat.application.BanSendGuard.UserBannedException;
 import com.streaming.chat.application.ChatService.RoomArchivedException;
 import com.streaming.chat.application.ChatService.RoomNotFoundException;
+import com.streaming.chat.security.ChatAuthorization.ChatAccessDeniedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -37,5 +39,29 @@ public class ChatExceptionHandler {
         log.debug("Room archived: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ChatApiError("CHAT_ROOM_ARCHIVED", ex.getMessage()));
+    }
+
+    /**
+     * Layer-2 ban rejection. Distinct {@code code} from PBAC denial so clients
+     * can disambiguate the two {@code 403}s.
+     */
+    @ExceptionHandler(UserBannedException.class)
+    public ResponseEntity<ChatApiError> handleUserBanned(UserBannedException ex) {
+        log.debug("User banned: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(new ChatApiError("CHAT_USER_BANNED", ex.getMessage()));
+    }
+
+    /**
+     * Layer-1 PBAC capability denial ({@code ent} did not authorize the action).
+     * The exception message carries the resource owner's subject for server-side
+     * diagnostics, so the client body is a fixed opaque string — returning the
+     * detail would let an unauthorized caller enumerate room ownership.
+     */
+    @ExceptionHandler(ChatAccessDeniedException.class)
+    public ResponseEntity<ChatApiError> handleAccessDenied(ChatAccessDeniedException ex) {
+        log.debug("Access denied: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(new ChatApiError("AUTHZ_DENIED", "Access denied"));
     }
 }

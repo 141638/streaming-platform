@@ -1,6 +1,7 @@
 package com.streaming.stream.service;
 
 import com.streaming.common.crypto.HashUtils;
+import com.streaming.stream.api.dto.CategoryCount;
 import com.streaming.stream.api.dto.CategoryResponse;
 import com.streaming.stream.api.dto.ChannelResponse;
 import com.streaming.stream.api.dto.ChannelStats;
@@ -219,12 +220,13 @@ public class StreamService {
      */
     private static ChannelStats computeStats(List<StreamSessionEntity> allSessions) {
         if (allSessions.isEmpty()) {
-            return new ChannelStats(0, 0, null);
+            return new ChannelStats(0, 0, null, null, List.of());
         }
 
         int totalStreams = allSessions.size();
 
         long totalHours = 0;
+        OffsetDateTime oldest = null;
         for (var s : allSessions) {
             if (s.getStartedAt() != null && s.getEndedAt() != null) {
                 long seconds = java.time.Duration.between(
@@ -233,20 +235,34 @@ public class StreamService {
                     totalHours += seconds;
                 }
             }
+            if (s.getCreatedAt() != null) {
+                if (oldest == null || s.getCreatedAt().isBefore(oldest)) {
+                    oldest = s.getCreatedAt();
+                }
+            }
         }
         long totalHoursStreamed = totalHours / 3600;
 
-        String topCategory = allSessions.stream()
+        // Category frequency map
+        Map<String, Long> catCounts = allSessions.stream()
                 .map(StreamSessionEntity::getCategory)
                 .filter(c -> c != null && !c.isBlank())
-                .collect(Collectors.groupingBy(c -> c, Collectors.counting()))
-                .entrySet()
+                .collect(Collectors.groupingBy(c -> c, Collectors.counting()));
+
+        String topCategory = catCounts.entrySet()
                 .stream()
                 .max(Comparator.comparingLong(Map.Entry::getValue))
                 .map(Map.Entry::getKey)
                 .orElse(null);
 
-        return new ChannelStats(totalStreams, totalHoursStreamed, topCategory);
+        List<CategoryCount> breakdown = catCounts.entrySet()
+                .stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .map(e -> new CategoryCount(e.getKey(), e.getValue()))
+                .collect(Collectors.toList());
+
+        return new ChannelStats(totalStreams, totalHoursStreamed, topCategory,
+                oldest, breakdown);
     }
 
     /**

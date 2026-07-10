@@ -113,6 +113,8 @@ export class ChannelPage implements OnInit {
               totalStreams: 0,
               totalHoursStreamed: 0,
               topCategory: null,
+              firstStreamedAt: null,
+              categoryBreakdown: [],
             },
           }),
         error: () => this.error.set('Failed to load channel'),
@@ -151,6 +153,17 @@ export class ChannelPage implements OnInit {
           // Keep the edit form open so the user doesn't lose their draft
         },
       });
+  }
+
+  // ── Display helpers ──────────────────────────────────────────────────────
+
+  protected streamingSince(iso: string | null): string {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return d.toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'long',
+    });
   }
 
   // ── Social links editing ────────────────────────────────────────────────

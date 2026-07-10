@@ -1,7 +1,8 @@
 # ADR-0007: Authenticated Channel Read in Stream-Service, with a channel-service Extraction Seam
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-07-09
+**Accepted:** 2026-07-10
 **Domain:** Stream Service
 
 ## Context
@@ -14,6 +15,9 @@ for any logged-in visitor viewing any channel:
 - channel identity chrome — display name and a **verified** badge;
 - a rail of the broadcaster's recent stream sessions;
 - a strip of recently-streamed categories;
+- an **About tab** with the broadcaster's **bio**, **social links** (platform + URL pairs),
+  and **derived channel stats** (total streams, hours streamed, top category, streaming-since
+  date, per-category breakdown);
 - placeholders for social features (follower/subscriber counts, Follow / Subscribe / Gift)
   and for playlists.
 
@@ -91,6 +95,52 @@ registration, gateway route, Flyway baseline, Docker Compose, health checks). Th
 playlist shells shipped now have **no backend**, so there is nothing to migrate for them —
 only the read slice moves.
 
+### 4. Broadcaster profile (bio + social links) as a separate table
+
+A new `broadcaster_profile` table (V8+V9, schema `stream`) stores the broadcaster's bio and
+social links, keyed by `username`:
+
+- **`broadcaster_profile`** (V8): `username VARCHAR(128) PRIMARY KEY`, `bio TEXT`,
+  `created_at`, `updated_at`.
+- **Social links** (V9): `social_links JSONB` column on `broadcaster_profile`. Stored as a
+  JSON array of `{platform, url}` objects. Mapped to `List<SocialLink>` via R2DBC custom
+  converters (`@ReadingConverter`/`@WritingConverter`) using `io.r2dbc.postgresql.codec.Json`
+  for correct `jsonb` wire-type mapping.
+- **`POST /v1/channels/{username}/profile`** — owner-only upsert (JWT `attr.username` must
+  match the path `{username}`). Accepts `{bio, socialLinks}`; both fields are independently
+  optional.
+
+**Why a separate table and not more columns on `stream_session`?**
+- Bio and social links are 1:1 with the broadcaster identity, not 1:N with sessions.
+  Putting them on `stream_session` would duplicate data or require "latest session" queries.
+- The profile can be updated without any stream existing — a broadcaster can set up their
+  bio and links before their first stream.
+- `username` as the primary key avoids a UUID→username lookup hop on the channel read path.
+  Rename drift is acknowledged as a deferred concern.
+- When channel-service is extracted, `broadcaster_profile` lifts out cleanly as the nucleus
+  of the channel identity aggregate.
+
+### 5. Channel stats as derived/computed data
+
+`ChannelStats` is computed on-the-fly from the channel's full session list rather than stored
+in a materialized table:
+
+| Stat | Computation |
+|------|------------|
+| `totalStreams` | Count of sessions |
+| `totalHoursStreamed` | Sum of `Duration.between(createdAt, updatedAt)` across all sessions, rounded to whole hours |
+| `topCategory` | Most frequent category name across all sessions |
+| `firstStreamedAt` | `createdAt` of the oldest session (null if no sessions) |
+| `categoryBreakdown` | `GROUP BY category` count, sorted descending |
+
+**Why compute and not store?** Zero staleness — stats are always current. No cache
+invalidation or refresh job needed. For MVP scale (hundreds of sessions per channel), the
+in-memory reduction cost is negligible. If this becomes a bottleneck, materialize into a
+`channel_stats` table updated on `STREAM_ENDED` events.
+
+**`totalHoursStreamed` caveat:** Uses `createdAt→updatedAt` duration, which is approximate
+for live streams (updatedAt may not reflect actual end time) but correct for ended streams.
+
 ### Alternatives Considered
 
 | Approach | Verdict | Reason |
@@ -106,10 +156,11 @@ only the read slice moves.
 - **Positive:** Ships the visible channel page with **zero runtime cross-service calls** on
   the read path and **no gateway/security changes** (channels stay authenticated). No new
   infrastructure. The social/playlist decision stays open and documented, and the extraction
-  cost is bounded (one read slice, two columns).
+  cost is bounded (one read slice, two denormalized columns, one profile table).
 - **Negative:** stream-service temporarily hosts logic that conceptually belongs to a channel
   domain. Denormalized `broadcaster_username` goes **stale on rename** — old sessions keep the
-  old handle until reconciled.
+  old handle until reconciled. Profile data (bio, social links) lives in stream-service's
+  schema and would need to migrate with the channel read slice.
 - **Risks:**
   - *Cross-user field leakage.* The projection must be verified to exclude
     `broadcaster_subject`/key/RTMP for non-owner callers — tested explicitly (call another
@@ -121,14 +172,25 @@ only the read slice moves.
     resolvable handle; they render with a placeholder until the stream is recreated.
   - *Scope creep into stream-service.* Mitigation: keep the read slice self-contained and
     resist adding social writes here — those wait for channel-service.
+  - *Profile write conflicts.* Concurrent updates to bio + social links overwrite each other
+    silently (last-write-wins). Acceptable for single-owner profile editing; add `@Version`
+    optimistic locking if this becomes a problem.
 
 ## References
 
 - Related ADRs: [ADR-0005: Stream Thumbnails](0005-stream-thumbnails.md) (same cheap-field /
   deferred-capability split); [auth/ADR-0002: Authenticated-Visible Username Handle](../auth/0002-public-username-handle-and-login-hardening.md)
-  (source of the `username` / `verified_streamer` claims consumed here)
-- Source files: `stream_session` Flyway V7 (denormalized columns),
-  `StreamSessionEntity.java`, `StreamController.java`, `StreamService.java`,
-  `StreamSessionRepository.java`, new `ChannelResponse` DTO
+  (source of the `username` / `verified_streamer` claims consumed here); [insight/ADR-0000](../insight/0000-architecture-foundation.md)
+  (view-tracking trigger on `GET /v1/channels/{username}`)
+- Source files: `stream_session` Flyway V7 (denormalized columns), V8 (`broadcaster_profile`),
+  V9 (`social_links JSONB`); `StreamSessionEntity.java`, `BroadcasterProfileEntity.java`,
+  `StreamController.java`, `StreamService.java`, `StreamSessionRepository.java`,
+  `BroadcasterProfileRepository.java`; `ChannelResponse.java`, `ChannelStats.java`,
+  `CategoryCount.java`, `SocialLink.java`, `UpdateProfileRequest.java`;
+  `SocialLinksReadingConverter.java`, `SocialLinksWritingConverter.java`, `R2dbcConfig.java`
 - External docs: [SERVICE-ARCHITECTURE.md](../../SERVICE-ARCHITECTURE.md) — service topology
-  and the five-step service lifecycle; [ARCHITECTURE.md](../../ARCHITECTURE.md)
+  and the five-step service lifecycle; [ARCHITECTURE.md](../../ARCHITECTURE.md);
+  [channel-page-retrospective.md](../../plans/channel-page-retrospective.md) — full
+  implementation retrospective
+- Pattern docs: [R2DBC-JSONB-CONVERTER-PATTERN.md](../../R2DBC-JSONB-CONVERTER-PATTERN.md) —
+  reusable JSONB column mapping pattern

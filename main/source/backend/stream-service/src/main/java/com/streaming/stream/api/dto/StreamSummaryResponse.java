@@ -15,7 +15,8 @@ public record StreamSummaryResponse(
         List<String> tags,
         String thumbnailUrl,
         OffsetDateTime createdAt,
-        OffsetDateTime scheduledAt
+        OffsetDateTime scheduledAt,
+        String broadcasterUsername
 ) {
     public static StreamSummaryResponse from(StreamSessionEntity entity) {
         return new StreamSummaryResponse(
@@ -27,7 +28,8 @@ public record StreamSummaryResponse(
                 entity.getTags() != null ? List.copyOf(Arrays.asList(entity.getTags())) : List.of(),
                 entity.getThumbnailUrl(),
                 entity.getCreatedAt(),
-                entity.getScheduledAt()
+                entity.getScheduledAt(),
+                entity.getBroadcasterUsername()
         );
     }
 }

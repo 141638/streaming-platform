@@ -8,4 +8,5 @@ export interface StreamSummaryResponseDto {
   readonly thumbnailUrl: string | null;
   readonly createdAt: string;
   readonly scheduledAt: string | null;
+  readonly broadcasterUsername: string | null;
 }

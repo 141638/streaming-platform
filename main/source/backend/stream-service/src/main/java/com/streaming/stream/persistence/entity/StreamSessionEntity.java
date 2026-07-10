@@ -87,6 +87,23 @@ public class StreamSessionEntity implements Persistable<UUID> {
     @Column("thumbnail_url")
     private String thumbnailUrl;
 
+    /**
+     * Public channel handle denormalized from JWT attr at stream creation.
+     * Client-read-only — never accepted from the request body.
+     * {@code NULL} for pre-existing rows or tokens issued before the
+     * username claim was added (auth A1).
+     */
+    @Column("broadcaster_username")
+    private String broadcasterUsername;
+
+    /**
+     * Verified streamer status denormalized from JWT attr at stream creation.
+     * Client-read-only — never accepted from the request body.
+     * {@code NULL} for pre-existing rows.
+     */
+    @Column("broadcaster_verified")
+    private Boolean broadcasterVerified;
+
     @Version
     @Column("version")
     private Long version;

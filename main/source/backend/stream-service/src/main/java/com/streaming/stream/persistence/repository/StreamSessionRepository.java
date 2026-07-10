@@ -14,4 +14,6 @@ public interface StreamSessionRepository extends ReactiveCrudRepository<StreamSe
     Mono<Boolean> existsByBroadcasterSubjectAndStatus(String broadcasterSubject, StreamStatus status);
 
     Mono<StreamSessionEntity> findByStreamKeyHash(String streamKeyHash);
+
+    Flux<StreamSessionEntity> findAllByBroadcasterUsernameOrderByCreatedAtDesc(String broadcasterUsername);
 }

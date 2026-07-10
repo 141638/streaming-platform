@@ -30,6 +30,8 @@ Located in `~/.claude/agents/`:
 | e2e-runner | E2E testing | Critical user flows |
 | refactor-cleaner | Dead code cleanup | Code maintenance |
 | doc-updater | Documentation | Updating docs |
+| session-retro | Session-end retrospective | End of feature-building sessions |
+| feature-commit | Feature-by-feature committing | When grouping and committing changes |
 | rust-reviewer | Rust code review | Rust projects |
 | harmonyos-app-resolver | HarmonyOS app development | HarmonyOS/ArkTS projects |
 
@@ -40,6 +42,7 @@ No user prompt needed:
 2. Code just written/modified - Use **code-reviewer** agent
 3. Bug fix or new feature - Use **tdd-guide** agent
 4. Architectural decision - Use **architect** agent
+5. End of feature-building session - Use **session-retro** agent (or `/retro` command)
 
 ## Parallel Task Execution
 

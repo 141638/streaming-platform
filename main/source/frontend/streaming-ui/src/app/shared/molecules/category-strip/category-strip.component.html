@@ -12,14 +12,19 @@
             class="category-thumb flex align-items-center justify-content-center"
             [style]="cat.thumbnailStyle"
           >
-            <span class="text-5xl font-bold" style="color: oklch(95% 0 0 / 80%)">
+            <span
+              class="text-5xl font-bold"
+              style="color: oklch(95% 0 0 / 80%)"
+            >
               {{ cat.name.charAt(0).toUpperCase() }}
             </span>
           </div>
 
           <!-- Info -->
           <div class="flex flex-column gap-1 p-2">
-            <span class="text-sm font-semibold white-space-nowrap overflow-hidden text-overflow-ellipsis">
+            <span
+              class="text-sm font-semibold white-space-nowrap overflow-hidden text-overflow-ellipsis"
+            >
               {{ cat.name }}
             </span>
             <span class="text-xs" style="color: var(--color-text-dim)">

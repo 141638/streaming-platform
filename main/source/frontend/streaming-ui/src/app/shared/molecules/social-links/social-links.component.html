@@ -1,4 +1,4 @@
-@if (links().length) {
+@if (links()?.length) {
   <div class="flex flex-wrap gap-2">
     @for (link of links(); track link.platform) {
       <a

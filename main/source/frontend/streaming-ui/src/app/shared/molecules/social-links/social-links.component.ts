@@ -21,7 +21,7 @@ const PLATFORM_ICONS: Record<string, string> = {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SocialLinksComponent {
-  public readonly links = input.required<readonly SocialLinkDto[]>();
+  public readonly links = input.required<readonly SocialLinkDto[] | null>();
 
   protected iconFor(platform: string): string {
     return PLATFORM_ICONS[platform] ?? 'pi pi-link';

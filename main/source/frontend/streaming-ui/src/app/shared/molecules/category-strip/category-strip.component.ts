@@ -50,17 +50,18 @@ interface CategoryDisplay {
 export class CategoryStripComponent {
   public readonly categories = input.required<readonly string[]>();
 
-  protected readonly displayCategories = computed<readonly CategoryDisplay[]>(() =>
-    this.categories().map((name) => {
-      const hue = categoryHue(name);
-      return {
-        name,
-        hue,
-        subscribers: pseudoSubscriberCount(name),
-        thumbnailStyle: {
-          background: `linear-gradient(135deg, oklch(55% 0.14 ${hue}), oklch(40% 0.12 ${(hue + 40) % 360}))`,
-        },
-      };
-    }),
+  protected readonly displayCategories = computed<readonly CategoryDisplay[]>(
+    () =>
+      this.categories().map((name) => {
+        const hue = categoryHue(name);
+        return {
+          name,
+          hue,
+          subscribers: pseudoSubscriberCount(name),
+          thumbnailStyle: {
+            background: `linear-gradient(135deg, oklch(55% 0.14 ${hue}), oklch(40% 0.12 ${(hue + 40) % 360}))`,
+          },
+        };
+      }),
   );
 }

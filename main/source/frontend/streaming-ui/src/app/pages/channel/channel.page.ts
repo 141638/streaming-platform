@@ -109,7 +109,11 @@ export class ChannelPage implements OnInit {
           this.channel.set({
             ...res,
             socialLinks: res.socialLinks ?? [],
-            stats: res.stats ?? { totalStreams: 0, totalHoursStreamed: 0, topCategory: null },
+            stats: res.stats ?? {
+              totalStreams: 0,
+              totalHoursStreamed: 0,
+              topCategory: null,
+            },
           }),
         error: () => this.error.set('Failed to load channel'),
       });
@@ -140,9 +144,7 @@ export class ChannelPage implements OnInit {
       )
       .subscribe({
         next: () => {
-          this.channel.update((c) =>
-            c ? { ...c, bio: this.bioDraft() } : c,
-          );
+          this.channel.update((c) => (c ? { ...c, bio: this.bioDraft() } : c));
           this.editingBio.set(false);
         },
         error: () => {

@@ -62,13 +62,25 @@
 // ── Description area ──────────────────────────────────────────────────────
 
 .rail-description {
-  height: 5.5rem;
+  height: 4.5rem;
 }
 
-// ── Category thumbnail placeholder ────────────────────────────────────────
+// ── Category thumbnail ─────────────────────────────────────────────────────
 
 .rail-category-thumb {
-  width: 2.5rem;
-  height: 2.5rem;
-  color: oklch(95% 0 0);
+  height: 100%;
+  aspect-ratio: 3.2 / 4;
+  align-self: center;
+}
+
+// ── Menu dots button (corner-fit) ──────────────────────────────────────────
+
+.rail-menu-dots {
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+  padding: 0 !important;
+
+  .p-button-icon {
+    font-size: 0.8rem;
+  }
 }

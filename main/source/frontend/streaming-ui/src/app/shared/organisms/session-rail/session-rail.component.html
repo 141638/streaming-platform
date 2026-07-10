@@ -51,28 +51,43 @@
 
             <!-- Description: horizontal flex with category thumbnail + text -->
             <div class="rail-description flex gap-2 p-2">
-              <!-- Category thumbnail: small colored circle with initial -->
+              <!-- Category thumbnail: 3.2/4 portrait, fills description height -->
               <div
-                class="rail-category-thumb flex-shrink-0 border-circle flex align-items-center justify-content-center text-xs font-bold"
+                class="rail-category-thumb flex-shrink-0 border-round flex align-items-center justify-content-center font-bold"
                 [style]="categoryThumbnailStyle(session.category)"
               >
-                {{ categoryInitial(session.category) }}
+                <span class="text-2xl" style="color: oklch(95% 0 0 / 80%)">
+                  {{ categoryInitial(session.category) }}
+                </span>
               </div>
 
-              <!-- Text area -->
-              <div class="flex-auto flex flex-column gap-1 overflow-hidden">
-                <span class="text-sm font-medium white-space-nowrap overflow-hidden text-overflow-ellipsis">
-                  {{ session.title }}
-                </span>
-                <span class="text-xs" style="color: var(--color-text-muted)">
-                  {{ channelName(session) }}
-                </span>
-                <div class="flex align-items-center gap-2">
-                  <app-stream-status-badge [status]="session.status" />
-                  <span class="text-xs" style="color: var(--color-text-dim)">
-                    {{ session.category }}
+              <!-- Text area: name/channel top, category bottom -->
+              <div class="flex-auto flex flex-column justify-content-between overflow-hidden">
+                <div class="flex flex-column">
+                  <span class="text-sm font-medium white-space-nowrap overflow-hidden text-overflow-ellipsis">
+                    {{ session.title }}
+                  </span>
+                  <span class="text-xs white-space-nowrap overflow-hidden text-overflow-ellipsis" style="color: var(--color-text-muted)">
+                    {{ channelName(session) }}
                   </span>
                 </div>
+                <span class="text-xs white-space-nowrap overflow-hidden text-overflow-ellipsis" style="color: var(--color-text-dim)">
+                  {{ session.category }}
+                </span>
+              </div>
+
+              <!-- Right side: menu top, status bottom -->
+              <div class="flex flex-column justify-content-between align-items-end flex-shrink-0">
+                <button
+                  pButton
+                  type="button"
+                  icon="pi pi-ellipsis-v"
+                  class="p-button-text p-button-rounded rail-menu-dots"
+                  disabled
+                  pTooltip="More actions coming soon"
+                  tooltipPosition="left"
+                ></button>
+                <app-stream-status-badge [status]="session.status" />
               </div>
             </div>
           </a>

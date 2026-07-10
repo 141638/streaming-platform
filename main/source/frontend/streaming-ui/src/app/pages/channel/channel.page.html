@@ -89,7 +89,7 @@
                   <button pButton type="button" label="Save" icon="pi pi-check" class="p-button-sm" [loading]="savingBio()" (click)="saveBio()"></button>
                 </div>
                 } @else if (ch.bio) {
-                <p class="text-sm line-height-3 m-0 white-space-pre-line" style="color: var(--color-text-primary)">{{ ch.bio }}</p>
+                <p class="text-sm line-height-3 m-0" style="color: var(--color-text-primary); white-space: pre-wrap;">{{ ch.bio }}</p>
                 @if (isOwner()) {
                 <div>
                   <button pButton type="button" label="Edit" icon="pi pi-pencil" class="p-button-text p-button-sm" (click)="startEditingBio()"></button>

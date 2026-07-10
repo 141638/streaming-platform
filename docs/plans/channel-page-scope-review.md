@@ -56,7 +56,9 @@ built later in a dedicated **channel-service**. The section below is the exact l
 | **Follow** button | 🟡 Shell | Disabled button in header action slot | channel-service (followers) |
 | **Subscribe** (paid membership) | 🟡 Shell | Disabled button | channel-service + **payments** |
 | **Gift Sub** | 🟡 Shell | Disabled button | channel-service + payments |
-| **Playlists** (manager-curated rails) | 🟡 Shell | Empty "No playlists yet" rail | channel-service (playlist domain + manager CRUD) |
+| **Playlists** (manager-curated rails) | 🟡 Shell | Empty "No playlists yet" rail — deferred until VOD/video upload is available | channel-service (playlist domain + manager CRUD) |
+| **Videos** tab | 🟡 Shell | Disabled tab — requires VOD upload + video management backend | Phase 4+ (VOD infrastructure) |
+| **About** tab | ✅ Build (real) | Bio display + owner edit; V8 `broadcaster_profile` table + `POST /v1/channels/{username}/profile` | Social links, schedule (unspecced) |
 | Owner manage affordances | ✅ Build (minimal) | `@if(isOwner)` → link into existing `/channel/:id` panel | richer manage UI later |
 | Guest / public (no-login) access | ❌ Not now | — | **Own future ADR** (revisitable) |
 | Rename-drift reconciliation | ❌ Not now | — | channel-service (`UserRenamed` event / job) |
@@ -125,7 +127,8 @@ a disabled/empty placeholder now and a `channel-service` job later.*
 - Uniform 401 login error (auth-service).
 - Denormalized `broadcaster_username` / `broadcaster_verified` on `stream_session`.
 - Authenticated `GET /v1/channels/{username}` + safe `ChannelResponse` projection.
-- Angular `ChannelPage` + shared organisms; session rail (real data), category strip (real).
+- Channel bio via `broadcaster_profile` table (V8) + `POST /v1/channels/{username}/profile` (owner-only).
+- Angular `ChannelPage` + shared organisms; session rail (real data), category strip (real), About tab (bio display + owner edit).
 
 ### Scaffolded shells now (no backend, visibly disabled)
 - Follower / subscriber / video counts.

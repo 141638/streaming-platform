@@ -1,174 +1,128 @@
 ---
 name: skill-create
-description: Analyze local git history to extract coding patterns and generate SKILL.md files. Local version of the Skill Creator GitHub App.
+description: Create skills, agents, and commands for Claude Code. For skills/agents/commands described by the user, write the appropriate files under .claude/{skills,agents,commands}/. Also supports the git-history analysis mode for extracting patterns from commits. Write operations to .claude/skills/**, .claude/agents/**, and .claude/commands/** are pre-authorized — no permission prompt needed.
 allowed_tools: ["Bash", "Read", "Write", "Grep", "Glob"]
 ---
 
-# /skill-create - Local Skill Generation
+# /skill-create — Skill, Agent & Command Authoring
 
-Analyze your repository's git history to extract coding patterns and generate SKILL.md files that teach Claude your team's practices.
+Create or update Claude Code skills, agents, and commands. Supports two modes:
 
-## Usage
+1. **Manual authoring** (primary) — the user describes a workflow; you write the SKILL.md, agent `.md`, and command `.md` files
+2. **Git analysis** (secondary) — parse git history to detect coding patterns and generate SKILL.md files
+
+## File Locations
+
+| Artifact | Path | Format |
+|----------|------|--------|
+| Skill | `.claude/skills/<name>/SKILL.md` | YAML frontmatter (`name`, `description`, `metadata`) + Markdown body |
+| Agent | `.claude/agents/<name>.md` | YAML frontmatter (`name`, `description`, `tools`, `model`) + Markdown body |
+| Command | `.claude/commands/<name>.md` | YAML frontmatter (`description`, `argument-hint`) + Markdown body |
+
+All three paths are **pre-authorized for Write** — no permission prompt.
+
+## Manual Authoring Mode
+
+When the user describes a workflow they want automated:
+
+1. **Identify the scope** — is this a skill (knows how to do something), an agent (specialized role with tools), or a command (user-facing slash command)? Usually you need all three.
+2. **Check existing conventions** — scan `.claude/skills/`, `.claude/agents/`, `.claude/commands/` for format patterns to mirror
+3. **Write all three files** in parallel:
+   - **Skill** (`SKILL.md`): the detailed workflow, when to activate, step-by-step process, anti-patterns, integration notes
+   - **Agent** (`.md`): role definition, tools list, model preference, core responsibilities, quality checklist
+   - **Command** (`.md`): description, argument hint, when to use, examples
+4. **Register the agent** — update `.claude/rules/common/agents.md` to add the new agent to the Available Agents table and, if appropriate, the Immediate Agent Usage triggers
+5. **Confirm** — report what was created and how to invoke it
+
+## Manual Authoring Conventions
+
+### Skill frontmatter
+```yaml
+---
+name: <kebab-case>
+description: <one-line summary of what the skill does and when to use it>
+metadata:
+  origin: project
+---
+```
+
+### Agent frontmatter
+```yaml
+---
+name: <kebab-case>
+description: <one-line role summary. Use at end of session / via /command.>
+tools: ["Bash", "Read", "Write", "Edit", "Grep", "Glob"]
+model: <sonnet | opus | haiku>  # sonnet for most; opus for deep-reasoning roles; haiku for mechanical
+---
+```
+
+Agent body must include:
+- **Prompt Defense Baseline** section (standard block)
+- **Role statement** — "You are a ..."
+- **Core Responsibilities** — numbered list
+- **Process** — step-by-step workflow
+- **Quality Checklist** — verification items
+
+### Command frontmatter
+```yaml
+---
+description: <one-line description shown in command palette>
+argument-hint: "<optional args hint>"
+---
+```
+
+### Command body — REQUIRED: explicit tool routing
+
+The first section after the title MUST contain an explicit **TOOL ROUTING** directive. Commands are text-based — there is no hard binding between a command and a skill/agent. Claude reads the command file and decides which tools to call. If the routing instruction is vague ("invokes the X skill"), Claude might follow the instructions inline without actually loading the skill.
+
+**Every command MUST open with an unambiguous directive:**
+
+```markdown
+# /command-name — Short Title
+
+**TOOL ROUTING:** When this command is invoked, you MUST call `Skill({skill: "<skill-name>"})`. This loads the full workflow. Do NOT attempt to run this inline without loading the skill.
+```
+
+For commands that primarily use an agent (not a skill):
+
+```markdown
+**TOOL ROUTING:** When this command is invoked, you MUST call `Agent({subagent_type: "<agent-name>", description: "<short task description>"})`. Do NOT attempt this work inline.
+```
+
+For commands that use both:
+
+```markdown
+**TOOL ROUTING:** 
+1. First, call `Skill({skill: "<skill-name>"})` to load the workflow.
+2. The skill may then delegate to `Agent({subagent_type: "<agent-name>"})` for execution.
+```
+
+**Anti-pattern — vague routing (do NOT do this):**
+```markdown
+# /foo — Does something
+
+Invokes the **foo** skill, which performs a workflow...   ← Claude might skip the Skill() call
+```
+
+### Registration in agents.md
+Add a row to the Available Agents table:
+```
+| <name> | <short purpose> | <when to use> |
+```
+Add to Immediate Agent Usage if the agent should trigger automatically.
+
+## Git Analysis Mode (secondary)
+
+When the user explicitly asks to analyze git history:
 
 ```bash
 /skill-create                    # Analyze current repo
 /skill-create --commits 100      # Analyze last 100 commits
-/skill-create --output ./skills  # Custom output directory
-/skill-create --instincts        # Also generate instincts for continuous-learning-v2
 ```
 
-## What It Does
-
-1. **Parses Git History** - Analyzes commits, file changes, and patterns
-2. **Detects Patterns** - Identifies recurring workflows and conventions
-3. **Generates SKILL.md** - Creates valid Claude Code skill files
-4. **Optionally Creates Instincts** - For the continuous-learning-v2 system
-
-## Analysis Steps
-
-### Step 1: Gather Git Data
-
-```bash
-# Get recent commits with file changes
-git log --oneline -n ${COMMITS:-200} --name-only --pretty=format:"%H|%s|%ad" --date=short
-
-# Get commit frequency by file
-git log --oneline -n 200 --name-only | grep -v "^$" | grep -v "^[a-f0-9]" | sort | uniq -c | sort -rn | head -20
-
-# Get commit message patterns
-git log --oneline -n 200 | cut -d' ' -f2- | head -50
-```
-
-### Step 2: Detect Patterns
-
-Look for these pattern types:
-
-| Pattern | Detection Method |
-|---------|-----------------|
-| **Commit conventions** | Regex on commit messages (feat:, fix:, chore:) |
-| **File co-changes** | Files that always change together |
-| **Workflow sequences** | Repeated file change patterns |
-| **Architecture** | Folder structure and naming conventions |
-| **Testing patterns** | Test file locations, naming, coverage |
-
-### Step 3: Generate SKILL.md
-
-Output format:
-
-```markdown
----
-name: {repo-name}-patterns
-description: Coding patterns extracted from {repo-name}
-version: 1.0.0
-source: local-git-analysis
-analyzed_commits: {count}
----
-
-# {Repo Name} Patterns
-
-## Commit Conventions
-{detected commit message patterns}
-
-## Code Architecture
-{detected folder structure and organization}
-
-## Workflows
-{detected repeating file change patterns}
-
-## Testing Patterns
-{detected test conventions}
-```
-
-### Step 4: Generate Instincts (if --instincts)
-
-For continuous-learning-v2 integration:
-
-```yaml
----
-id: {repo}-commit-convention
-trigger: "when writing a commit message"
-confidence: 0.8
-domain: git
-source: local-repo-analysis
----
-
-# Use Conventional Commits
-
-## Action
-Prefix commits with: feat:, fix:, chore:, docs:, test:, refactor:
-
-## Evidence
-- Analyzed {n} commits
-- {percentage}% follow conventional commit format
-```
-
-## Example Output
-
-Running `/skill-create` on a TypeScript project might produce:
-
-```markdown
----
-name: my-app-patterns
-description: Coding patterns from my-app repository
-version: 1.0.0
-source: local-git-analysis
-analyzed_commits: 150
----
-
-# My App Patterns
-
-## Commit Conventions
-
-This project uses **conventional commits**:
-- `feat:` - New features
-- `fix:` - Bug fixes
-- `chore:` - Maintenance tasks
-- `docs:` - Documentation updates
-
-## Code Architecture
-
-```
-src/
-├── components/     # React components (PascalCase.tsx)
-├── hooks/          # Custom hooks (use*.ts)
-├── utils/          # Utility functions
-├── types/          # TypeScript type definitions
-└── services/       # API and external services
-```
-
-## Workflows
-
-### Adding a New Component
-1. Create `src/components/ComponentName.tsx`
-2. Add tests in `src/components/__tests__/ComponentName.test.tsx`
-3. Export from `src/components/index.ts`
-
-### Database Migration
-1. Modify `src/db/schema.ts`
-2. Run `pnpm db:generate`
-3. Run `pnpm db:migrate`
-
-## Testing Patterns
-
-- Test files: `__tests__/` directories or `.test.ts` suffix
-- Coverage target: 80%+
-- Framework: Vitest
-```
-
-## GitHub App Integration
-
-For advanced features (10k+ commits, team sharing, auto-PRs), use the [Skill Creator GitHub App](https://github.com/apps/skill-creator):
-
-- Install: [github.com/apps/skill-creator](https://github.com/apps/skill-creator)
-- Comment `/skill-creator analyze` on any issue
-- Receives PR with generated skills
+Follows the original analysis pipeline: gather git data → detect patterns → generate SKILL.md.
 
 ## Related Commands
 
-- `/instinct-import` - Import generated instincts
-- `/instinct-status` - View learned instincts
-- `/evolve` - Cluster instincts into skills/agents
-
----
-
-*Part of [Everything Claude Code](https://github.com/affaan-m/everything-claude-code)*
+- `/retro` — session-end retrospective (uses session-retro skill)
+- `/commit` — feature-by-feature committing (uses feature-commit skill)

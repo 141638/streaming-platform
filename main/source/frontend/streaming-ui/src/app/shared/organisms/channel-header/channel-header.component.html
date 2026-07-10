@@ -1,0 +1,55 @@
+<div class="channel-header flex flex-column gap-4 pt-8 pb-4 px-4">
+  <!-- Identity row -->
+  <div class="flex flex-column sm:flex-row align-items-start sm:align-items-center gap-4">
+    <p-avatar
+      [image]="avatarUrl()"
+      size="xlarge"
+      shape="circle"
+      styleClass="border-2 surface-border shadow-2 flex-shrink-0"
+    />
+
+    <div class="flex flex-column gap-2">
+      <!-- Name + verified -->
+      <div class="flex align-items-center gap-2">
+        <h1 class="text-3xl font-bold m-0">{{ username() }}</h1>
+        @if (verified()) {
+          <span
+            class="pi pi-verified text-xl"
+            style="color: var(--p-primary-color)"
+            pTooltip="Verified Streamer"
+          ></span>
+        }
+      </div>
+
+      <!-- Stats row -->
+      <div class="flex align-items-center gap-3 text-sm text-500">
+        <span>
+          <strong class="text-700">{{ followerDisplay }}</strong> followers
+        </span>
+        <span class="text-300">·</span>
+        <span>
+          <strong class="text-700">{{ subscriberDisplay }}</strong> subscribers
+        </span>
+        <span class="text-300">·</span>
+        <span>
+          <strong class="text-700">{{ videoDisplay }}</strong> videos
+        </span>
+      </div>
+
+      <!-- Handle -->
+      <span class="text-sm text-500">&#64;{{ username() }}</span>
+    </div>
+
+    <!-- Spacer -->
+    <div class="flex-auto hidden sm:block"></div>
+
+    <!-- Actions -->
+    <div class="flex gap-2 flex-shrink-0">
+      @if (isOwner()) {
+        <ng-content select="[slot=owner-actions]" />
+      } @else {
+        <ng-content select="[slot=viewer-actions]" />
+      }
+    </div>
+  </div>
+</div>

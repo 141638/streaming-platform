@@ -1,0 +1,9 @@
+.channel-header {
+  position: relative;
+  z-index: 2; // Float above the stage backdrop
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    var(--color-surface-0, #0a0a0f) 100%
+  );
+}

@@ -1,0 +1,98 @@
+<div class="flex flex-column gap-3">
+  <span class="text-lg font-semibold">Recent Streams</span>
+
+  @if (loading()) {
+    <div class="flex gap-3 overflow-hidden">
+      @for (_ of [0, 1, 2, 3]; track $index) {
+        <p-skeleton width="20rem" height="13rem" styleClass="border-round-lg flex-shrink-0" />
+      }
+    </div>
+  } @else if (sessions().length) {
+    <div class="session-rail-wrapper relative">
+      <!-- Chevron: left -->
+      @if (canScrollLeft()) {
+        <button
+          pButton
+          type="button"
+          icon="pi pi-chevron-left"
+          class="p-button-rounded p-button-text p-button-sm session-rail-chevron left"
+          (click)="scrollLeft()"
+        ></button>
+      }
+
+      <div
+        #rail
+        class="session-rail flex gap-3 overflow-x-auto pb-2"
+        (mousedown)="onMouseDown($event)"
+        (mousemove)="onMouseMove($event)"
+        (mouseleave)="onMouseUp()"
+        (scroll)="onScroll()"
+      >
+        @for (session of sessions(); track session.id) {
+          <a
+            [routerLink]="['/channel', session.id]"
+            class="session-rail-card flex-shrink-0 no-underline cursor-pointer surface-card border-round-lg border-1 surface-border overflow-hidden transition-duration-150 hover:shadow-3"
+          >
+            <!-- Thumbnail -->
+            <div
+              class="session-rail-thumb bg-cover bg-center bg-no-repeat surface-200"
+              [style.backgroundImage]="'url(' + thumbnailUrl(session) + ')'"
+            >
+              <!-- Floating date label — lower-right corner, tooltip on hover -->
+              <span
+                class="session-rail-date absolute lowercase"
+                [title]="tooltipDate(session.createdAt)"
+                [pTooltip]="tooltipDate(session.createdAt)"
+                tooltipPosition="top"
+              >
+                {{ shortDate(session.createdAt) }}
+              </span>
+            </div>
+
+            <!-- Description: horizontal flex with category thumbnail + text -->
+            <div class="rail-description flex gap-2 p-2">
+              <!-- Category thumbnail: small colored circle with initial -->
+              <div
+                class="rail-category-thumb flex-shrink-0 border-circle flex align-items-center justify-content-center text-xs font-bold"
+                [style]="categoryThumbnailStyle(session.category)"
+              >
+                {{ categoryInitial(session.category) }}
+              </div>
+
+              <!-- Text area -->
+              <div class="flex-auto flex flex-column gap-1 overflow-hidden">
+                <span class="text-sm font-medium white-space-nowrap overflow-hidden text-overflow-ellipsis">
+                  {{ session.title }}
+                </span>
+                <span class="text-xs" style="color: var(--color-text-muted)">
+                  {{ channelName(session) }}
+                </span>
+                <div class="flex align-items-center gap-2">
+                  <app-stream-status-badge [status]="session.status" />
+                  <span class="text-xs" style="color: var(--color-text-dim)">
+                    {{ session.category }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </a>
+        }
+      </div>
+
+      <!-- Chevron: right -->
+      @if (canScrollRight()) {
+        <button
+          pButton
+          type="button"
+          icon="pi pi-chevron-right"
+          class="p-button-rounded p-button-text p-button-sm session-rail-chevron right"
+          (click)="scrollRight()"
+        ></button>
+      }
+    </div>
+  } @else {
+    <div class="flex align-items-center justify-content-center py-4 text-sm" style="color: var(--color-text-muted)">
+      No streams yet
+    </div>
+  }
+</div>

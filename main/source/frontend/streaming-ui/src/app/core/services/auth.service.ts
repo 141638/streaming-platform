@@ -21,6 +21,10 @@ export class AuthService {
     AuthService.parseRoles(localStorage.getItem(TOKEN_KEY)),
   );
 
+  private readonly _username = signal<string | null>(
+    AuthService.parseUsername(localStorage.getItem(TOKEN_KEY)),
+  );
+
   /** Single-flight guard: only one refresh HTTP call at a time. */
   private _refreshInProgress: Observable<LoginResponseDto> | null = null;
 
@@ -31,6 +35,8 @@ export class AuthService {
   public readonly isStreamer = computed(() =>
     this._roles().includes('streamer'),
   );
+  /** The current user's public channel handle, or {@code null} if not set. */
+  public readonly myUsername = this._username.asReadonly();
 
   // ── Public API ──────────────────────────────────────────────────────────
 
@@ -70,6 +76,7 @@ export class AuthService {
     localStorage.removeItem(TOKEN_KEY);
     this._accessToken.set(null);
     this._roles.set([]);
+    this._username.set(null);
     this.router.navigateByUrl('/login');
   }
 
@@ -79,6 +86,7 @@ export class AuthService {
     localStorage.setItem(TOKEN_KEY, response.accessToken);
     this._accessToken.set(response.accessToken);
     this._roles.set(AuthService.parseRoles(response.accessToken));
+    this._username.set(AuthService.parseUsername(response.accessToken));
   }
 
   private static parseRoles(token: string | null): string[] {
@@ -90,6 +98,14 @@ export class AuthService {
       return [];
     }
     return [...payload.attr.roles];
+  }
+
+  private static parseUsername(token: string | null): string | null {
+    if (!token) {
+      return null;
+    }
+    const payload = parseJwtPayload(token);
+    return payload?.attr?.username ?? null;
   }
 }
 

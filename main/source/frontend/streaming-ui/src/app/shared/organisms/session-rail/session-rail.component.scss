@@ -1,0 +1,74 @@
+.session-rail {
+  cursor: grab;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.session-rail-chevron {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  backdrop-filter: blur(4px);
+
+  &.left {
+    left: 0;
+  }
+
+  &.right {
+    right: 0;
+  }
+}
+
+// ── Card ──────────────────────────────────────────────────────────────────
+
+.session-rail-card {
+  width: 20rem;
+  min-width: 20rem;
+  position: relative;
+}
+
+// ── Thumbnail ─────────────────────────────────────────────────────────────
+
+.session-rail-thumb {
+  height: 8rem;
+  position: relative;
+}
+
+// ── Floating date label ───────────────────────────────────────────────────
+
+.session-rail-date {
+  position: absolute;
+  bottom: 0.35rem;
+  right: 0.35rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: var(--p-border-radius, 0.35rem);
+  font-size: 0.7rem;
+  line-height: 1.2;
+  background: oklch(0% 0 0 / 55%);
+  color: var(--color-text-secondary, oklch(90% 0.005 270));
+  backdrop-filter: blur(4px);
+  cursor: help;
+  pointer-events: auto;
+}
+
+// ── Description area ──────────────────────────────────────────────────────
+
+.rail-description {
+  height: 5.5rem;
+}
+
+// ── Category thumbnail placeholder ────────────────────────────────────────
+
+.rail-category-thumb {
+  width: 2.5rem;
+  height: 2.5rem;
+  color: oklch(95% 0 0);
+}

@@ -1,0 +1,17 @@
+.category-rail {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.category-card {
+  width: 12rem;
+  min-width: 12rem;
+}
+
+// 3.2/4 portrait proportion: width × (4/3.2) = height
+.category-thumb {
+  aspect-ratio: 3.2 / 4;
+}

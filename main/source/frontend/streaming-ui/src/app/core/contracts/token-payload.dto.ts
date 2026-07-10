@@ -19,4 +19,6 @@ export interface TokenAttrDto {
   readonly roles: readonly string[];
   readonly tier: string;
   readonly verified_streamer: boolean;
+  /** Public channel handle; {@code null} for tokens issued before auth A1. */
+  readonly username: string | null;
 }

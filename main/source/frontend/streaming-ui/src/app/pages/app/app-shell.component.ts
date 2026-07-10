@@ -41,7 +41,10 @@ export class AppShellComponent {
     {
       label: 'Channel',
       icon: 'pi pi-play',
-      command: () => this.router.navigateByUrl('/dashboard/streams'),
+      command: () => {
+        const u = this.authService.myUsername();
+        this.router.navigateByUrl(u ? `/@${u}` : '/dashboard/streams');
+      },
     },
     {
       label: 'Creator Dashboard',

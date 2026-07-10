@@ -1,0 +1,184 @@
+<!-- Background stage -->
+<div class="channel-stage absolute top-0 left-0 w-full h-full overflow-hidden">
+  <div class="channel-stage-gradient absolute bottom-0 left-0 w-full h-full"></div>
+</div>
+
+<!-- Content overlay -->
+<div class="channel-content relative z-1 flex flex-column min-h-full">
+  @if (channel(); as ch) {
+    <app-channel-header
+      [username]="ch.username"
+      [verified]="ch.verified"
+      [isOwner]="isOwner()"
+    >
+      <ng-container slot="viewer-actions">
+        <button pButton type="button" label="Follow" icon="pi pi-heart" class="p-button-outlined" disabled></button>
+        <button pButton type="button" label="Subscribe" icon="pi pi-star" disabled></button>
+      </ng-container>
+      <ng-container slot="owner-actions">
+        <button pButton type="button" label="Edit Channel" icon="pi pi-pencil" class="p-button-outlined" disabled></button>
+        <a pButton type="button" label="Manage Streams" icon="pi pi-cog" class="p-button-outlined" routerLink="/dashboard/streams"></a>
+      </ng-container>
+    </app-channel-header>
+
+    <!-- Body: tabs -->
+    <div class="flex-auto px-4">
+      <p-tabs value="home">
+        <p-tablist>
+          <p-tab value="home">Home</p-tab>
+          <p-tab value="videos" disabled>Videos</p-tab>
+          <p-tab value="about">About</p-tab>
+        </p-tablist>
+        <p-tabpanels>
+          <p-tabpanel value="home">
+            <div class="flex flex-column gap-4 pt-2 pb-6">
+              <app-session-rail [sessions]="ch.sessions" [loading]="loading()" />
+              <app-category-strip [categories]="ch.recentCategories" />
+              <app-playlist-rail />
+            </div>
+          </p-tabpanel>
+
+          <p-tabpanel value="about">
+            <div class="flex flex-column gap-4 pt-2 pb-6" style="max-width: 42rem;">
+
+              <!-- ── Bio ──────────────────────────────────────────────── -->
+              <div class="flex flex-column gap-2">
+                <span class="text-sm font-semibold" style="color: var(--color-text-secondary)">Bio</span>
+
+                @if (isOwner() && editingBio()) {
+                  <textarea
+                    pTextarea
+                    class="w-full"
+                    rows="4"
+                    [ngModel]="bioDraft()"
+                    (ngModelChange)="bioDraft.set($event)"
+                    placeholder="Tell viewers about your channel…"
+                    maxlength="2000"
+                  ></textarea>
+                  <div class="flex align-items-center gap-2">
+                    <span class="text-xs" style="color: var(--color-text-dim)">
+                      {{ bioDraft().length }} / 2000
+                    </span>
+                    <div class="flex-auto"></div>
+                    <button pButton type="button" label="Cancel" class="p-button-text p-button-sm" (click)="cancelEditingBio()"></button>
+                    <button pButton type="button" label="Save" icon="pi pi-check" class="p-button-sm" [loading]="savingBio()" (click)="saveBio()"></button>
+                  </div>
+                } @else if (ch.bio) {
+                  <p class="text-sm line-height-3 m-0 white-space-pre-line" style="color: var(--color-text-primary)">{{ ch.bio }}</p>
+                  @if (isOwner()) {
+                    <div>
+                      <button pButton type="button" label="Edit" icon="pi pi-pencil" class="p-button-text p-button-sm" (click)="startEditingBio()"></button>
+                    </div>
+                  }
+                } @else {
+                  <p class="text-sm m-0" style="color: var(--color-text-muted)">No bio yet.</p>
+                  @if (isOwner()) {
+                    <div>
+                      <button pButton type="button" label="Add Bio" icon="pi pi-pencil" class="p-button-outlined p-button-sm" (click)="startEditingBio()"></button>
+                    </div>
+                  }
+                }
+              </div>
+
+              <!-- ── Social Links ─────────────────────────────────────── -->
+              <div class="flex flex-column gap-2">
+                <span class="text-sm font-semibold" style="color: var(--color-text-secondary)">Links</span>
+
+                @if (isOwner() && editingLinks()) {
+                  <!-- Editing: list current drafts + add form -->
+                  <div class="flex flex-column gap-2">
+                    @for (link of linksDraft(); track link.platform) {
+                      <div class="flex align-items-center gap-2 p-2 border-round-lg surface-card border-1 surface-border">
+                        <span class="text-sm font-medium flex-auto capitalize">{{ link.platform }}</span>
+                        <span class="text-xs text-overflow-ellipsis overflow-hidden white-space-nowrap" style="color: var(--color-text-dim); max-width: 18rem;">{{ link.url }}</span>
+                        <button pButton type="button" icon="pi pi-times" class="p-button-text p-button-sm p-button-rounded" (click)="removeLinkDraft(link.platform)" pTooltip="Remove" tooltipPosition="top"></button>
+                      </div>
+                    }
+
+                    <!-- Add new link form -->
+                    <div class="flex gap-2 align-items-start">
+                      <p-select
+                        [options]="platformOptions"
+                        [(ngModel)]="newLinkPlatform"
+                        optionLabel="label"
+                        placeholder="Platform"
+                        styleClass="w-8rem"
+                        class="flex-shrink-0"
+                      />
+                      <input
+                        pInputText
+                        class="flex-auto"
+                        [ngModel]="newLinkUrl()"
+                        (ngModelChange)="newLinkUrl.set($event)"
+                        placeholder="https://…"
+                        (keydown.enter)="addLinkDraft()"
+                      />
+                      <button pButton type="button" icon="pi pi-plus" class="p-button-sm flex-shrink-0" (click)="addLinkDraft()" [disabled]="!newLinkPlatform() || !newLinkUrl().trim()"></button>
+                    </div>
+
+                    <div class="flex align-items-center gap-2">
+                      <div class="flex-auto"></div>
+                      <button pButton type="button" label="Cancel" class="p-button-text p-button-sm" (click)="cancelEditingLinks()"></button>
+                      <button pButton type="button" label="Save" icon="pi pi-check" class="p-button-sm" [loading]="savingLinks()" (click)="saveLinks()"></button>
+                    </div>
+                  </div>
+                } @else if (ch.socialLinks?.length) {
+                  <app-social-links [links]="ch.socialLinks" />
+                  @if (isOwner()) {
+                    <div>
+                      <button pButton type="button" label="Edit" icon="pi pi-pencil" class="p-button-text p-button-sm" (click)="startEditingLinks()"></button>
+                    </div>
+                  }
+                } @else {
+                  <p class="text-sm m-0" style="color: var(--color-text-muted)">No links added yet.</p>
+                  @if (isOwner()) {
+                    <div>
+                      <button pButton type="button" label="Add Links" icon="pi pi-link" class="p-button-outlined p-button-sm" (click)="startEditingLinks()"></button>
+                    </div>
+                  }
+                }
+              </div>
+
+              <!-- ── Channel Stats ────────────────────────────────────── -->
+              <div class="flex flex-column gap-2">
+                <span class="text-sm font-semibold" style="color: var(--color-text-secondary)">Stats</span>
+
+                @if (ch.stats.totalStreams > 0) {
+                  <div class="flex flex-wrap gap-3">
+                    <div class="flex flex-column gap-1 p-3 border-round-lg surface-card border-1 surface-border" style="min-width: 8rem;">
+                      <span class="text-2xl font-bold" style="color: var(--color-text-primary)">{{ ch.stats.totalStreams }}</span>
+                      <span class="text-xs" style="color: var(--color-text-dim)">Total streams</span>
+                    </div>
+                    <div class="flex flex-column gap-1 p-3 border-round-lg surface-card border-1 surface-border" style="min-width: 8rem;">
+                      <span class="text-2xl font-bold" style="color: var(--color-text-primary)">{{ ch.stats.totalHoursStreamed }}</span>
+                      <span class="text-xs" style="color: var(--color-text-dim)">Hours streamed</span>
+                    </div>
+                    @if (ch.stats.topCategory) {
+                      <div class="flex flex-column gap-1 p-3 border-round-lg surface-card border-1 surface-border" style="min-width: 8rem;">
+                        <span class="text-2xl font-bold" style="color: var(--color-text-primary)">{{ ch.stats.topCategory }}</span>
+                        <span class="text-xs" style="color: var(--color-text-dim)">Top category</span>
+                      </div>
+                    }
+                  </div>
+                } @else {
+                  <p class="text-sm m-0" style="color: var(--color-text-muted)">No streams yet — stats will appear after the first stream.</p>
+                }
+              </div>
+
+            </div>
+          </p-tabpanel>
+        </p-tabpanels>
+      </p-tabs>
+    </div>
+  } @else if (loading()) {
+    <div class="flex flex-column align-items-center justify-content-center flex-auto gap-3">
+      <span class="pi pi-spin pi-spinner text-4xl" style="color: var(--color-text-muted)"></span>
+      <span class="text-sm" style="color: var(--color-text-muted)">Loading channel…</span>
+    </div>
+  } @else if (error()) {
+    <div class="flex flex-column align-items-center justify-content-center flex-auto gap-3">
+      <span class="pi pi-exclamation-triangle text-4xl" style="color: var(--color-text-muted)"></span>
+      <span class="text-sm" style="color: var(--color-text-muted)">{{ error() }}</span>
+    </div>
+  }
+</div>

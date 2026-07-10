@@ -1,0 +1,21 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 100%;
+  position: relative;
+  background: var(--color-surface-0, #0a0a0f);
+}
+
+.channel-stage {
+  z-index: 0;
+}
+
+.channel-stage-gradient {
+  background: linear-gradient(
+    to bottom,
+    var(--color-surface-1, oklch(15% 0.005 270 / 70%)) 0%,
+    var(--color-surface-2, oklch(18% 0.005 270)) 60%,
+    var(--color-surface-0, #0a0a0f) 100%
+  );
+}

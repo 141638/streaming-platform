@@ -1,6 +1,26 @@
-import { Routes } from '@angular/router';
+import { Routes, UrlSegment } from '@angular/router';
 import { authGuard } from './core/guards/auth.guard';
 import { guestGuard } from './core/guards/guest.guard';
+
+/**
+ * Match {@code /@:username} URLs — Angular's standard path parser doesn't
+ * handle {@code @} as a literal segment character, so we use a custom matcher
+ * that strips the leading {@code @} and exposes the remainder as the
+ * {@code username} route parameter.
+ */
+function channelMatcher(segments: UrlSegment[]) {
+  if (segments.length === 1 && segments[0].path.startsWith('@')) {
+    const username = segments[0].path.slice(1);
+    if (username.length === 0) {
+      return null;
+    }
+    return {
+      consumed: segments,
+      posParams: { username: new UrlSegment(username, {}) },
+    };
+  }
+  return null;
+}
 
 export const routes: Routes = [
   {
@@ -65,6 +85,11 @@ export const routes: Routes = [
         path: 'chat/:roomKey',
         loadComponent: () =>
           import('./pages/chat/chat-room.page').then((m) => m.ChatRoomPage),
+      },
+      {
+        matcher: channelMatcher,
+        loadComponent: () =>
+          import('./pages/channel/channel.page').then((m) => m.ChannelPage),
       },
       { path: '', redirectTo: 'home', pathMatch: 'full' },
     ],

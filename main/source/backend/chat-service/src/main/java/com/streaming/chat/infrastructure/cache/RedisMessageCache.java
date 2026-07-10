@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.streaming.chat.api.dto.MessageResponse;
+import com.streaming.chat.config.ChatCacheProperties;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
@@ -39,9 +40,11 @@ public class RedisMessageCache {
 
     private final ReactiveStringRedisTemplate redis;
     private final ObjectMapper objectMapper;
+    private final ChatCacheProperties cacheProperties;
 
-    public RedisMessageCache(ReactiveStringRedisTemplate redis) {
+    public RedisMessageCache(ReactiveStringRedisTemplate redis, ChatCacheProperties cacheProperties) {
         this.redis = redis;
+        this.cacheProperties = cacheProperties;
         this.objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
     }
 
@@ -65,10 +68,25 @@ public class RedisMessageCache {
         return redis.opsForZSet()
                 .add(key, json, score)
                 .flatMap(added -> trimToRetention(key).thenReturn(added))
+                .flatMap(added -> applyTtl(key).thenReturn(added))
                 .timeout(REDIS_TIMEOUT)
                 .onErrorResume(ex -> {
                     log.warn("Redis write failed for key={}, message already persisted to PG. Error: {}",
                             key, ex.getMessage());
+                    return Mono.just(false);
+                });
+    }
+
+    /**
+     * Refresh the key's TTL on each write so an actively-used room key never
+     * expires, while an idle room key eventually does — bounding staleness after
+     * a Redis restart with persisted-but-stale data (ADR-0003).
+     */
+    private Mono<Boolean> applyTtl(String key) {
+        return redis.expire(key, cacheProperties.roomTtl())
+                .timeout(REDIS_TIMEOUT)
+                .onErrorResume(ex -> {
+                    log.debug("Redis EXPIRE failed for key={}: {}", key, ex.getMessage());
                     return Mono.just(false);
                 });
     }

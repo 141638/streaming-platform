@@ -49,6 +49,13 @@ management:
     health:
       show-details: always
 
+chat:
+  cache:
+    # Per-key TTL on each room's recent-message ZSET (set on every write).
+    # Bounds max staleness after a Redis restart with persisted-but-stale data
+    # (ADR-0003). Raise for low-traffic/production rooms; lower for fresher data.
+    room-ttl: ${CHAT_CACHE_ROOM_TTL:1h}
+
 streaming:
   service:
     instance-id: "${random.uuid}"

@@ -772,7 +772,7 @@ V2__add_room_status.sql                   ← new: status + archived_at on chat.
 Built as two parallel agent tracks over a shared Phase 0 foundation; see
 [docs/plans/chat-3.4-3.6-blueprint.md](plans/chat-3.4-3.6-blueprint.md).
 
-**Two-layer authorization** (see ADR to be recorded; blueprint §"locked decisions"):
+**Two-layer authorization** (see [ADR-0004](adr/chat/0004-two-layer-chat-authorization.md); blueprint §"locked decisions"):
 - **Layer 1 — PBAC capability** (`ent` in JWT, in-memory): `com.streaming.chat.security`
   package ported from stream-service, every file `PBAC-COMMON-CANDIDATE` for the 6.2
   extraction. `ChatAuthorization.requireAccess` guards send (`chat:message send`),

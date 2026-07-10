@@ -1,6 +1,6 @@
 # Blueprint: Chat 3.4 (Full PBAC + Moderation) ∥ 3.6 (Cache Hardening + Integration Tests)
 
-**Status:** In progress · **Branch:** `feat/chat-3.4-3.6-pbac-moderation` · **Date:** 2026-07-11
+**Status:** Implemented (commits `2bd28da`, `59435c6`, `863ee35`, `a9090ab`) — see [chat-3.4-3.6-retrospective.md](chat-3.4-3.6-retrospective.md) · **Branch:** `feat/chat-3.4-3.6-pbac-moderation` · **Date:** 2026-07-11
 
 ## Summary
 

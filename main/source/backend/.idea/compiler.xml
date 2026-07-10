@@ -9,6 +9,7 @@
         </processorPath>
         <module name="streaming-backend.auth-service.main" />
         <module name="streaming-backend.chat-service.main" />
+        <module name="streaming-backend.stream-service.main" />
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel target="21" />

@@ -32,9 +32,9 @@ Optionally tighten scope: **`{domain}:{kind}:{scope}:{instanceId}`** for instanc
 | `stream` | `publish-key` | `*` or `{sessionId}` | stream, SRS webhook |
 | `stream` | `archive` | `*` or `{archiveId}` | stream (future) |
 | `media` | `playback` | `room:{externalKey}` or `session:{sessionId}` | gateway/SRS coordination (often public read with rate limits) |
-| `chat` | `room` | `*` or `{roomId \| external_key}` | chat |
-| `chat` | `message` | `room:{externalKey}` or `{messageId}` | chat |
-| `chat` | `moderation` | `room:{externalKey}` | chat |
+| `chat` | `room` | `*` or `{roomId \| external_key}` | chat — room metadata |
+| `chat` | `message` | `*` (owner-resolved server-side) | chat — recent (`read`) + durable history (`read_history`) + `send` |
+| `chat` | `moderation` | `self` (own room) or `*` (staff) | chat |
 | `notification` | `subscription` | `self`, `{subscriberSubject}` | notification |
 | `notification` | `outbox` | `*` (admin/integration) | notification |
 | `platform` | `admin` | `*` | future ops |
@@ -119,7 +119,7 @@ Store policy definitions in **auth** (or **policy service** later). JWT carries 
     "allow stream:session:self create read update lifecycle issue_key",
     "allow stream:publish-key:self validate_publish",
     "allow chat:room:* read",
-    "allow chat:message:room:* send",
+    "allow chat:message:* read send read_history",
     "allow notification:subscription:self create read update delete",
     "allow identity:user:self read update"
   ],
@@ -205,11 +205,14 @@ Map each API or future route to **`(resource, action)`**. Services reject if no 
 
 | Operation / flow | Resource | Action |
 |------------------|----------|--------|
-| Read recent / hot path | `chat:room:{key}` | `read` |
-| Read historical page | `chat:message:room:{key}` | `read_history` |
-| Post message | `chat:message:room:{key}` | `send` |
-| Moderation actions | `chat:moderation:room:{key}` | `moderate` |
+| Read recent / hot path | `chat:message:{scope}` | `read` |
+| Read historical page | `chat:message:{scope}` | `read_history` |
+| Post message | `chat:message:{scope}` | `send` |
+| Read room metadata | `chat:room:{key}` | `read` |
+| Moderation actions | `chat:moderation:{scope}` | `moderate` |
 | Create room (if explicit) | `chat:room` | `create` (often bound to stream lifecycle) |
+
+> **Grammar note (auth V10):** chat resources are canonical 3-segment `{domain}:{kind}:{scope}` — scope is `self` / `*` / instance. The earlier 4-segment `chat:message:room:*` form was flattened to `chat:message:*` so the ported matcher resolves scope correctly (see [ADR-0004](adr/chat/0004-two-layer-chat-authorization.md)). Message reads are unified under the `chat:message` kind; `chat:room` is room-metadata only. Moderation stays a chat kind — the `moderation`-domain alternative is condition-triggered ([ADR-0005](adr/chat/0005-moderation-domain-condition-triggered.md)).
 
 **Linking room to stream:** Enforce “only streamer or viewers of that stream can X” via **room metadata** (e.g. `external_key = streamId`) + stream-service read (sync) or **embedded claim** `attr.viewable_rooms` (can blow JWT size—prefer service lookup for fan-out).
 

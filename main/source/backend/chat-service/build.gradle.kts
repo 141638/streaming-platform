@@ -38,6 +38,12 @@ dependencies {
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("io.projectreactor:reactor-test")
+    // Testcontainers — versions managed by the Spring Boot dependency BOM.
+    testImplementation("org.testcontainers:junit-jupiter")
+    testImplementation("org.testcontainers:postgresql")
+    testImplementation("org.testcontainers:testcontainers")
+    // Reactive security test support for @WebFluxTest controller slice (mockJwt).
+    testImplementation("org.springframework.security:spring-security-test")
 }
 
 tasks.withType<Test>().configureEach {

@@ -43,9 +43,10 @@ public class ChatController {
     /**
      * Send a message to a chat room.
      *
-     * <p>If the room does not exist yet, it is auto-created. The author is
-     * derived from {@code jwt.subject} and {@code jwt.attr.username}, not
-     * from the request body.
+     * <p>The room must already exist (created from a {@code STREAM_CREATED} Kafka
+     * event) and be active — sending to a missing or archived room errors. The
+     * author is derived from {@code jwt.subject} and {@code jwt.attr.username},
+     * not from the request body.
      */
     @PostMapping(path = "/rooms/{roomKey}/messages", consumes = MediaType.APPLICATION_JSON_VALUE)
     public Mono<MessageResponse> sendMessage(
@@ -55,7 +56,7 @@ public class ChatController {
     ) {
         String authorSubject = jwt.getSubject();
         String authorUsername = JwtAttr.username(jwt);
-        return chatService.sendMessage(roomKey, authorSubject, authorUsername, body.content());
+        return chatService.sendMessage(jwt, roomKey, authorSubject, authorUsername, body.content());
     }
 
     /**
@@ -64,9 +65,10 @@ public class ChatController {
      */
     @GetMapping("/rooms/{roomKey}")
     public Mono<RoomResponse> getRoom(
+            @AuthenticationPrincipal Jwt jwt,
             @PathVariable String roomKey
     ) {
-        return chatService.getRoom(roomKey);
+        return chatService.getRoom(jwt, roomKey);
     }
 
     /**
@@ -76,15 +78,16 @@ public class ChatController {
      */
     @GetMapping("/rooms/{roomKey}/messages/recent")
     public Flux<MessageResponse> getRecentMessages(
+            @AuthenticationPrincipal Jwt jwt,
             @PathVariable String roomKey,
             @RequestParam(required = false) String before,
             @RequestParam(defaultValue = "50") int limit
     ) {
         if (before != null && !before.isBlank()) {
-            return chatService.getMessagesBefore(roomKey, before, limit)
+            return chatService.getMessagesBefore(jwt, roomKey, before, limit)
                     .flatMapMany(Flux::fromIterable);
         }
-        return chatService.getRecentMessages(roomKey)
+        return chatService.getRecentMessages(jwt, roomKey)
                 .flatMapMany(Flux::fromIterable);
     }
 

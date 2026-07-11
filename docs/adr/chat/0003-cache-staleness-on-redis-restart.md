@@ -1,7 +1,7 @@
 # ADR-0003: Cache Staleness on Redis Restart
 
-**Date**: 2026-07-10
-**Status**: proposed
+**Date**: 2026-07-10 (revised 2026-07-11)
+**Status**: accepted
 **Deciders**: hieuht, Claude
 
 ## Context
@@ -19,11 +19,19 @@ Two failure scenarios:
 
 In both scenarios, the read path (`cache.getRecent() → cache miss via .onErrorResume`) works correctly while Redis is down. The problem is only _after_ Redis comes back — the cache now has data again, so there is no cache miss, but the data is incorrect.
 
-This is a known limitation of the cache-aside pattern when the cache persists its state across restarts. ADR-0001 §"Negative" acknowledges eventual consistency but only in the context of a single write failure, not a whole-cache staleness window.
+### Scenario C — dropped write to an otherwise-warm key (added 2026-07-11)
+
+A third scenario surfaced during Phase 3.4/3.6 design that the original two mechanisms do **not** fully cover: **Redis is up and healthy the whole time, but a single `addToRecent` write silently fails** — a transient network blip, a timeout, a firewall/CDN hiccup, or a credential rotation causing a momentary auth failure. The write path swallows this by design (`.onErrorResume → false`), because PG is the system of record and the request must still succeed.
+
+The danger: the room key is **non-empty** (it has prior messages), so reads do **not** miss — they serve a set that is silently *missing the dropped message*. Unlike Scenarios A/B, there is no disconnect event, so evict-on-reconnect never fires; the only recovery is TTL expiry (up to 1 hour). A single dropped write therefore serves a persistent hole for up to the TTL.
+
+| Scenario | Redis state | Failure | Detected by |
+|----------|-------------|---------|-------------|
+| C. Dropped write, Redis up | Warm, serving reads | one `addToRecent` returns false | neither TTL-refresh nor reconnect — needs a dedicated mechanism |
 
 ## Decision
 
-We will implement two complementary mechanisms, in order:
+We implement three complementary mechanisms:
 
 ### 1. Key-Level TTL (immediate safety net)
 
@@ -55,13 +63,39 @@ This costs one `SCAN` + N `DEL` operations per reconnect event. Typically 0–2 
 - **Why delete instead of backfill**: Scanning + backfilling every room from PG on reconnect could cause a thundering herd on PG. Deleting is a single Redis operation per key; the backfill is distributed across actual reader requests.
 - **Why not Redis keyspace notifications**: `__keyspace@0__:chat:room:*` events could detect expiry and trigger backfill, but they're fire-and-forget with no delivery guarantee. A reconnect event is a single deterministic trigger point.
 
+### 3. Evict on Write Failure (covers Scenario C)
+
+When `addToRecent` reports failure (`false`) after a successful PG persist, the write path immediately **evicts that room key**:
+
+```
+persist to PG (success)
+  → cache.addToRecent(roomKey, msg)  → false   (dropped write, Redis up)
+  → cache.evictRoom(roomKey)                    (delete the now-inconsistent key)
+  → next read misses → PG fallback → backfill rebuilds the complete set
+```
+
+This is the only mechanism that addresses Scenario C, because there is no disconnect (evict-on-reconnect can't fire) and the key is non-empty (no natural cache miss until TTL). Evicting converts a silent hole that would persist for up to the TTL into a single cold read on the next request.
+
+- **Cost**: one extra `DEL` only on the (rare) write-failure path. Zero cost on the happy path.
+- **Why evict rather than retry**: a retry could also fail and adds latency to the user's send; the message is already durable in PG, so the cheapest correct action is to let the next reader rebuild from the source of record.
+- **Implemented in**: `ChatService.cacheWrite()` (Phase 0), not in `RedisMessageCache` — the cache stays a dumb latency buffer; the orchestration layer owns the self-heal decision.
+
 ### Combined behavior
 
-| Event | TTL-only | TTL + Evict-on-reconnect |
-|-------|----------|--------------------------|
-| Redis blip (5s) | Stale for up to 1h | Stale for 0s (evicted on reconnect) |
-| Redis crash + RDB restore (data at T-30min) | Stale for up to 30min (keys unexpired) | Stale for 0s (evicted on reconnect) |
-| Redis crash, no persistence (empty after restart) | Already handled — empty cache = cache miss | No action needed |
+| Event | TTL-only | + Evict-on-reconnect | + Evict-on-write-failure |
+|-------|----------|----------------------|--------------------------|
+| Redis blip (5s) | Stale up to 1h | Stale 0s (evicted on reconnect) | — |
+| Redis crash + RDB restore (data at T-30min) | Stale up to 30min | Stale 0s (evicted on reconnect) | — |
+| Redis crash, no persistence (empty after restart) | Handled — empty = cache miss | No action needed | — |
+| **C. Dropped write, Redis up (no disconnect)** | **Stale up to 1h** | **Not triggered (no reconnect)** | **Stale 0s (key evicted → next read rebuilds)** |
+
+## Deferred — Option 2: periodic reconciliation sweep
+
+A stronger guarantee for Scenario C (and partial-write drift generally) is a **scheduled reconciliation sweep**: periodically rebuild hot-room keys from PG so any accumulated drift self-corrects on a fixed cadence, independent of read traffic.
+
+- **Why deferred**: evict-on-write-failure already bounds Scenario C to a single cold read, and TTL bounds the worst case to 1h. A sweep adds a background component + recurring PG load for a failure mode that is already self-healing at the current scale (<50 rooms). It buys value only if drift is observed to accumulate faster than reads/TTL clear it.
+- **Revisit trigger**: metrics showing repeated evict-on-write-failure events on the same rooms, or a move to persistence-heavy Redis at large room counts.
+- **Marker**: `ChatService.cacheWrite()` carries a `TODO(3.x-deferred)` pointing here so a future agent can pick it up.
 
 ## Alternatives Considered
 
@@ -107,14 +141,23 @@ Include a generation counter in the key: `chat:room:{roomKey}:recent:gen-{N}`. O
 
 ## Implementation Plan
 
-| Step | What | Effort | Phase |
-|------|------|--------|-------|
-| 1 | Add `redis.expire(key, ttl)` to `addToRecent()` in `RedisMessageCache` | 1 line | 3.x (next) |
-| 2 | Add `chat.cache.room-ttl-hours` to `application.yml` (default 1) | 2 lines | 3.x (next) |
-| 3 | Add `RedisReconnectListener` — `@EventListener` on reconnect, scan + delete `chat:room:*:recent` keys | ~30 lines | 3.x or 6.x |
-| 4 | Add metrics: `cache.eviction.on_reconnect` counter | 2 lines | 6.x (observability) |
+| Step | What | Status |
+|------|------|--------|
+| 1 | `redis.expire(key, ttl)` (`applyTtl`) in `addToRecent()` — `RedisMessageCache` | ✅ shipped (Phase 0) |
+| 2 | `chat.cache.room-ttl` (Duration, default 1h) via `ChatCacheProperties` + `application.yml` | ✅ shipped (Phase 0) |
+| 3 | Evict-on-write-failure in `ChatService.cacheWrite()` (Scenario C) | ✅ shipped (Phase 0) |
+| 4 | `RedisReconnectListener` — `SCAN` + `DEL chat:room:*:recent` on reconnect (Lettuce `RedisConnectionStateListener`) | ✅ shipped (Phase 3.6) |
+| 5 | Metrics: `cache.eviction.on_reconnect` / `cache.eviction.on_write_failure` counters | ○ deferred (6.x observability) |
+| 6 | Periodic reconciliation sweep (see [Deferred](#deferred--option-2-periodic-reconciliation-sweep)) | ○ deferred (revisit on drift metrics) |
 
-Steps 1–2 are the immediate fix and can ship in any 3.x commit. Steps 3–4 can follow when reconnect handling is prioritized.
+Steps 1–4 shipped together in the 3.4/3.6 branch. Reconnect eviction (step 4) exposes
+`evictAllRooms()`; the production trigger registers a Lettuce connection-state listener,
+guarded so a wiring failure never blocks context startup.
+
+> **Integration-test caveat (2026-07-11):** the Testcontainers suites that exercise TTL,
+> evict-on-reconnect, and evict-on-write-failure are written but were **not executed** in
+> the authoring environment (no Docker daemon available). They compile; run
+> `./gradlew :chat-service:test` on a Docker-enabled host to validate.
 
 ## References
 

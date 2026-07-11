@@ -7,9 +7,15 @@ import com.streaming.chat.domain.ChatRoom;
 import com.streaming.chat.infrastructure.cache.RedisMessageCache;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatMessageRepository;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatRoomRepository;
+import com.streaming.chat.security.AuthAction;
+import com.streaming.chat.security.AuthResourceDomain;
+import com.streaming.chat.security.AuthResourceKind;
+import com.streaming.chat.security.ChatAuthorization;
+import com.streaming.chat.security.RequiredAuthority;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -25,9 +31,15 @@ import java.util.List;
  * <p>Owns the cache-aside orchestration: reads hit Redis first and fall back
  * to PostgreSQL; writes go to PostgreSQL first and then update Redis.
  *
- * <p><b>Current scaffold:</b> writes are Redis-only (PG persistence is the
- * next work item). The author identity is derived from the JWT {@code sub},
- * fixing the impersonation bug in the prototype controller.
+ * <p>The write path is a small composed pipeline —
+ * {@code lookup → active-check → guard → persist → cache} — so cross-cutting
+ * concerns plug into explicit seams:
+ * <ul>
+ *   <li>{@link SendGuard} is the Layer-2 (resource-state) pre-write hook; Phase
+ *       3.4 supplies the ban-enforcing implementation.</li>
+ *   <li>The cache-write step self-heals a silently-dropped write by evicting the
+ *       room key so the next read rebuilds from PG (ADR-0003 §evict-on-write-failure).</li>
+ * </ul>
  */
 @Service
 @RequiredArgsConstructor
@@ -39,51 +51,92 @@ public class ChatService {
     private final ReactiveChatRoomRepository roomRepository;
     private final ReactiveChatMessageRepository messageRepository;
     private final RedisMessageCache cache;
+    private final SendGuard sendGuard;
+    private final ChatAuthorization chatAuthorization;
 
     /**
      * Send a message to a chat room.
      *
-     * <p>If the room does not exist yet, it is created on-the-fly (this
-     * simplifies the Phase 3 scaffold; Phase 3.3 will replace this with
-     * Kafka-driven room creation from stream events).
+     * <p>The room must already exist (created from a {@code STREAM_CREATED} Kafka
+     * event, Phase 3.3) and be active; otherwise the call errors with
+     * {@link RoomNotFoundException} / {@link RoomArchivedException}. PBAC
+     * {@code chat:message send} is enforced after the active check; the
+     * {@link SendGuard} (Layer-2 ban check) runs after PBAC and before persistence.
      *
+     * @param jwt the authenticated caller's validated access token
      * @param roomKey the room's external key
      * @param authorSubject the JWT {@code sub} claim — the authenticated user
+     * @param authorUsername denormalized display name from JWT {@code attr.username}
      * @param body the message content
      * @return the sent message as a response DTO
      */
-    public Mono<MessageResponse> sendMessage(String roomKey, String authorSubject, String authorUsername, String body) {
+    public Mono<MessageResponse> sendMessage(
+            Jwt jwt, String roomKey, String authorSubject, String authorUsername, String body) {
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
 
         return roomRepository.findByExternalKey(roomKey)
                 .switchIfEmpty(Mono.error(new RoomNotFoundException(roomKey)))
                 .filter(ChatRoom::isActive)
                 .switchIfEmpty(Mono.error(new RoomArchivedException(roomKey)))
-                .flatMap(room -> {
-                    log.info("Message hit.");
-                    ChatMessage msg = ChatMessage.create(room.getId(), authorSubject, authorUsername, body, now);
-                    return messageRepository.save(msg)
-                            .map(saved -> MessageResponse.from(saved, room.getExternalKey()));
-                })
-                .flatMap(response -> cache.addToRecent(roomKey, response)
-                        .doOnNext(success -> {
-                            if (Boolean.TRUE.equals(success)) {
-                                log.debug("Message cached: roomKey={}, id={}", roomKey, response.id());
-                            }
-                        })
-                        .thenReturn(response));
+                .flatMap(room -> chatAuthorization
+                        .requireAccess(jwt, new RequiredAuthority(
+                                AuthResourceDomain.CHAT, AuthResourceKind.MESSAGE,
+                                AuthAction.SEND, room.getBroadcasterSubject()))
+                        .thenReturn(room))
+                .flatMap(room -> sendGuard.check(room, authorSubject).thenReturn(room))
+                .flatMap(room -> persistAndCache(room, authorSubject, authorUsername, body, now));
+    }
+
+    private Mono<MessageResponse> persistAndCache(
+            ChatRoom room, String authorSubject, String authorUsername, String body, OffsetDateTime now) {
+        ChatMessage msg = ChatMessage.create(room.getId(), authorSubject, authorUsername, body, now);
+        return messageRepository.save(msg)
+                .map(saved -> MessageResponse.from(saved, room.getExternalKey()))
+                .flatMap(this::cacheWrite);
+    }
+
+    /**
+     * Update the hot cache after a successful PG persist. If the cache write
+     * silently fails while Redis is otherwise serving reads, the room key would
+     * serve a permanent hole (missing this message) until TTL expiry — so we
+     * evict the key, forcing the next read to miss and rebuild the complete set
+     * from PG. Turns a silent staleness window into a single cold read.
+     *
+     * <p>See ADR-0003 §evict-on-write-failure.
+     * TODO(3.x-deferred): periodic reconciliation sweep for hot rooms — see
+     * ADR-0003 §Deferred (Option 2). Revisit if evict-on-failure proves insufficient.
+     */
+    private Mono<MessageResponse> cacheWrite(MessageResponse response) {
+        return cache.addToRecent(response.roomKey(), response)
+                .flatMap(success -> {
+                    if (Boolean.TRUE.equals(success)) {
+                        log.debug("Message cached: roomKey={}, id={}", response.roomKey(), response.id());
+                        return Mono.just(response);
+                    }
+                    log.warn("Cache write failed for roomKey={}, evicting key to force PG rebuild on next read",
+                            response.roomKey());
+                    return cache.evictRoom(response.roomKey()).thenReturn(response);
+                });
     }
 
     /**
      * Get recent messages for a room.
      *
-     * <p>Attempts Redis first; falls back to PostgreSQL on cache miss.
+     * <p>Enforces PBAC {@code chat:message read} against the room owner, then
+     * attempts Redis first and falls back to PostgreSQL on cache miss. Message
+     * reads are unified under the {@code chat:message} kind ({@code read} for the
+     * recent/hot path, {@code read_history} for durable cursor pagination);
+     * {@code chat:room} is reserved for room-metadata lookups ({@link #getRoom}).
+     * If the room does not exist the authorization step is a no-op and the cache
+     * path yields an empty list (unchanged from Phase 0 behaviour).
      *
+     * @param jwt the authenticated caller's validated access token
      * @param roomKey the room's external key
      * @return the most recent messages (up to {@value #MAX_RECENT})
      */
-    public Mono<List<MessageResponse>> getRecentMessages(String roomKey) {
-        return cache.getRecent(roomKey, MAX_RECENT)
+    public Mono<List<MessageResponse>> getRecentMessages(Jwt jwt, String roomKey) {
+        return authorizeRead(jwt, roomKey, AuthResourceKind.MESSAGE, AuthAction.READ)
+                .then(cache.getRecent(roomKey, MAX_RECENT)
                 .flatMap(cached -> {
                     if (!cached.isEmpty()) {
                         log.debug("Cache hit for roomKey={}, count={}", roomKey, cached.size());
@@ -108,32 +161,44 @@ public class ChatService {
                                         );
                                 return Mono.just(fromPg);
                             });
-                });
+                }));
     }
 
     /**
      * Look up a room by its external key.
      *
+     * <p>Enforces PBAC {@code chat:room read} against the room owner.
+     *
+     * @param jwt the authenticated caller's validated access token
      * @param roomKey the room's external key
-     * @return the room metadata, or {@link Mono#empty()} if not found
+     * @return the room metadata, or an error if not found
      */
-    public Mono<RoomResponse> getRoom(String roomKey) {
+    public Mono<RoomResponse> getRoom(Jwt jwt, String roomKey) {
         return roomRepository.findByExternalKey(roomKey)
                 .switchIfEmpty(Mono.error(new RoomNotFoundException(roomKey)))
+                .flatMap(room -> chatAuthorization
+                        .requireAccess(jwt, new RequiredAuthority(
+                                AuthResourceDomain.CHAT, AuthResourceKind.ROOM,
+                                AuthAction.READ, room.getBroadcasterSubject()))
+                        .thenReturn(room))
                 .map(RoomResponse::from);
     }
 
     /**
      * Get messages older than the given cursor, for lazy-load history.
      *
+     * <p>Enforces PBAC {@code chat:message read_history} against the room owner.
+     *
+     * @param jwt the authenticated caller's validated access token
      * @param roomKey the room's external key
      * @param cursor ISO-8601 timestamp of the oldest message currently loaded
      * @param limit max number of messages to return
      * @return messages ordered newest-first (empty list if none)
      */
-    public Mono<List<MessageResponse>> getMessagesBefore(String roomKey, String cursor, int limit) {
+    public Mono<List<MessageResponse>> getMessagesBefore(Jwt jwt, String roomKey, String cursor, int limit) {
         double maxScore = parseCursorToEpochMillis(cursor);
-        return cache.getBefore(roomKey, maxScore, limit)
+        return authorizeRead(jwt, roomKey, AuthResourceKind.MESSAGE, AuthAction.READ_HISTORY)
+                .then(cache.getBefore(roomKey, maxScore, limit)
                 .flatMap(cached -> {
                     if (!cached.isEmpty()) {
                         log.debug("Cache before-hit for roomKey={}, count={}", roomKey, cached.size());
@@ -159,7 +224,23 @@ public class ChatService {
                                         );
                                 return Mono.just(fromPg);
                             });
-                });
+                }));
+    }
+
+    /**
+     * Enforce a read authority against the room owner without disturbing the
+     * cache-first read pipeline. Loads the room only to resolve its
+     * {@code broadcasterSubject}; when the room is absent this completes empty
+     * (the downstream cache path then yields an empty list, preserving the
+     * pre-PBAC read contract). When {@code chat.pbac.enabled=false}, the
+     * {@link ChatAuthorization} short-circuit makes this a cheap no-op after the
+     * lookup.
+     */
+    private Mono<Void> authorizeRead(Jwt jwt, String roomKey, AuthResourceKind kind, AuthAction action) {
+        return roomRepository.findByExternalKey(roomKey)
+                .flatMap(room -> chatAuthorization.requireAccess(jwt, new RequiredAuthority(
+                        AuthResourceDomain.CHAT, kind, action, room.getBroadcasterSubject())))
+                .then();
     }
 
     private static double parseCursorToEpochMillis(String cursor) {

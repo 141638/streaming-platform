@@ -22,6 +22,19 @@ Chat authorization is **two layers**:
 
 Bans return `403 CHAT_USER_BANNED`; PBAC denials return `403 AUTHZ_DENIED` — distinct envelope `code`s so clients disambiguate without abusing the status class.
 
+### Grammar update (auth V10, 2026-07-11)
+
+The original seed emitted 4-segment chat resources (`chat:message:room:*`) that the ported matcher could not parse (see Risks, since resolved). Migration `V10__flatten_chat_pbac_grammar.sql` flattens chat to the canonical 3-segment `{domain}:{kind}:{scope}` used by every other service:
+
+| Concern | Resource line |
+|---------|---------------|
+| Room metadata | `chat:room:* read` |
+| Message content (recent + durable) | `chat:message:* read send read_history` |
+| Streamer self-moderation | `chat:moderation:self moderate` |
+| Staff moderation | `chat:moderation:* moderate` |
+
+Two accompanying decisions: message reads are **unified under `chat:message`** (`read` = recent/hot path, `read_history` = durable cursor page) with `chat:room` retained only for room-metadata lookups; and moderation stays a **kind under the `chat` domain** rather than a first-class `moderation` domain — the latter is a condition-triggered alternative recorded in [ADR-0005](0005-moderation-domain-condition-triggered.md).
+
 ## Alternatives Considered
 
 ### Alternative 1: Bans as deny-policies in the JWT `ent` claim
@@ -53,7 +66,7 @@ Bans return `403 CHAT_USER_BANNED`; PBAC denials return `403 AUTHZ_DENIED` — d
 - **PBAC is inert until the flag flips** — a startup WARN mitigates accidentally running unenforced in production.
 
 ### Risks
-- **PBAC `ent` grammar mismatch (blocks enabling)**: auth-service seeds 4-segment chat resources (`chat:message:room:*`, `chat:moderation:room:*`), but the ported matcher parses `domain:kind:` as a 2-segment prefix and treats the remainder as one scope token — so `read` (`chat:room:*`) matches, but `send` / `read_history` / `moderate` never do. `policy.viewer.base` also grants no `send`, and streamers have no self-moderation grant. **Mitigation**: `chat.pbac.enabled=false` (dark) until resolved by either (a) flattening the auth-service seed to 3-segment resources (`chat:message:*`/`self`) via a forward migration, or (b) extending the matcher to understand the `room:` qualifier. Tracked in [IMPLEMENTATION-PLAN.md §3.4](../../IMPLEMENTATION-PLAN.md).
+- **PBAC `ent` grammar mismatch (blocks enabling)** — ~~auth-service seeds 4-segment chat resources~~ **RESOLVED (auth V10, 2026-07-11)**. The mismatch: auth seeded `chat:message:room:*` / `chat:moderation:room:*`, but the ported matcher parses `domain:kind:` as a 2-segment prefix and treats the remainder (`room:*`) as one scope token — so `read` (`chat:room:*`) matched, but `send` / `read_history` / `moderate` never did. Resolved by option (a) from the original mitigation: `V10__flatten_chat_pbac_grammar.sql` flattens the seed to 3-segment resources (`chat:message:*`, `chat:moderation:self|*`) and closes the coverage gaps (`policy.viewer.base` gained `send`/`read_history`; `policy.streamer.live` gained `chat:moderation:self moderate`). The matcher is unchanged, so it stays byte-identical to stream-service's for the Phase 6.2 `pbac-common` extraction. Enforcement remains dark (`chat.pbac.enabled=false`) so it can be enabled deliberately after a token-refresh window (in-flight tokens carry the old grammar until refresh).
 - **Ban read latency at scale**: bounded by index + tiny per-room cardinality now; Redis ban cache is the documented upgrade.
 - **TOCTOU between ban check and persist**: sub-millisecond same-scheduler window; acceptable for real-time chat (no distributed lock).
 

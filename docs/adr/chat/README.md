@@ -7,3 +7,4 @@
 | [0002](0002-jwt-derived-author-identity.md) | JWT-Derived Author Identity for Chat Messages | accepted | 2026-07-02 |
 | [0003](0003-cache-staleness-on-redis-restart.md) | Cache Staleness on Redis Restart — TTL + Evict on Reconnect + Evict on Write Failure | accepted | 2026-07-11 |
 | [0004](0004-two-layer-chat-authorization.md) | Two-Layer Chat Authorization — PBAC Capability + Resource-State Moderation | accepted | 2026-07-11 |
+| [0005](0005-moderation-domain-condition-triggered.md) | Moderation Stays a Chat Kind — `moderation` Domain is Condition-Triggered | accepted | 2026-07-11 |

@@ -61,6 +61,6 @@ Planned: Phase 0 → (Track A ∥ Track B) → converge. **Actual: matched exact
 
 ## 7. Key risks carried forward
 
-1. **PBAC grammar mismatch blocks `chat.pbac.enabled=true`** — cross-service (auth + chat) decision required. Mitigation: dark-launch flag + startup WARN. See ADR-0004 Risks.
+1. **PBAC grammar mismatch blocks `chat.pbac.enabled=true`** — ~~cross-service (auth + chat) decision required~~ **RESOLVED 2026-07-11** via auth migration `V10__flatten_chat_pbac_grammar.sql` (option (a): flatten seed to 3-segment). Also flattened live master data + assigned `viewer` to 3 role-less users, unified message reads under `chat:message`, granted viewers `send`/`read_history` and streamers `chat:moderation:self moderate`. Matcher unchanged. See [ADR-0004](../adr/chat/0004-two-layer-chat-authorization.md) (grammar update + Risks) and [ADR-0005](../adr/chat/0005-moderation-domain-condition-triggered.md). Enforcement still ships dark — flip `CHAT_PBAC_ENABLED` after a token-refresh window.
 2. **Testcontainers suite unvalidated** — must run `./gradlew :chat-service:test` on a Docker host before trusting the cache-hardening guarantees.
 3. **Test flakiness (busy-wait polling)** — code-review Findings 2/3, test-only; harden with Awaitility when the suite is first run for real.

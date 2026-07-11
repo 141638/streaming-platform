@@ -1,6 +1,6 @@
 # Implementation Plan
 
-**Last updated:** 2026-07-10
+**Last updated:** 2026-07-11
 **Current phase:** 2 — Stream Lifecycle (2.4–2.5 complete, channel page shipped) / 3 — Real-time Chat (partial)
 
 ## End Goal
@@ -493,13 +493,16 @@ live feed.
 
 ### Architecture Decisions
 
-Three ADRs were recorded during Phase 3 design — see [docs/adr/chat/](adr/chat/):
+Chat ADRs recorded across Phase 3 — see [docs/adr/chat/](adr/chat/):
 
 | ADR | Decision |
 |-----|----------|
-| [0001](adr/chat/0001-layered-reactive-architecture.md) | Layered reactive (`api/` → `application/` → `domain/` → `infrastructure/`) over DDD/Clean/Hexagonal — matches stream-service conventions |
-| [0002](adr/chat/0002-cache-aside-redis-zset.md) | Cache-aside with Redis ZSET (epoch-millis scored) — PG is system of record, Redis is disposable hot cache |
-| [0003](adr/chat/0003-jwt-derived-author-identity.md) | Author identity from JWT `sub` claim only — `SendMessageRequest` has no `author` field, eliminating impersonation |
+| [0000](adr/chat/0000-architecture-foundation.md) | Layered reactive (`api/` → `application/` → `domain/` → `infrastructure/`) over DDD/Clean/Hexagonal — matches stream-service conventions |
+| [0001](adr/chat/0001-cache-aside-redis-zset.md) | Cache-aside with Redis ZSET (epoch-millis scored) — PG is system of record, Redis is disposable hot cache |
+| [0002](adr/chat/0002-jwt-derived-author-identity.md) | Author identity from JWT `sub` claim only — `SendMessageRequest` has no `author` field, eliminating impersonation |
+| [0003](adr/chat/0003-cache-staleness-on-redis-restart.md) | Cache staleness on Redis restart — TTL + evict-on-reconnect + evict-on-write-failure |
+| [0004](adr/chat/0004-two-layer-chat-authorization.md) | Two-layer chat authorization — PBAC capability (`ent`) + resource-state moderation (bans); grammar flattened in auth V10 |
+| [0005](adr/chat/0005-moderation-domain-condition-triggered.md) | Moderation stays a chat kind — `moderation`-domain alternative is condition-triggered, not phase-deferred |
 
 ### Scaffold Artifacts
 
@@ -762,7 +765,7 @@ V2__add_room_status.sql                   ← new: status + archived_at on chat.
 - [x] 3.1 — Service layer + PG persistence + Redis cache-aside (extended: cursor pagination, Redis resilience, room status, archived enforcement)
 - [x] 3.2 — JWT-based author identity
 - [x] 3.3 — Room lifecycle from stream events + schema V3 + identity enrichment + cache warm-up (2026-07-09)
-- [x] 3.4 — PBAC enforcement + moderation (2026-07-11) — moderation (bans) live; PBAC enforcement built but **ships dark** (`chat.pbac.enabled=false`) pending auth-service `ent` grammar reconciliation (see 3.4 notes)
+- [x] 3.4 — PBAC enforcement + moderation (2026-07-11) — moderation (bans) live; PBAC enforcement built, **ships dark** (`chat.pbac.enabled=false`). Grammar mismatch **resolved** via auth `V10__flatten_chat_pbac_grammar.sql` (2026-07-11); enable at runtime after a token-refresh window (see 3.4 notes + [chat-pbac-grammar-fix-retrospective.md](plans/chat-pbac-grammar-fix-retrospective.md))
 - [x] 3.5 — Frontend chat experience (extended: virtual scroll, lazy load, smart scroll, optimistic send + avatars + timestamps; remaining: unit tests + OnPush)
 - [x] 3.6 — Cache integration testing (2026-07-11) — Testcontainers suite written (cache-aside, TTL, evict-on-reconnect, evict-on-write-failure); **not yet executed — needs Docker host**
 - [x] 3.7 — Cache warm-up completion (`getMessagesBefore` backfill gap)
@@ -776,23 +779,26 @@ Built as two parallel agent tracks over a shared Phase 0 foundation; see
 - **Layer 1 — PBAC capability** (`ent` in JWT, in-memory): `com.streaming.chat.security`
   package ported from stream-service, every file `PBAC-COMMON-CANDIDATE` for the 6.2
   extraction. `ChatAuthorization.requireAccess` guards send (`chat:message send`),
-  read (`chat:room read`), history (`chat:message read_history`), moderation
-  (`chat:moderation moderate`), owner = `room.broadcasterSubject`.
+  read (`chat:message read`), history (`chat:message read_history`), moderation
+  (`chat:moderation moderate`), owner = `room.broadcasterSubject`. Message reads are
+  unified under the `chat:message` kind; `chat:room read` is room-metadata only.
 - **Layer 2 — ban (resource-state)**: `chat_ban` table (V3), `BanSendGuard` plugged into
   the Phase-0 `SendGuard` seam; active/unexpired ban → `403 CHAT_USER_BANNED` (distinct
   `code` from PBAC's `403 AUTHZ_DENIED`). PG-direct lookup; Redis ban cache deferred
   (`OPT(scale)` marker).
 - Moderation REST API: `GET/POST/DELETE /v1/rooms/{roomKey}/bans`, gated by `moderate`.
 
-**⚠️ Blocker before flipping `chat.pbac.enabled=true`:** the ported matcher parses
-`domain:kind:` as a 2-segment prefix (scope = remainder as `*`/`self`/literal), but
-auth-service seeds chat resources with a `room:` qualifier (`chat:message:room:*`,
-`chat:moderation:room:*`). Result: `read` matches, but **`send` / `read_history` /
-`moderate` never match**. Also `policy.viewer.base` grants no `send`, and streamers have
-no self-moderation grant. **Decision needed:** either (a) flatten the auth-service seed to
-3-segment resources (`chat:message:*` / `self`) via a forward migration, or (b) extend the
-matcher to understand the `room:` qualifier. PBAC ships dark so nothing is gated at runtime
-until this is resolved. Owned by a follow-up (auth-service + chat coordination).
+**✅ Grammar mismatch RESOLVED (2026-07-11)** — the original blocker (ported matcher parses
+`domain:kind:` as a 2-segment prefix, but auth seeded 4-segment `chat:message:room:*` /
+`chat:moderation:room:*`, so `send`/`read_history`/`moderate` never matched; and viewers had
+no `send`, streamers no self-moderation) was fixed by **option (a): flatten the seed**.
+`V10__flatten_chat_pbac_grammar.sql` rewrites the three chat policies to 3-segment resources
+(`chat:message:*`, `chat:moderation:self|*`) and closes the coverage gaps; live master data +
+role assignments were reconciled in the running DB. Matcher unchanged. See
+[ADR-0004](adr/chat/0004-two-layer-chat-authorization.md) (grammar update + Risks),
+[ADR-0005](adr/chat/0005-moderation-domain-condition-triggered.md), and the
+[fix retrospective](plans/chat-pbac-grammar-fix-retrospective.md). Enforcement still ships dark
+— flip `CHAT_PBAC_ENABLED` after a token-refresh window.
 
 **Deferred (markers in code):** Redis ban cache (`OPT(scale)` in `BanSendGuard`);
 periodic reconciliation sweep (`TODO(3.x-deferred)` in `ChatService.cacheWrite`, see

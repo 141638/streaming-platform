@@ -39,14 +39,20 @@ public class ModerationService {
     /**
      * Ban a user from a room. Idempotent: an existing ban for the same
      * {@code (room, subject)} pair is replaced.
+     *
+     * @param durationSeconds ban duration in seconds; {@code null} = permanent,
+     *                        a positive value = temporary ban expiring at
+     *                        {@code now + durationSeconds}
      */
-    public Mono<BanResponse> ban(Jwt jwt, String roomKey, String targetSubject, String reason) {
+    public Mono<BanResponse> ban(
+            Jwt jwt, String roomKey, String targetSubject, String reason, Long durationSeconds) {
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime expiresAt = durationSeconds == null ? null : now.plusSeconds(durationSeconds);
         return authorizedRoom(jwt, roomKey)
                 .flatMap(room -> banRepository
                         .deleteByRoomIdAndBannedSubject(room.getId(), targetSubject)
-                        .then(banRepository.save(
-                                ChatBan.create(room.getId(), targetSubject, jwt.getSubject(), reason, now, null))))
+                        .then(banRepository.save(ChatBan.create(
+                                room.getId(), targetSubject, jwt.getSubject(), reason, now, expiresAt))))
                 .map(BanResponse::from);
     }
 
@@ -59,11 +65,16 @@ public class ModerationService {
     }
 
     /**
-     * List all bans for a room.
+     * List the <em>active</em> bans for a room — permanent bans and temporary
+     * bans that have not yet lapsed. Expired rows are excluded at the query level
+     * ({@code expires_at IS NULL OR expires_at > now}) so the roster shown to
+     * moderators matches exactly what {@code BanSendGuard} enforces on the send
+     * path.
      */
     public Flux<BanResponse> listBans(Jwt jwt, String roomKey) {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         return authorizedRoom(jwt, roomKey)
-                .flatMapMany(room -> banRepository.findByRoomId(room.getId()))
+                .flatMapMany(room -> banRepository.findActiveByRoomId(room.getId(), now))
                 .map(BanResponse::from);
     }
 

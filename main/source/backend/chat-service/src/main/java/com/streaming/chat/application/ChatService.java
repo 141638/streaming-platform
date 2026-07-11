@@ -167,7 +167,14 @@ public class ChatService {
     /**
      * Look up a room by its external key.
      *
-     * <p>Enforces PBAC {@code chat:room read} against the room owner.
+     * <p>Enforces PBAC {@code chat:room read} against the room owner, then
+     * attaches a {@code viewerCanModerate} capability signal computed from the
+     * caller's {@code ent} claim. That capability query is
+     * <b>independent of {@code chat.pbac.enabled}</b> — enforcement ships dark,
+     * but the client must still learn whether the viewer holds
+     * {@code chat:moderation moderate} for this room so it can render moderator
+     * affordances. An unauthenticated caller ({@code jwt == null}) yields
+     * {@code viewerCanModerate=false} rather than erroring.
      *
      * @param jwt the authenticated caller's validated access token
      * @param roomKey the room's external key
@@ -181,7 +188,11 @@ public class ChatService {
                                 AuthResourceDomain.CHAT, AuthResourceKind.ROOM,
                                 AuthAction.READ, room.getBroadcasterSubject()))
                         .thenReturn(room))
-                .map(RoomResponse::from);
+                .flatMap(room -> chatAuthorization
+                        .hasCapability(jwt, new RequiredAuthority(
+                                AuthResourceDomain.CHAT, AuthResourceKind.MODERATION,
+                                AuthAction.MODERATE, room.getBroadcasterSubject()))
+                        .map(canModerate -> RoomResponse.from(room, canModerate)));
     }
 
     /**

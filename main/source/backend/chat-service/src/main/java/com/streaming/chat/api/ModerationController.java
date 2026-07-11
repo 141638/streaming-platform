@@ -45,7 +45,8 @@ public class ModerationController {
             @PathVariable String roomKey,
             @Valid @RequestBody BanRequest body
     ) {
-        return moderationService.ban(jwt, roomKey, body.bannedSubject(), body.reason());
+        return moderationService.ban(
+                jwt, roomKey, body.bannedSubject(), body.reason(), body.durationSeconds());
     }
 
     /**

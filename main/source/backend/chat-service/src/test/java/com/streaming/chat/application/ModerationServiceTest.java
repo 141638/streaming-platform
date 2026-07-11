@@ -1,6 +1,8 @@
 package com.streaming.chat.application;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -15,11 +17,13 @@ import com.streaming.chat.security.ChatAuthorization;
 import com.streaming.chat.security.ChatAuthorization.ChatAccessDeniedException;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -74,11 +78,11 @@ class ModerationServiceTest {
                     .thenReturn(Mono.empty());
             when(banRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
 
-            StepVerifier.create(service.ban(jwt(OTHER_SUB, null), ROOM_KEY, TARGET_SUB, "spam"))
+            StepVerifier.create(service.ban(jwt(OTHER_SUB, null), ROOM_KEY, TARGET_SUB, "spam", null))
                     .assertNext(response -> {
-                        org.assertj.core.api.Assertions.assertThat(response.bannedSubject()).isEqualTo(TARGET_SUB);
-                        org.assertj.core.api.Assertions.assertThat(response.bannedBySubject()).isEqualTo(OTHER_SUB);
-                        org.assertj.core.api.Assertions.assertThat(response.reason()).isEqualTo("spam");
+                        assertThat(response.bannedSubject()).isEqualTo(TARGET_SUB);
+                        assertThat(response.bannedBySubject()).isEqualTo(OTHER_SUB);
+                        assertThat(response.reason()).isEqualTo("spam");
                     })
                     .verifyComplete();
 
@@ -86,18 +90,18 @@ class ModerationServiceTest {
         }
 
         @Test
-        @DisplayName("listBans returns bans for the room")
+        @DisplayName("listBans returns the active bans for the room")
         void listBansWhenDisabled() {
             ModerationService service = serviceWithPbac(false);
             ChatRoom room = room();
             ChatBan existing = ChatBan.create(room.getId(), TARGET_SUB, OWNER_SUB, "spam",
                     OffsetDateTime.now(ZoneOffset.UTC), null);
             when(roomRepository.findByExternalKey(ROOM_KEY)).thenReturn(Mono.just(room));
-            when(banRepository.findByRoomId(room.getId())).thenReturn(Flux.just(existing));
+            when(banRepository.findActiveByRoomId(eq(room.getId()), any()))
+                    .thenReturn(Flux.just(existing));
 
             StepVerifier.create(service.listBans(jwt(OTHER_SUB, null), ROOM_KEY))
-                    .assertNext(response ->
-                            org.assertj.core.api.Assertions.assertThat(response.bannedSubject()).isEqualTo(TARGET_SUB))
+                    .assertNext(response -> assertThat(response.bannedSubject()).isEqualTo(TARGET_SUB))
                     .verifyComplete();
         }
     }
@@ -113,7 +117,7 @@ class ModerationServiceTest {
             ChatRoom room = room();
             when(roomRepository.findByExternalKey(ROOM_KEY)).thenReturn(Mono.just(room));
 
-            StepVerifier.create(service.ban(jwt(OTHER_SUB, List.of()), ROOM_KEY, TARGET_SUB, "spam"))
+            StepVerifier.create(service.ban(jwt(OTHER_SUB, List.of()), ROOM_KEY, TARGET_SUB, "spam", null))
                     .expectError(ChatAccessDeniedException.class)
                     .verify();
 
@@ -131,9 +135,8 @@ class ModerationServiceTest {
             when(banRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
 
             Jwt staff = jwt(OTHER_SUB, List.of("allow chat:moderation:* moderate"));
-            StepVerifier.create(service.ban(staff, ROOM_KEY, TARGET_SUB, "spam"))
-                    .assertNext(response ->
-                            org.assertj.core.api.Assertions.assertThat(response.bannedSubject()).isEqualTo(TARGET_SUB))
+            StepVerifier.create(service.ban(staff, ROOM_KEY, TARGET_SUB, "spam", null))
+                    .assertNext(response -> assertThat(response.bannedSubject()).isEqualTo(TARGET_SUB))
                     .verifyComplete();
         }
 
@@ -148,10 +151,90 @@ class ModerationServiceTest {
             when(banRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
 
             Jwt owner = jwt(OWNER_SUB, List.of("allow chat:moderation:self moderate"));
-            StepVerifier.create(service.ban(owner, ROOM_KEY, TARGET_SUB, "spam"))
-                    .assertNext(response ->
-                            org.assertj.core.api.Assertions.assertThat(response.bannedBySubject()).isEqualTo(OWNER_SUB))
+            StepVerifier.create(service.ban(owner, ROOM_KEY, TARGET_SUB, "spam", null))
+                    .assertNext(response -> assertThat(response.bannedBySubject()).isEqualTo(OWNER_SUB))
                     .verifyComplete();
+        }
+    }
+
+    @Nested
+    @DisplayName("temporary vs permanent ban duration")
+    class BanDuration {
+
+        @Test
+        @DisplayName("a positive durationSeconds sets expiresAt = now + duration")
+        void temporaryBanSetsExpiry() {
+            ModerationService service = serviceWithPbac(false);
+            ChatRoom room = room();
+            long duration = 3600L;
+            when(roomRepository.findByExternalKey(ROOM_KEY)).thenReturn(Mono.just(room));
+            when(banRepository.deleteByRoomIdAndBannedSubject(room.getId(), TARGET_SUB))
+                    .thenReturn(Mono.empty());
+            ArgumentCaptor<ChatBan> captor = ArgumentCaptor.forClass(ChatBan.class);
+            when(banRepository.save(captor.capture())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+            StepVerifier.create(service.ban(jwt(OTHER_SUB, null), ROOM_KEY, TARGET_SUB, "spam", duration))
+                    .assertNext(response -> {
+                        assertThat(response.expiresAt()).isNotNull();
+                        // computed off the same `now`, so expiresAt == createdAt + duration
+                        assertThat(response.expiresAt())
+                                .isEqualTo(response.createdAt().plusSeconds(duration));
+                    })
+                    .verifyComplete();
+
+            ChatBan persisted = captor.getValue();
+            assertThat(persisted.getExpiresAt()).isNotNull();
+            assertThat(ChronoUnit.SECONDS.between(persisted.getCreatedAt(), persisted.getExpiresAt()))
+                    .isEqualTo(duration);
+        }
+
+        @Test
+        @DisplayName("a null durationSeconds persists a permanent ban (expiresAt == null)")
+        void permanentBanHasNoExpiry() {
+            ModerationService service = serviceWithPbac(false);
+            ChatRoom room = room();
+            when(roomRepository.findByExternalKey(ROOM_KEY)).thenReturn(Mono.just(room));
+            when(banRepository.deleteByRoomIdAndBannedSubject(room.getId(), TARGET_SUB))
+                    .thenReturn(Mono.empty());
+            ArgumentCaptor<ChatBan> captor = ArgumentCaptor.forClass(ChatBan.class);
+            when(banRepository.save(captor.capture())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+            StepVerifier.create(service.ban(jwt(OTHER_SUB, null), ROOM_KEY, TARGET_SUB, "spam", null))
+                    .assertNext(response -> assertThat(response.expiresAt()).isNull())
+                    .verifyComplete();
+
+            assertThat(captor.getValue().getExpiresAt()).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("listBans excludes expired rows")
+    class ListBansActiveOnly {
+
+        @Test
+        @DisplayName("queries the active-only roster (expired rows never reach the response)")
+        void listBansUsesActiveQueryWithCurrentTime() {
+            ModerationService service = serviceWithPbac(false);
+            ChatRoom room = room();
+            OffsetDateTime nowish = OffsetDateTime.now(ZoneOffset.UTC);
+            ChatBan permanent = ChatBan.create(room.getId(), TARGET_SUB, OWNER_SUB, "spam", nowish, null);
+            ChatBan future = ChatBan.create(room.getId(), OTHER_SUB, OWNER_SUB, "temp", nowish,
+                    nowish.plusHours(1));
+            when(roomRepository.findByExternalKey(ROOM_KEY)).thenReturn(Mono.just(room));
+            // The repository filters at the query; an already-expired row is simply absent.
+            ArgumentCaptor<OffsetDateTime> nowCaptor = ArgumentCaptor.forClass(OffsetDateTime.class);
+            when(banRepository.findActiveByRoomId(eq(room.getId()), nowCaptor.capture()))
+                    .thenReturn(Flux.just(permanent, future));
+
+            StepVerifier.create(service.listBans(jwt(OTHER_SUB, null), ROOM_KEY))
+                    .assertNext(r -> assertThat(r.bannedSubject()).isEqualTo(TARGET_SUB))
+                    .assertNext(r -> assertThat(r.bannedSubject()).isEqualTo(OTHER_SUB))
+                    .verifyComplete();
+
+            // roster uses the active-only path (mirrors BanSendGuard enforcement), not the raw findByRoomId
+            verify(banRepository, never()).findByRoomId(any());
+            assertThat(nowCaptor.getValue()).isNotNull();
+            assertThat(ChronoUnit.MINUTES.between(nowish, nowCaptor.getValue())).isZero();
         }
     }
 
@@ -161,7 +244,7 @@ class ModerationServiceTest {
         ModerationService service = serviceWithPbac(false);
         when(roomRepository.findByExternalKey(ROOM_KEY)).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.ban(jwt(OTHER_SUB, null), ROOM_KEY, TARGET_SUB, "spam"))
+        StepVerifier.create(service.ban(jwt(OTHER_SUB, null), ROOM_KEY, TARGET_SUB, "spam", null))
                 .expectError(RoomNotFoundException.class)
                 .verify();
 

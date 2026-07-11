@@ -122,17 +122,20 @@ public class ChatService {
     /**
      * Get recent messages for a room.
      *
-     * <p>Enforces PBAC {@code chat:room read} against the room owner, then
-     * attempts Redis first and falls back to PostgreSQL on cache miss. If the
-     * room does not exist the authorization step is a no-op and the cache path
-     * yields an empty list (unchanged from Phase 0 behaviour).
+     * <p>Enforces PBAC {@code chat:message read} against the room owner, then
+     * attempts Redis first and falls back to PostgreSQL on cache miss. Message
+     * reads are unified under the {@code chat:message} kind ({@code read} for the
+     * recent/hot path, {@code read_history} for durable cursor pagination);
+     * {@code chat:room} is reserved for room-metadata lookups ({@link #getRoom}).
+     * If the room does not exist the authorization step is a no-op and the cache
+     * path yields an empty list (unchanged from Phase 0 behaviour).
      *
      * @param jwt the authenticated caller's validated access token
      * @param roomKey the room's external key
      * @return the most recent messages (up to {@value #MAX_RECENT})
      */
     public Mono<List<MessageResponse>> getRecentMessages(Jwt jwt, String roomKey) {
-        return authorizeRead(jwt, roomKey, AuthResourceKind.ROOM, AuthAction.READ)
+        return authorizeRead(jwt, roomKey, AuthResourceKind.MESSAGE, AuthAction.READ)
                 .then(cache.getRecent(roomKey, MAX_RECENT)
                 .flatMap(cached -> {
                     if (!cached.isEmpty()) {

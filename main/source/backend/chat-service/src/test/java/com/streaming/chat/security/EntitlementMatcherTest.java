@@ -35,6 +35,10 @@ class EntitlementMatcherTest {
         return new RequiredAuthority(AuthResourceDomain.CHAT, AuthResourceKind.ROOM, action, ownerSub);
     }
 
+    private static RequiredAuthority required(AuthResourceKind kind, AuthAction action, String ownerSub) {
+        return new RequiredAuthority(AuthResourceDomain.CHAT, kind, action, ownerSub);
+    }
+
     // ── self scope ───────────────────────────────────────────────────────
 
     @Nested
@@ -145,6 +149,67 @@ class EntitlementMatcherTest {
                 "allow chat:room:* read"
         ));
         assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthAction.READ, SUB))).isTrue();
+    }
+
+    // ── flattened seed grammar (3-segment; mirrors auth V10) ─────────────
+
+    @Nested
+    @DisplayName("flattened seed grammar (mirrors auth-service V10 ent lines)")
+    class FlattenedSeedGrammar {
+
+        // Materialized ent lines the auth-service now emits per role.
+        private static final List<String> VIEWER = List.of(
+                "allow chat:room:* read",
+                "allow chat:message:* read send read_history");
+        private static final List<String> STREAMER = List.of(
+                "allow chat:room:* read",
+                "allow chat:message:* read send read_history",
+                "allow chat:moderation:self moderate");
+        private static final List<String> MODERATOR = List.of(
+                "allow chat:moderation:* moderate",
+                "allow chat:message:* read read_history send delete",
+                "allow chat:room:* read");
+
+        @Test
+        @DisplayName("viewer may send / read / read_history on chat:message")
+        void viewerMessageActions() {
+            Jwt jwt = jwtWithEnt(VIEWER);
+            assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthResourceKind.MESSAGE, AuthAction.READ, OTHER_SUB))).isTrue();
+            assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthResourceKind.MESSAGE, AuthAction.SEND, OTHER_SUB))).isTrue();
+            assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthResourceKind.MESSAGE, AuthAction.READ_HISTORY, OTHER_SUB))).isTrue();
+        }
+
+        @Test
+        @DisplayName("viewer may not moderate")
+        void viewerCannotModerate() {
+            Jwt jwt = jwtWithEnt(VIEWER);
+            assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthResourceKind.MODERATION, AuthAction.MODERATE, SUB))).isFalse();
+        }
+
+        @Test
+        @DisplayName("streamer self-moderates own room but not another owner's")
+        void streamerSelfModeration() {
+            Jwt jwt = jwtWithEnt(STREAMER);
+            assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthResourceKind.MODERATION, AuthAction.MODERATE, SUB))).isTrue();
+            assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthResourceKind.MODERATION, AuthAction.MODERATE, OTHER_SUB))).isFalse();
+        }
+
+        @Test
+        @DisplayName("moderator moderates any owner's room (wildcard scope)")
+        void moderatorWildcardModeration() {
+            Jwt jwt = jwtWithEnt(MODERATOR);
+            assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthResourceKind.MODERATION, AuthAction.MODERATE, OTHER_SUB))).isTrue();
+        }
+
+        @Test
+        @DisplayName("regression: old 4-segment chat:message:room:* does NOT authorize send")
+        void oldFourSegmentDoesNotMatch() {
+            // The pre-V10 grammar: matcher reads scope as "room:*" (not "*"), so it
+            // matches neither self/*/uuid — this is the exact bug V10 fixed.
+            Jwt jwt = jwtWithEnt(List.of("allow chat:message:room:* send"));
+            assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthResourceKind.MESSAGE, AuthAction.SEND, OTHER_SUB))).isFalse();
+            assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthResourceKind.MESSAGE, AuthAction.SEND, SUB))).isFalse();
+        }
     }
 
     // ── static helpers ───────────────────────────────────────────────────

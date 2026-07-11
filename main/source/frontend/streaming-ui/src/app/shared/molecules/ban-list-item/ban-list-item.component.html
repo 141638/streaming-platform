@@ -1,0 +1,38 @@
+<div class="ban-row flex align-items-center gap-3 p-2 border-round-lg">
+  <img
+    class="ban-avatar"
+    [src]="avatarUrl()"
+    [alt]="subjectLabel() + ' avatar'"
+    loading="lazy"
+  />
+
+  <div class="flex flex-column gap-1 flex-auto min-w-0">
+    <span class="ban-identity text-sm font-semibold white-space-nowrap overflow-hidden text-overflow-ellipsis">
+      {{ subjectLabel() }}
+    </span>
+    <span class="ban-reason text-xs white-space-nowrap overflow-hidden text-overflow-ellipsis">
+      {{ reasonText() }}
+    </span>
+    <span class="ban-meta text-xs">
+      {{ bannedByLabel() }}
+    </span>
+  </div>
+
+  <div class="flex flex-column align-items-end gap-2 flex-initial">
+    <p-tag
+      [value]="durationLabel()"
+      [severity]="durationSeverity()"
+      [icon]="durationIcon()"
+    />
+    <p-button
+      type="button"
+      severity="danger"
+      size="small"
+      icon="pi pi-times"
+      label="Unban"
+      [text]="true"
+      styleClass="ban-unban-btn"
+      (click)="onUnban()"
+    />
+  </div>
+</div>

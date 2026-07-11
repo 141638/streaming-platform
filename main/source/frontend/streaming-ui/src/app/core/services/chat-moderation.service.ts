@@ -34,6 +34,7 @@ export class ChatModerationService {
   private readonly _now = signal(Date.now());
 
   public readonly bans = this._bans.asReadonly();
+  public readonly now = this._now.asReadonly();
   public readonly activeBans = computed(() =>
     this._bans().filter(
       (ban) => !ban.expiresAt || Date.parse(ban.expiresAt) > this._now(),

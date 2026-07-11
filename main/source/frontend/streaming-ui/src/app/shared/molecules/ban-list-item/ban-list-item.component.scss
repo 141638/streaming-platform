@@ -1,0 +1,37 @@
+:host {
+  display: block;
+
+  .ban-row {
+    background-color: var(--color-surface-2);
+    border: 1px solid transparent;
+    transition:
+      border-color 150ms ease,
+      background-color 150ms ease;
+  }
+
+  // Hover/focus-within lifts the row so the destructive action reads clearly
+  .ban-row:hover,
+  .ban-row:focus-within {
+    border-color: var(--color-border-1);
+    background-color: var(--color-surface-1);
+  }
+
+  .ban-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .ban-identity {
+    color: var(--color-text-primary);
+  }
+
+  .ban-reason {
+    color: var(--color-text-muted);
+  }
+
+  .ban-meta {
+    color: var(--color-text-dim);
+  }
+}

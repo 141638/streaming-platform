@@ -1,0 +1,20 @@
+@if (isBanned()) {
+  <button
+    pButton
+    type="button"
+    class="p-button-text p-button-sm p-button-rounded mod-action-btn"
+    icon="pi pi-lock-open"
+    [attr.aria-label]="actionLabel()"
+    (click)="onUnban()"
+  ></button>
+} @else {
+  <button
+    pButton
+    type="button"
+    severity="danger"
+    class="p-button-text p-button-sm p-button-rounded mod-action-btn"
+    icon="pi pi-ban"
+    [attr.aria-label]="actionLabel()"
+    (click)="onBan()"
+  ></button>
+}

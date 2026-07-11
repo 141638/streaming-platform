@@ -1,4 +1,24 @@
 <div class="chat-panel flex flex-column overflow-auto flex-auto surface-card">
+  <!-- Moderator toolbar -->
+  @if (canModerate()) {
+    <div class="mod-toolbar flex align-items-center justify-content-between gap-2 px-3 py-2">
+      <span class="mod-toolbar-label flex align-items-center gap-2 text-xs font-semibold">
+        <span class="pi pi-shield"></span>
+        Moderator tools
+      </span>
+      <p-button
+        type="button"
+        icon="pi pi-shield"
+        [label]="banCountLabel()"
+        severity="secondary"
+        [text]="true"
+        size="small"
+        ariaLabel="Toggle moderation panel"
+        (click)="toggleModeration()"
+      />
+    </div>
+  }
+
   <!-- Archived banner -->
   @if (roomStatus() === 'archived') {
     <div class="px-3 pt-3">
@@ -130,9 +150,9 @@
           </div>
         } @else {
           <!-- Other user's message: left-aligned -->
-          <div class="flex justify-content-start gap-2">
+          <div class="chat-row flex justify-content-start align-items-center gap-2">
             <img
-              class="chat-avatar"
+              class="chat-avatar align-self-start"
               [src]="avatarUrlFor(msg)"
               [alt]="displayNameFor(msg) + ' avatar'"
               loading="lazy"
@@ -153,6 +173,16 @@
                 {{ msg.createdAt | date: 'shortTime' }}
               </span>
             </div>
+            @if (canModerate()) {
+              <app-message-mod-actions
+                class="mod-actions align-self-center"
+                [authorSubject]="msg.authorSubject"
+                [authorUsername]="msg.authorUsername"
+                [isBanned]="mod.bannedSubjects().has(msg.authorSubject)"
+                (ban)="openBanDialog(msg)"
+                (unban)="quickUnban(msg)"
+              />
+            }
           </div>
         }
       </div>
@@ -206,4 +236,19 @@
       (click)="send()"
     ></p-button>
   </div>
+
+  <!-- Moderation drawer (lazy body so loadBans fires on open) -->
+  <p-drawer [(visible)]="moderationOpen" position="right" header="Moderation">
+    @if (moderationOpen()) {
+      <app-ban-list-panel [roomKey]="roomKey" />
+    }
+  </p-drawer>
+
+  <!-- Ban dialog -->
+  <app-ban-user-dialog
+    [visible]="banDialogOpen()"
+    [target]="banTarget()"
+    (confirm)="confirmBan($event)"
+    (cancel)="closeBanDialog()"
+  />
 </div>

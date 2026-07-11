@@ -17,6 +17,23 @@
     </div>
   }
 
+  <!-- Banned banner -->
+  @if (bannedState()) {
+    <div class="px-3 pt-3 flex flex-column gap-2">
+      <p-message severity="error" styleClass="w-full text-sm">
+        You've been banned from this chat room and can't send messages.
+      </p-message>
+      <button
+        pButton
+        type="button"
+        class="p-button-text p-button-sm align-self-start"
+        label="Try again"
+        icon="pi pi-refresh"
+        (click)="clearBanned()"
+      ></button>
+    </div>
+  }
+
   <!-- Message area -->
   @if (loading()) {
     <div class="flex flex-auto justify-content-center align-items-center">
@@ -177,15 +194,15 @@
       pInputText
       class="flex-auto"
       [formControl]="messageInput"
-      [placeholder]="roomStatus() === 'archived' ? 'This room is archived' : 'Type a message…'"
+      [placeholder]="inputPlaceholder()"
       (keydown.enter)="send()"
-      [disabled]="roomStatus() === 'archived'"
+      [disabled]="roomStatus() === 'archived' || bannedState()"
     />
     <p-button
       type="button"
       icon="pi pi-send"
       [loading]="sending()"
-      [disabled]="messageInput.invalid || sending() || roomStatus() === 'archived'"
+      [disabled]="messageInput.invalid || sending() || roomStatus() === 'archived' || bannedState()"
       (click)="send()"
     ></p-button>
   </div>

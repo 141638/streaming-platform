@@ -8,6 +8,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import {
   AfterViewInit,
   Component,
+  computed,
   DestroyRef,
   inject,
   Input,
@@ -27,6 +28,8 @@ import {
   MessageType,
 } from '../../../core/contracts/chat-message-response.dto';
 import { RoomResponseDto } from '../../../core/contracts/room-response.dto';
+import { dicebearAvatarUrl, truncateSub } from '../../../core/lib/avatar';
+import { parseChatApiError } from '../../../core/lib/chat-error';
 import { AuthService } from '../../../core/services/auth.service';
 import { ChatService } from '../../../core/services/chat.service';
 
@@ -36,19 +39,6 @@ type MessageStatus = 'sending' | 'failed' | 'sent';
 interface DisplayMessage extends ChatMessageResponseDto {
   readonly status: MessageStatus;
   readonly clientId: string;
-}
-
-/**
- * Build a DiceBear avatar URL from a seed string.
- * Deterministic — same seed always produces the same avatar.
- */
-function dicebearAvatarUrl(seed: string): string {
-  return `https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(seed)}`;
-}
-
-/** Truncate a UUID-style sub to a shorter display-safe label. */
-function truncateSub(sub: string): string {
-  return sub.length > 12 ? sub.substring(0, 8) + '…' : sub;
 }
 
 const INITIAL_PAGE_SIZE = 50;
@@ -90,6 +80,7 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
   protected readonly loading = signal(true);
   protected readonly sending = signal(false);
   protected readonly errorMessage = signal<string | null>(null);
+  protected readonly bannedState = signal(false);
   protected readonly roomStatus = signal<'active' | 'archived' | 'not-found'>(
     'active',
   );
@@ -97,6 +88,14 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
   protected readonly showNewMessageHint = signal(false);
   protected readonly loadingOlder = signal(false);
   protected readonly hasMoreBefore = signal(true);
+  protected readonly inputPlaceholder = computed(() => {
+    if (this.bannedState()) {
+      return 'You are banned from this room';
+    }
+    return this.roomStatus() === 'archived'
+      ? 'This room is archived'
+      : 'Type a message…';
+  });
 
   protected readonly messageInput = this.fb.control('');
 
@@ -180,6 +179,13 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
       .subscribe({
         next: (response) => this.replaceTempMessage(clientId, response),
         error: (err: unknown) => {
+          if (parseChatApiError(err)?.code === 'CHAT_USER_BANNED') {
+            this.messages.update((msgs) =>
+              msgs.filter((m) => m.clientId !== clientId),
+            );
+            this.bannedState.set(true);
+            return;
+          }
           this.markMessageFailed(clientId);
           const message =
             err instanceof HttpErrorResponse && err.status === 400
@@ -210,7 +216,11 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
       )
       .subscribe({
         next: (response) => this.addServerMessage(response),
-        error: () => {
+        error: (err: unknown) => {
+          if (parseChatApiError(err)?.code === 'CHAT_USER_BANNED') {
+            this.bannedState.set(true);
+            return;
+          }
           this.messages.update((msgs) => [
             ...msgs,
             { ...failed, status: 'failed' as const },
@@ -218,6 +228,12 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
           this.errorMessage.set('Network error. Please try again.');
         },
       });
+  }
+
+  /** Clear the banned state so the user can retry (e.g. after a temp-ban lapses). */
+  protected clearBanned(): void {
+    this.bannedState.set(false);
+    this.errorMessage.set(null);
   }
 
   /** Scroll to the bottom of the message list. */

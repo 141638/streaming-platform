@@ -17,7 +17,7 @@ import { StreamStatusBadgeComponent } from '../../molecules/stream-status-badge/
 /** Derive a stable hue from a category name for the placeholder thumbnail. */
 function categoryHue(name: string): number {
   let hash = 0;
-  for (let i = 0; i < name.length; i++) {
+  for (let i = 0; i < name?.length; i++) {
     hash = name.charCodeAt(i) + ((hash << 5) - hash);
   }
   return Math.abs(hash % 360);
@@ -111,7 +111,7 @@ export class SessionRailComponent {
   }
 
   protected categoryInitial(category: string): string {
-    return (category.charAt(0) ?? '').toUpperCase();
+    return (category?.charAt(0) ?? '').toUpperCase();
   }
 
   /** Format a short date label (e.g. "Dec 14"). */

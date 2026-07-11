@@ -11,7 +11,7 @@ export interface ChannelResponseDto {
   readonly username: string;
   readonly verified: boolean | null;
   readonly sessions: readonly StreamSummaryResponseDto[];
-  readonly recentCategories: readonly string[];
+  readonly recentCategories: readonly (string|null)[] | null;
   /** The broadcaster's channel bio / description (from broadcaster_profile), or null if never set. */
   readonly bio: string | null;
   /** Social platform links from the profile, or empty array if none set. */

@@ -105,6 +105,19 @@ class ModerationControllerTest {
         verify(moderationService, org.mockito.Mockito.never()).ban(any(), any(), any(), any(), any());
     }
 
+    @Test
+    @DisplayName("POST with durationSeconds over the 10-year cap is rejected with 400 before the service runs")
+    void overMaxDurationIsRejected() {
+        client.mutateWith(mockJwt().jwt(jwt -> jwt.subject("mod-sub")))
+                .post().uri("/v1/rooms/{roomKey}/bans", ROOM_KEY)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new BanRequest(TARGET, "spam", 315_360_001L))
+                .exchange()
+                .expectStatus().isEqualTo(HttpStatus.BAD_REQUEST);
+
+        verify(moderationService, org.mockito.Mockito.never()).ban(any(), any(), any(), any(), any());
+    }
+
     @TestConfiguration
     @EnableWebFluxSecurity
     static class TestSecurityConfig {

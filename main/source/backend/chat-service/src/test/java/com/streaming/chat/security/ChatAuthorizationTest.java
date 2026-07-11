@@ -83,4 +83,19 @@ class ChatAuthorizationTest {
                 .expectNext(false)
                 .verifyComplete();
     }
+
+    @Test
+    @DisplayName("requireAccess with a null principal errors (not NPE) when enforcement is enabled")
+    void requireAccessNullPrincipalErrorsWhenEnabled() {
+        StepVerifier.create(authorization(true).requireAccess(null, moderate(OWNER_SUB)))
+                .expectError(ChatAuthorization.ChatAccessDeniedException.class)
+                .verify();
+    }
+
+    @Test
+    @DisplayName("requireAccess with a null principal is a no-op while enforcement ships dark")
+    void requireAccessNullPrincipalNoOpWhenDisabled() {
+        StepVerifier.create(authorization(false).requireAccess(null, moderate(OWNER_SUB)))
+                .verifyComplete();
+    }
 }

@@ -92,6 +92,9 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
   protected readonly sending = signal(false);
   protected readonly errorMessage = signal<string | null>(null);
   protected readonly bannedState = signal(false);
+  protected readonly bannedMessage = computed(() =>
+    friendlyChatMessage('CHAT_USER_BANNED'),
+  );
   protected readonly canModerate = signal(false);
   protected readonly moderationOpen = signal(false);
   protected readonly banDialogOpen = signal(false);

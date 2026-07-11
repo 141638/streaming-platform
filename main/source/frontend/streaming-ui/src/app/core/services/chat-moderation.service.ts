@@ -62,36 +62,50 @@ export class ChatModerationService {
   /**
    * Ban a subject. On success the returned ban is prepended (replacing any
    * prior ban for the same subject); on error the roster is left untouched.
+   * State is mutated via {@code update} against the current value so concurrent
+   * loads/mutations are never clobbered by a stale snapshot.
    */
   public ban(
     roomKey: string,
     request: BanRequestDto,
   ): Observable<BanResponseDto> {
-    const snapshot = this._bans();
     return this.http
       .post<BanResponseDto>(`${this.basePath}/${roomKey}/bans`, request)
       .pipe(
-        tap({
-          next: (created) =>
-            this._bans.set([
-              created,
-              ...snapshot.filter(
-                (ban) => ban.bannedSubject !== created.bannedSubject,
-              ),
-            ]),
-          error: () => this._bans.set(snapshot),
-        }),
+        tap((created) =>
+          this._bans.update((current) => [
+            created,
+            ...current.filter(
+              (ban) => ban.bannedSubject !== created.bannedSubject,
+            ),
+          ]),
+        ),
       );
   }
 
-  /** Lift a subject's ban — optimistically removed, restored on error. */
+  /**
+   * Lift a subject's ban — optimistically removed, restored on error. Both the
+   * removal and the rollback re-insert operate on the current value (not a
+   * whole-list snapshot), so a concurrent load/mutation is preserved.
+   */
   public unban(roomKey: string, subject: string): Observable<void> {
-    const snapshot = this._bans();
-    this._bans.set(snapshot.filter((ban) => ban.bannedSubject !== subject));
+    const removed = this._bans().filter((ban) => ban.bannedSubject === subject);
+    this._bans.update((current) =>
+      current.filter((ban) => ban.bannedSubject !== subject),
+    );
     return this.http
       .delete<void>(
         `${this.basePath}/${roomKey}/bans/${encodeURIComponent(subject)}`,
       )
-      .pipe(tap({ error: () => this._bans.set(snapshot) }));
+      .pipe(
+        tap({
+          error: () =>
+            this._bans.update((current) =>
+              current.some((ban) => ban.bannedSubject === subject)
+                ? current
+                : [...current, ...removed],
+            ),
+        }),
+      );
   }
 }

@@ -41,7 +41,7 @@
   @if (bannedState()) {
     <div class="px-3 pt-3 flex flex-column gap-2">
       <p-message severity="error" styleClass="w-full text-sm">
-        You've been banned from this chat room and can't send messages.
+        {{ bannedMessage() }}
       </p-message>
       <button
         pButton

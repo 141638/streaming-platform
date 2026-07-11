@@ -1,5 +1,6 @@
 package com.streaming.chat.api.dto;
 
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
@@ -23,6 +24,7 @@ public record BanRequest(
         @Size(max = 500, message = "reason must not exceed 500 characters")
         String reason,
         @Positive(message = "durationSeconds must be positive")
+        @Max(value = 315_360_000L, message = "durationSeconds must not exceed 10 years")
         Long durationSeconds
 ) {
 }

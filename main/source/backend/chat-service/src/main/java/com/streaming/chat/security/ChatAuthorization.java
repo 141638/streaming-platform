@@ -61,6 +61,9 @@ public class ChatAuthorization {
         if (!properties.enabled()) {
             return Mono.empty();
         }
+        if (jwt == null) {
+            return Mono.error(new ChatAccessDeniedException(required, "anonymous"));
+        }
         if (EntitlementMatcher.isAuthorized(jwt, required)) {
             return Mono.empty();
         }

@@ -38,6 +38,7 @@ A third, smaller dependency (inside Wave 2, not a pre-gate): **chat-service is c
 | chat-service producer | **Missing** (consume-only) | only `messaging/StreamControlListener` (consumer); no `KafkaTemplate`/producer |
 | Enforcement floor | **Shipped** (Wave 1) | `chat-panel` maps 403 `CHAT_USER_BANNED` → disable + banner |
 | SSE anywhere | **None** | no `ServerSentEvent`/`EventSource` in the codebase |
+| Frontend toast/card/bell | ✅ **Prebuilt** (2026-07-12) | `ToastService`, `NotificationService` scaffold, `NotificationCard` molecule, `NotificationToast` host, `NotificationBell` button, `UserProfilePicture` atom, `NotificationDto`. DTO aligned with notification-service plan. Mock-triggerable. See [retro](notification-toast-infrastructure-retrospective.md). |
 
 ## Target event flow
 

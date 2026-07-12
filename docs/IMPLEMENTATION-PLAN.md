@@ -1,6 +1,6 @@
 # Implementation Plan
 
-**Last updated:** 2026-07-11
+**Last updated:** 2026-07-12
 **Current phase:** 2 — Stream Lifecycle (2.4–2.5 complete, channel page shipped) / 3 — Real-time Chat (partial)
 
 ## End Goal
@@ -897,6 +897,7 @@ ADR-0003 §Deferred).
 
 | # | Item | Depends on |
 |---|------|-----------|
+| 5.0 | ✅ **Frontend: Toast + notification card prebuild** — `ToastService`, `NotificationService` scaffold, `NotificationCard` molecule (reusable toast + bell card), `UserProfilePicture` atom, `NotificationToast` host (bottom-right with sound), `NotificationBell` header button. DTO aligned with notification-service plan (category + action-based). Mock-triggerable via bell click. See [retrospective](plans/notification-toast-infrastructure-retrospective.md). | — |
 | 5.1 | **Notification service core** — subscription CRUD (`channel_subscription` table), outbox management, `NotificationDispatcher` interface | — |
 | 5.2 | **Kafka consumer → dispatch** — `StreamControlListener` wired to dispatch logic (stream.started → notify followers, stream.ended → notify) | 2.3, 5.1 |
 | 5.3 | **Email adapter** — SMTP integration via Spring Mail, templated emails (Thymeleaf or plain text) | 5.1 |
@@ -904,6 +905,7 @@ ADR-0003 §Deferred).
 
 ### Phase 5 Checklist
 
+- [x] 5.0 — Frontend toast + notification card + bell prebuild (uncommitted, on `feat/chat-moderation-ux`)
 - [ ] 5.1 — Subscription CRUD + outbox + dispatcher interface
 - [ ] 5.2 — Kafka → dispatch wiring
 - [ ] 5.3 — Email adapter

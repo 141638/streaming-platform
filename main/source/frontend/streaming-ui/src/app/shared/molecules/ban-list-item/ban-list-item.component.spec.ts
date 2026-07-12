@@ -96,30 +96,74 @@ describe('BanListItemComponent', () => {
     expect(emitted).toBe(baseBan.bannedSubject);
   });
 
-  it('steps the duration up one ladder rung (24h → 7d)', () => {
+  it('stages a step without emitting until applied', () => {
     render({ ...baseBan, expiresAt: '2026-07-12T00:00:00Z' }); // 24h span → rung 1
+    let emitted = 0;
+    component.durationChange.subscribe(() => emitted++);
+
+    editorButtons()[1].nativeElement.click(); // extend → stages 7d
+    fixture.detectChanges();
+
+    expect(emitted).toBe(0);
+    const expires = fixture.debugElement.query(By.css('.ban-expires'));
+    expect(expires.nativeElement.textContent).toContain('7 days');
+    expect(fixture.debugElement.query(By.css('.ban-apply-btn'))).not.toBeNull();
+  });
+
+  it('emits a single change on apply (24h → 7d)', () => {
+    render({ ...baseBan, expiresAt: '2026-07-12T00:00:00Z' }); // rung 1
     let change: DurationChange | undefined;
-    component.durationChange.subscribe((c) => (change = c));
+    let count = 0;
+    component.durationChange.subscribe((c) => {
+      change = c;
+      count++;
+    });
 
-    editorButtons()[1].nativeElement.click(); // extend
+    editorButtons()[1].nativeElement.click(); // stage 7d
+    fixture.detectChanges();
+    fixture.debugElement.query(By.css('.ban-apply-btn')).nativeElement.click();
 
+    expect(count).toBe(1);
     expect(change).toEqual({
       subject: baseBan.bannedSubject,
       durationSeconds: 604800,
     });
   });
 
-  it('steps the duration down one ladder rung (24h → 1h)', () => {
-    render({ ...baseBan, expiresAt: '2026-07-12T00:00:00Z' }); // 24h span → rung 1
+  it('collapses several steps into one emit on apply (24h → permanent)', () => {
+    render({ ...baseBan, expiresAt: '2026-07-12T00:00:00Z' }); // rung 1
     let change: DurationChange | undefined;
-    component.durationChange.subscribe((c) => (change = c));
+    let count = 0;
+    component.durationChange.subscribe((c) => {
+      change = c;
+      count++;
+    });
 
-    editorButtons()[0].nativeElement.click(); // shorten
+    editorButtons()[1].nativeElement.click(); // → 7d
+    fixture.detectChanges();
+    editorButtons()[1].nativeElement.click(); // → permanent
+    fixture.detectChanges();
+    fixture.debugElement.query(By.css('.ban-apply-btn')).nativeElement.click();
 
+    expect(count).toBe(1);
     expect(change).toEqual({
       subject: baseBan.bannedSubject,
-      durationSeconds: 3600,
+      durationSeconds: null,
     });
+  });
+
+  it('reverts a staged change without emitting', () => {
+    render({ ...baseBan, expiresAt: '2026-07-12T00:00:00Z' }); // rung 1
+    let emitted = 0;
+    component.durationChange.subscribe(() => emitted++);
+
+    editorButtons()[1].nativeElement.click(); // stage 7d
+    fixture.detectChanges();
+    fixture.debugElement.query(By.css('.ban-revert-btn')).nativeElement.click();
+    fixture.detectChanges();
+
+    expect(emitted).toBe(0);
+    expect(fixture.debugElement.query(By.css('.ban-apply-btn'))).toBeNull();
   });
 
   it('disables the extend button at the permanent (top) rung', () => {

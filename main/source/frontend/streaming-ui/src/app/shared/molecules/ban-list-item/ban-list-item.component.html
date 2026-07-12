@@ -38,12 +38,21 @@
         ariaLabel="Shorten ban duration"
         (click)="onStepShorter()"
       ></button>
-      <span
-        class="ban-expires text-xs"
-        [class.ban-expires-permanent]="isPermanent()"
-      >
-        {{ durationLabel() }}
-      </span>
+      @if (isDirty()) {
+        <span
+          class="ban-expires ban-expires-pending text-xs"
+          [class.ban-expires-permanent]="pendingIsPermanent()"
+        >
+          {{ pendingDurationLabel() }}
+        </span>
+      } @else {
+        <span
+          class="ban-expires text-xs"
+          [class.ban-expires-permanent]="isPermanent()"
+        >
+          {{ durationLabel() }}
+        </span>
+      }
       <button
         pButton
         type="button"
@@ -53,6 +62,24 @@
         ariaLabel="Extend ban duration"
         (click)="onStepLonger()"
       ></button>
+      @if (isDirty()) {
+        <button
+          pButton
+          type="button"
+          class="p-button-text p-button-sm p-button-rounded ban-apply-btn"
+          icon="pi pi-check"
+          ariaLabel="Apply duration change"
+          (click)="onApply()"
+        ></button>
+        <button
+          pButton
+          type="button"
+          class="p-button-text p-button-sm p-button-rounded ban-revert-btn"
+          icon="pi pi-times"
+          ariaLabel="Discard duration change"
+          (click)="onRevert()"
+        ></button>
+      }
     </div>
   </div>
 </div>

@@ -47,4 +47,12 @@
     color: var(--red-500);
     font-weight: 600;
   }
+
+  // While the moderator stages a duration change the value shows the pending
+  // ladder label (italic) instead of the live countdown — nothing is sent until
+  // they hit apply.
+  .ban-expires-pending {
+    color: var(--primary-color);
+    font-style: italic;
+  }
 }

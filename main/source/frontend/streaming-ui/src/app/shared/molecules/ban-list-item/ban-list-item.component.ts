@@ -3,6 +3,7 @@ import {
   Component,
   computed,
   input,
+  linkedSignal,
   output,
 } from '@angular/core';
 import { ButtonModule } from 'primeng/button';
@@ -12,6 +13,13 @@ import { formatExpiresIn } from '../../../core/lib/time';
 
 /** Absolute preset ladder the inline editor steps through, ascending; top = permanent. */
 const DURATION_LADDER: readonly (number | null)[] = [3600, 86_400, 604_800, null];
+/** Human labels parallel to {@link DURATION_LADDER}, shown while staging a change. */
+const DURATION_LADDER_LABELS: readonly string[] = [
+  '1 hour',
+  '24 hours',
+  '7 days',
+  'Permanent',
+];
 const PERMANENT_RUNG = DURATION_LADDER.length - 1;
 
 /** Payload emitted when a moderator steps a ban's duration up or down. */
@@ -23,9 +31,12 @@ export interface DurationChange {
 /**
  * One roster row for the moderation ban list. Dumb + OnPush: it renders a single
  * {@link BanResponseDto}, emits the subject when the moderator lifts the ban, and
- * emits a {@link DurationChange} when they step the duration on the preset ladder
- * (1h → 24h → 7d → permanent). The live "expires in" copy is driven by the
- * {@code nowMs} tick from the parent, so the row never owns a timer of its own.
+ * emits a {@link DurationChange} when they **apply** a staged duration edit on the
+ * preset ladder (1h → 24h → 7d → permanent). Stepping only stages a local pending
+ * rung; a single change is emitted on apply, so ratcheting across several rungs is
+ * one change (and, in Wave 2, one notification) rather than one per click. The live
+ * "expires in" copy is driven by the {@code nowMs} tick from the parent, so the row
+ * never owns a timer of its own.
  */
 @Component({
   selector: 'app-ban-list-item',
@@ -82,10 +93,26 @@ export class BanListItemComponent {
     }
     return nearest;
   });
-  protected readonly canStepUp = computed(
-    () => this.currentRung() < PERMANENT_RUNG,
+  /**
+   * The rung the moderator is editing toward. Seeded from {@link currentRung} and
+   * re-seeded whenever the underlying ban changes (e.g. after a successful apply
+   * round-trips the new expiry), but freely writable while stepping — so
+   * intermediate rungs never leave the client until the moderator applies.
+   */
+  protected readonly pendingRung = linkedSignal(() => this.currentRung());
+  protected readonly isDirty = computed(
+    () => this.pendingRung() !== this.currentRung(),
   );
-  protected readonly canStepDown = computed(() => this.currentRung() > 0);
+  protected readonly pendingDurationLabel = computed(
+    () => DURATION_LADDER_LABELS[this.pendingRung()],
+  );
+  protected readonly pendingIsPermanent = computed(
+    () => this.pendingRung() === PERMANENT_RUNG,
+  );
+  protected readonly canStepUp = computed(
+    () => this.pendingRung() < PERMANENT_RUNG,
+  );
+  protected readonly canStepDown = computed(() => this.pendingRung() > 0);
 
   // ── Public methods ─────────────────────────────────────────────────────
 
@@ -93,25 +120,40 @@ export class BanListItemComponent {
     this.unban.emit(this.ban().bannedSubject);
   }
 
+  /** Stage one rung longer — local only, no emit until apply. */
   protected onStepLonger(): void {
-    this.stepTo(this.currentRung() + 1);
+    this.stepTo(this.pendingRung() + 1);
   }
 
+  /** Stage one rung shorter — local only, no emit until apply. */
   protected onStepShorter(): void {
-    this.stepTo(this.currentRung() - 1);
+    this.stepTo(this.pendingRung() - 1);
   }
 
-  // ── Private methods ─────────────────────────────────────────────────────
-
-  /** Emit a duration change for a clamped ladder index; no-op when unchanged. */
-  private stepTo(rung: number): void {
-    const clamped = Math.max(0, Math.min(PERMANENT_RUNG, rung));
-    if (clamped === this.currentRung()) {
+  /**
+   * Commit the staged duration as a single change. Collapsing several steps into
+   * one emit here is the whole point: it keeps a future ban-change notification
+   * (Wave 2) from firing once per intermediate rung.
+   */
+  protected onApply(): void {
+    if (!this.isDirty()) {
       return;
     }
     this.durationChange.emit({
       subject: this.ban().bannedSubject,
-      durationSeconds: DURATION_LADDER[clamped],
+      durationSeconds: DURATION_LADDER[this.pendingRung()],
     });
+  }
+
+  /** Discard the staged change, snapping back to the committed rung. */
+  protected onRevert(): void {
+    this.pendingRung.set(this.currentRung());
+  }
+
+  // ── Private methods ─────────────────────────────────────────────────────
+
+  /** Stage a clamped ladder index locally; the emit happens on {@link onApply}. */
+  private stepTo(rung: number): void {
+    this.pendingRung.set(Math.max(0, Math.min(PERMANENT_RUNG, rung)));
   }
 }

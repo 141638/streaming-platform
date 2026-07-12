@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Skill|Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/scripts/telemetry-track.mjs",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}

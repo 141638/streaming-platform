@@ -1,34 +1,42 @@
-<div class="ban-row flex align-items-stretch gap-3 p-2 border-round-lg">
-  <img
-    class="ban-avatar align-self-center"
-    [src]="avatarUrl()"
-    [alt]="nameLabel() + ' avatar'"
-    loading="lazy"
-  />
+<div class="ban-row flex flex-column gap-2 p-3 border-round-lg">
+  <!-- Header: identity + reason now own the full width -->
+  <div class="ban-header flex align-items-start gap-3">
+    <img
+      class="ban-avatar"
+      [src]="avatarUrl()"
+      [alt]="nameLabel() + ' avatar'"
+      loading="lazy"
+    />
 
-  <div class="flex flex-column justify-content-center gap-1 flex-auto min-w-0">
-    <span class="ban-identity text-sm font-semibold white-space-nowrap overflow-hidden text-overflow-ellipsis">
-      {{ nameLabel() }}
-    </span>
-    <span class="ban-reason text-xs white-space-nowrap overflow-hidden text-overflow-ellipsis">
-      {{ reasonText() }}
-    </span>
-    <span class="ban-meta text-xs white-space-nowrap overflow-hidden text-overflow-ellipsis">
-      {{ bannedByLabel() }}
-    </span>
+    <div class="flex flex-column gap-1 flex-auto min-w-0">
+      <span class="ban-identity text-sm font-semibold white-space-nowrap overflow-hidden text-overflow-ellipsis">
+        {{ nameLabel() }}
+      </span>
+      <span class="ban-reason text-xs">
+        {{ reasonText() }}
+      </span>
+      <span class="ban-meta text-xs white-space-nowrap overflow-hidden text-overflow-ellipsis">
+        {{ bannedByLabel() }}
+      </span>
+    </div>
   </div>
 
-  <div class="flex flex-column align-items-end justify-content-between gap-2 flex-initial">
+  <!-- Separator: partial-width centered rule between the static and interactive halves -->
+  <div class="ban-divider"></div>
+
+  <!-- Footer: unban on the left, duration editor on the right -->
+  <div class="ban-actions flex align-items-center justify-content-between gap-2">
     <button
       pButton
       type="button"
-      class="p-button-text p-button-sm p-button-rounded ban-unban-btn"
+      class="p-button-sm ban-unban-btn"
       icon="pi pi-lock-open"
-      ariaLabel="Unban user"
+      label="Unban"
+      severity="secondary"
       (click)="onUnban()"
     ></button>
 
-    <div class="ban-duration-editor flex align-items-center gap-1">
+    <div class="ban-duration-editor flex align-items-center gap-1 border-1 surface-border border-round p-1">
       <button
         pButton
         type="button"
@@ -70,14 +78,6 @@
           icon="pi pi-check"
           ariaLabel="Apply duration change"
           (click)="onApply()"
-        ></button>
-        <button
-          pButton
-          type="button"
-          class="p-button-text p-button-sm p-button-rounded ban-revert-btn"
-          icon="pi pi-times"
-          ariaLabel="Discard duration change"
-          (click)="onRevert()"
         ></button>
       }
     </div>

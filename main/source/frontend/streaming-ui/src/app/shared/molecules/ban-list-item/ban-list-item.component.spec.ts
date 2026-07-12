@@ -152,17 +152,18 @@ describe('BanListItemComponent', () => {
     });
   });
 
-  it('reverts a staged change without emitting', () => {
-    render({ ...baseBan, expiresAt: '2026-07-12T00:00:00Z' }); // rung 1
+  it('abandons a staged change by stepping back to the original rung', () => {
+    render({ ...baseBan, expiresAt: '2026-07-12T00:00:00Z' }); // 24h → rung 1
     let emitted = 0;
     component.durationChange.subscribe(() => emitted++);
 
-    editorButtons()[1].nativeElement.click(); // stage 7d
+    editorButtons()[1].nativeElement.click(); // stage 7d (dirty)
     fixture.detectChanges();
-    fixture.debugElement.query(By.css('.ban-revert-btn')).nativeElement.click();
+    editorButtons()[0].nativeElement.click(); // step back to 24h (clean)
     fixture.detectChanges();
 
     expect(emitted).toBe(0);
+    // back to the committed value → no apply affordance shown
     expect(fixture.debugElement.query(By.css('.ban-apply-btn'))).toBeNull();
   });
 

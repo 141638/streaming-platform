@@ -145,14 +145,9 @@ export class BanListItemComponent {
     });
   }
 
-  /** Discard the staged change, snapping back to the committed rung. */
-  protected onRevert(): void {
-    this.pendingRung.set(this.currentRung());
-  }
-
   // ── Private methods ─────────────────────────────────────────────────────
 
-  /** Stage a clamped ladder index locally; the emit happens on {@link onApply}. */
+  /** Stage a clamped ladder index locally; the emit happens on {@link onApply}. Stepping back down is how a moderator abandons a staged change (no revert button). */
   private stepTo(rung: number): void {
     this.pendingRung.set(Math.max(0, Math.min(PERMANENT_RUNG, rung)));
   }

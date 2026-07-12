@@ -6,6 +6,7 @@ import { ButtonModule } from 'primeng/button';
 import { MenuModule } from 'primeng/menu';
 import { ToolbarModule } from 'primeng/toolbar';
 import { AuthService } from '../../core/services/auth.service';
+import { NotificationBellComponent } from '../../shared/molecules/notification-bell/notification-bell.component';
 
 @Component({
   selector: 'app-app-shell',
@@ -17,6 +18,7 @@ import { AuthService } from '../../core/services/auth.service';
     ButtonModule,
     MenuModule,
     AvatarModule,
+    NotificationBellComponent,
   ],
   templateUrl: './app-shell.component.html',
 })

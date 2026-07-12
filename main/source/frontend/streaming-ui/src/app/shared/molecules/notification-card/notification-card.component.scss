@@ -1,0 +1,78 @@
+:host {
+  display: block;
+  min-width: 18rem;
+  max-width: 26rem;
+}
+
+/* ---- accent bar (left border colour by severity) ---- */
+.notification-card {
+  border-left: 4px solid transparent;
+  transition: filter 150ms ease;
+}
+
+.notification-card--success {
+  border-left-color: var(--green-400, #4caf50);
+}
+
+.notification-card--info {
+  border-left-color: var(--blue-400, #42a5f5);
+}
+
+.notification-card--warn {
+  border-left-color: var(--orange-400, #ffa726);
+}
+
+.notification-card--error {
+  border-left-color: var(--red-400, #ef5350);
+}
+
+/* ---- clickable state ---- */
+.notification-card--clickable {
+  cursor: pointer;
+
+  &:hover {
+    filter: brightness(1.18);
+  }
+}
+
+/* ---- severity icon circle ---- */
+.notification-card-icon {
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
+.notification-card--success .notification-card-icon {
+  background-color: var(--green-100, #e8f5e9);
+  color: var(--green-700, #388e3c);
+}
+
+.notification-card--info .notification-card-icon {
+  background-color: var(--blue-100, #e3f2fd);
+  color: var(--blue-700, #1976d2);
+}
+
+.notification-card--warn .notification-card-icon {
+  background-color: var(--orange-100, #fff3e0);
+  color: var(--orange-700, #f57c00);
+}
+
+.notification-card--error .notification-card-icon {
+  background-color: var(--red-100, #ffebee);
+  color: var(--red-700, #d32f2f);
+}
+
+/* ---- typography ---- */
+.notification-card-title {
+  color: var(--surface-0, #ffffff);
+}
+
+
+.notification-card-message {
+  color: var(--text-color-secondary, #616161);
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.notification-card-timestamp {
+  color: var(--text-color-secondary, #9e9e9e);
+}

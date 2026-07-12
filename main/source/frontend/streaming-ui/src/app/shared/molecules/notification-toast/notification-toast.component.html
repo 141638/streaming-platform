@@ -1,0 +1,24 @@
+<p-toast
+  position="bottom-right"
+  [style]="{ 'min-width': '20rem', 'max-width': '28rem' }"
+>
+  <ng-template pTemplate="message" let-msg>
+    @if (msg.data; as notification) {
+      <app-notification-card
+        [notification]="notification"
+        (cardClick)="onCardClick(msg)"
+        class="w-full"
+      />
+    } @else {
+      <!-- Plain-text fallback when no NotificationDto is attached (e.g. convenience helpers) -->
+      <div class="flex flex-column gap-1 p-2">
+        @if (msg.summary) {
+          <span class="font-semibold text-sm">{{ msg.summary }}</span>
+        }
+        @if (msg.detail) {
+          <span class="text-xs">{{ msg.detail }}</span>
+        }
+      </div>
+    }
+  </ng-template>
+</p-toast>

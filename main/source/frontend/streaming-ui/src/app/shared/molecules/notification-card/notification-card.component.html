@@ -1,0 +1,52 @@
+<!--
+  Dumb notification card molecule — presentation only.
+  Composes UserProfilePictureComponent for the sender avatar.
+  Parents bind cardClick to navigate and dismiss to remove the toast.
+-->
+<div
+  class="notification-card flex align-items-start gap-3 p-3 border-round-md surface-card shadow-2"
+  [ngClass]="cardClasses()"
+  [style.user-select]="isClickable() ? 'none' : 'auto'"
+  (click)="isClickable() && cardClick.emit(notification())"
+  role="article"
+>
+  <!-- Severity icon -->
+  <div
+    class="notification-card-icon flex-shrink-0 flex align-items-center justify-content-center border-circle"
+  >
+    <i [class]="severityIcon()"></i>
+  </div>
+
+  <!-- Body -->
+  <div class="notification-card-body flex flex-column flex-auto gap-1 min-w-0">
+    <!-- Title line -->
+    <div class="flex align-items-center justify-content-between gap-2">
+      <span class="notification-card-title font-semibold text-sm line-height-2">
+        {{ notification().title }}
+      </span>
+    </div>
+
+    <!-- Message -->
+    <p class="notification-card-message text-xs line-height-3 m-0">
+      {{ notification().message }}
+    </p>
+
+    <!-- Footer: timestamp + optional sender -->
+    <div class="notification-card-footer flex align-items-center justify-content-between gap-2 mt-1">
+      <span
+        class="notification-card-timestamp text-xs font-light"
+        [title]="fullTimestamp()"
+      >
+        {{ relativeTime() }}
+      </span>
+      @if (notification().sender; as sender) {
+        <app-user-profile-picture
+          [username]="sender.username"
+          [avatarUrl]="sender.avatarUrl"
+          [isSystem]="sender.isSystem"
+          size="normal"
+        />
+      }
+    </div>
+  </div>
+</div>

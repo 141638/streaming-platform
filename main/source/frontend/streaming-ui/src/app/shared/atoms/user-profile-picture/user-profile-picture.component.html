@@ -1,0 +1,10 @@
+<p-avatar
+  [image]="imageSrc()"
+  [icon]="fallbackIcon()"
+  [size]="size()"
+  [shape]="'circle'"
+  [styleClass]="isSystem() || !username() ? '' : 'cursor-pointer'"
+  [pTooltip]="tooltipLabel()"
+  [tooltipPosition]="'top'"
+  (click)="onAvatarClick()"
+></p-avatar>

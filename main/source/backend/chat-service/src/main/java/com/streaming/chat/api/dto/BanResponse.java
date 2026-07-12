@@ -11,7 +11,9 @@ public record BanResponse(
         UUID id,
         UUID roomId,
         String bannedSubject,
+        String bannedUsername,
         String bannedBySubject,
+        String bannedByUsername,
         String reason,
         OffsetDateTime createdAt,
         OffsetDateTime expiresAt
@@ -21,7 +23,9 @@ public record BanResponse(
                 ban.getId(),
                 ban.getRoomId(),
                 ban.getBannedSubject(),
+                ban.getBannedUsername(),
                 ban.getBannedBySubject(),
+                ban.getBannedByUsername(),
                 ban.getReason(),
                 ban.getCreatedAt(),
                 ban.getExpiresAt()

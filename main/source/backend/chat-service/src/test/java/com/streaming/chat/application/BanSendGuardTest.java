@@ -40,7 +40,7 @@ class BanSendGuardTest {
 
     private ChatBan ban(OffsetDateTime expiresAt) {
         return ChatBan.create(
-                room.getId(), SENDER_SUB, OWNER_SUB, "spam",
+                room.getId(), SENDER_SUB, null, OWNER_SUB, null, "spam",
                 OffsetDateTime.now(ZoneOffset.UTC), expiresAt);
     }
 

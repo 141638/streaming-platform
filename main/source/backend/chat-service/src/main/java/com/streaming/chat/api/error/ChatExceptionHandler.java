@@ -3,6 +3,7 @@ package com.streaming.chat.api.error;
 import com.streaming.chat.application.BanSendGuard.UserBannedException;
 import com.streaming.chat.application.ChatService.RoomArchivedException;
 import com.streaming.chat.application.ChatService.RoomNotFoundException;
+import com.streaming.chat.application.ModerationService.BanNotFoundException;
 import com.streaming.chat.security.ChatAuthorization.ChatAccessDeniedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +40,17 @@ public class ChatExceptionHandler {
         log.debug("Room archived: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ChatApiError("CHAT_ROOM_ARCHIVED", ex.getMessage()));
+    }
+
+    /**
+     * Moderation action against a non-existent ban (e.g. re-basing the duration
+     * of a ban that was already lifted). A client condition, not a server fault.
+     */
+    @ExceptionHandler(BanNotFoundException.class)
+    public ResponseEntity<ChatApiError> handleBanNotFound(BanNotFoundException ex) {
+        log.debug("Ban not found: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ChatApiError("CHAT_BAN_NOT_FOUND", ex.getMessage()));
     }
 
     /**

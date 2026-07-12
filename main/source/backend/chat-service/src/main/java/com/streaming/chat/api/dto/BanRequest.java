@@ -12,6 +12,9 @@ import jakarta.validation.constraints.Size;
  * {@code sub} claim — never from the request body.
  *
  * @param bannedSubject   the JWT {@code sub} of the user to ban (required)
+ * @param bannedUsername  optional denormalized display name of the banned user,
+ *                        supplied by the client (which already has it from the
+ *                        message context) so the roster can show a name, not a sub
  * @param reason          optional human-readable reason, stored for audit
  * @param durationSeconds optional ban duration in seconds; {@code null} means a
  *                        permanent ban, a positive value means a temporary ban
@@ -21,6 +24,8 @@ public record BanRequest(
         @NotBlank(message = "bannedSubject must not be blank")
         @Size(max = 128, message = "bannedSubject must not exceed 128 characters")
         String bannedSubject,
+        @Size(max = 128, message = "bannedUsername must not exceed 128 characters")
+        String bannedUsername,
         @Size(max = 500, message = "reason must not exceed 500 characters")
         String reason,
         @Positive(message = "durationSeconds must be positive")

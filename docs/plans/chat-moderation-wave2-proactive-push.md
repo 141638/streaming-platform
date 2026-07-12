@@ -1,6 +1,6 @@
 # Plan: Chat Moderation — Wave 2 (Proactive Moderation Push)
 
-**Status:** Planned — **dependency-gated, not scheduled** (see [ADR-0007](../adr/chat/0007-proactive-push-infrastructure-gated.md)) · **Branch:** TBD (off `feat/chat-moderation-ux` once Wave 1 merges) · **Date:** 2026-07-12
+**Status:** Planned — **dependency-gated, not scheduled** (see [ADR-0007](../adr/chat/0007-proactive-push-infrastructure-gated.md)) · **Branch:** TBD (off `feat/chat-moderation-ux` once Wave 1 merges) · **Date:** 2026-07-12 · **Updated:** 2026-07-12 — notification cadence / de-spam design added (§ *Notification cadence & de-spam*)
 
 > Wave 1 (moderator UI + reactive ban floor) shipped and is committed. This plan
 > is the forward design for Wave 2 — the *proactive* banned-user experience
@@ -74,7 +74,54 @@ Moderator bans/unbans (chat-service ModerationService)
 - **Keying:** partition by `subject` so a user's events stay ordered.
 - **Delivery:** at-least-once; consumer dedups on `eventId` (**D2**). A chat-side transactional outbox is **condition-deferred** — add only if at-least-once proves insufficient.
 - **Only manual early unban emits `UNBANNED`.** Temp-ban expiry is lazy (server `BanSendGuard.isActive` + client `now`-tick) — no event.
-- **Duration change** (Wave-1.1 `ModerationService.updateBanDuration`, `PATCH …/bans/{subject}`) emits a `BANNED` event carrying the new `expiresAt` (an idempotent re-assert) so the client re-bases its countdown; a shortened time or a lift still resolves on the client `now`-tick. A `// Wave 2 (ADR-0007)` emit-marker already sits in `updateBanDuration` — wire the producer there in P2.1.
+- **Duration change** (Wave-1.1 `ModerationService.updateBanDuration`, `PATCH …/bans/{subject}`) emits a `BANNED` event carrying the new `expiresAt` (an idempotent re-assert) so the client re-bases its countdown; a shortened time or a lift still resolves on the client `now`-tick. A `// Wave 2 (ADR-0007)` emit-marker already sits in `updateBanDuration` — wire the producer there in P2.1. Repeated edits are kept from spamming the banned user by the three-layer design in **Notification cadence & de-spam** below.
+
+## Notification cadence & de-spam
+
+A moderator editing a ban's duration is one *logical* action but can produce several
+`BANNED` re-asserts (ratcheting 1h→24h→7d→permanent). Left unmanaged that is a burst
+of bell-rings + toasts to the banned user. **`eventId` dedup (D2) does not solve
+this** — it suppresses *re-delivery of one event*, not *N distinct rapid events*.
+Three independent layers keep the banned-user experience calm; each is defense in
+depth and none relies on the others:
+
+1. **Source — commit-once moderator UX (SHIPPED, Wave 1.x, `32d0ff1`).** The inline
+   duration ladder now *stages* rung changes locally and emits a single
+   `updateDuration` on apply, so `1h → permanent` is one PATCH → one event, not
+   three. This already collapses the common burst before it reaches Kafka.
+2. **Pipeline — latest-wins coalescing (notification-service, P2.2).** Don't trust
+   the client alone. Collapse `BANNED` re-asserts for the same `(roomKey, subject)`
+   arriving within a short window (≈2–5s), keeping the latest `expiresAt`. The
+   scaffolded `notification_outbox` is the home: *supersede* a pending un-delivered
+   outbox row for that key rather than appending. Distinct from `eventId` dedup (D2 =
+   redelivery protection; this = rapid-event coalescing). `subject`-partitioning
+   (already chosen) gives the ordering that makes "keep the latest" well-defined.
+3. **Presentation — semantic tiering (frontend, P2.5).** SSE does two jobs with very
+   different urgency; split them:
+   - **Lock/unlock** is idempotent state reconciliation driven by the absolute
+     `expiresAt`/`type` — replaying N events converges. Only `UNBANNED` unlocks;
+     `BANNED` (incl. a *tighter* duration) stays locked and just refreshes the
+     countdown.
+   - **Interruptive toast + bell** is reserved for transitions the user benefits
+     from being interrupted for:
+
+     | Transition | Lock | Bell | Interruptive toast |
+     |-----------|------|------|--------------------|
+     | Initial ban (mid-session) | lock | ✓ | ✓ (reason, until Y) |
+     | Duration **increase** / re-assert | stay locked | — | **✗** (silent countdown update) |
+     | Duration **reduction / soon-lift** | stay locked | ✓ | optional gentle ("ban shortened") |
+     | **Unban** | **unlock** | ✓ | ✓ (the primary one) |
+
+   Rationale: an *increase* doesn't change what the locked user can do; a
+   reduction/lift is favorable news they can't otherwise see (the roster is
+   `moderate`-gated → 403 for them). So push carries reductions, suppresses increases
+   — the only spammy direction (ratcheting up) then produces **zero** toasts even if
+   layers 1–2 are bypassed.
+
+**Where direction is computed:** keep the chat-service event dumb (absolute
+`expiresAt` only). notification-service derives increase / decrease / lift by
+comparing to the last persisted notification for that `(room, subject)`, so
+chat-service stays ignorant of UX policy.
 
 ## Phased build (only after the gate opens)
 
@@ -97,6 +144,7 @@ Moderator bans/unbans (chat-service ModerationService)
 | D3 | Chat-panel signal source | consume the notification SSE as a *proactive hint*; keep the 403 floor as enforcement (no second chat-service SSE) |
 | D4 | SSE horizontal fanout | each notification-service instance consumes the topic + pushes to locally-connected users; multi-instance connection registry **deferred until >1 instance** |
 | D5 | Scope | notification-service is a **general platform hub** (outbox + channel_subscription already model multi-channel); moderation is its *first client*, not its only shape |
+| D6 | Duration-change notification cadence | commit-once UX (**shipped**, `32d0ff1`) + latest-wins coalescing by `(room,subject)` (P2.2) + semantic tiering — increases silent, unban/reduction toast (P2.5). See *Notification cadence & de-spam* |
 
 ## Risks
 
@@ -108,6 +156,7 @@ Moderator bans/unbans (chat-service ModerationService)
 | Duplicate/again-delivered events | D2 idempotency on `eventId` |
 | Gateway buffering SSE | P2.4 explicitly configures buffering off + long timeout |
 | **Global gateway `response-timeout` (10s) severs SSE** — added in Wave-1.1 (`gateway-service` httpclient) to bound slow routes | P2.4 must **exclude** `/api/notifications/stream` from the global timeout: give the SSE route its own `response-timeout: -1` (or a per-route override), not the 10s default. Flagged in the Wave-1.1 retrospective (§3 G2). |
+| Rapid ban-duration edits spam the banned user with bell-rings/toasts | Three-layer de-spam (see *Notification cadence & de-spam*): commit-once UX (**shipped**), server-side latest-wins coalescing, and semantic tiering that makes duration *increases* non-interruptive. `eventId` dedup does **not** cover this. |
 
 ## Non-goals / condition-deferred
 

@@ -113,5 +113,22 @@ The generalized anti-pattern → fix was extracted to a global learned skill: `~
 | G11 | Repo hygiene: stray root `package.json`/`package-lock.json` (npx/prettier-hook junk); a transient `typescript-eslint` devDep churn in `streaming-ui/package.json` | **Resolved** — root junk removed; the devDep reverted (working tree matches HEAD, clean) |
 | G12 | Meta north-star drift: memory `multi-agent-orchestration-goal` says full-pipeline multi-agent orchestration, but Wave 1/1.1 ran mostly single-threaded | **Open (surfaced to user)** — hold, scope down, or retire the goal |
 
-### 8.5 Carry-forward tasks created
-`#15` confirm perf fix empirically (G3) · `#16` Testcontainers + Karma in CI (G8/G9) · `#17` rebase onto develop after the PBAC branch merges (+ exclude the notifications SSE route from the gateway `response-timeout`, G2).
+### 8.5 Open follow-ups (carried forward — the session task list was closed; these live in docs so a new session can pick them up)
+
+- **Perf confirmation (G3):** run the direct-vs-gateway measurement before declaring the Wave-1.1 slowness fixed. Tracked in §3 G3, §7, and ADR-0008 risks.
+- **Testcontainers + Karma in CI (G8/G9):** unrun locally (no Docker / no Chrome); CI is the real gate. Tracked in §3.
+- **Rebase + SSE-timeout exclusion (G2):** rebase `feat/chat-moderation-ux` onto develop once the PBAC branch (`feat/chat-3.4-3.6-pbac-moderation`) merges; when Wave 2 lands, exclude `/api/notifications/stream` from the gateway `response-timeout`. Tracked in memory `chat-moderation-ux-progress` + Wave-2 plan (G2).
+- **Wave 2 (gated):** proactive push stays dependency-gated (Kafka broker ownership + notification-service foundation). Design lives in [ADR-0007](../adr/chat/0007-proactive-push-infrastructure-gated.md) + `chat-moderation-wave2-proactive-push.md` — now including the **notification cadence / de-spam** design (below).
+
+### 8.6 Further chat-UI refinements (this session, after the retro promotion)
+
+On top of the dialog refactor (§8.1), a `/consult` on the banned-user Wave-2 experience surfaced a notification-spam risk in the duration editor, which drove a UX pass over the moderation surface:
+
+| Commit | Change |
+|--------|--------|
+| `32d0ff1` | **Commit-once duration editor** — chevrons stage a local pending rung; one `durationChange` emits on apply. This is *layer 1* of the Wave-2 de-spam design (Wave-2 plan → *Notification cadence & de-spam*). |
+| `5bd4c33` | **Stacked ban-row card** — identity header + divider + action footer; unban became a filled button; duration wrapped in a bordered group. |
+| `951b5b6` | **Row polish** — full-width divider + full-wrap reason (length-capped at source, so no clamp needed). |
+| `89add3f` | **Unban-confirm fixes** — the drawer's unban dialog X-close was broken (one-way `[visible]` + post-animation `onHide` reasserted `visible=true`); fixed with `(visibleChange)` (same desync class as the ban dialog). The per-message row unban now confirms too, built with the same pattern. |
+
+The Wave-2 server/presentation layers from that consult (latest-wins coalescing + semantic notification tiering) are recorded in the Wave-2 plan (D6 + the cadence section), not built.

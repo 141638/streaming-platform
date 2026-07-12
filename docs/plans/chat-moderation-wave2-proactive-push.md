@@ -74,6 +74,7 @@ Moderator bans/unbans (chat-service ModerationService)
 - **Keying:** partition by `subject` so a user's events stay ordered.
 - **Delivery:** at-least-once; consumer dedups on `eventId` (**D2**). A chat-side transactional outbox is **condition-deferred** — add only if at-least-once proves insufficient.
 - **Only manual early unban emits `UNBANNED`.** Temp-ban expiry is lazy (server `BanSendGuard.isActive` + client `now`-tick) — no event.
+- **Duration change** (Wave-1.1 `ModerationService.updateBanDuration`, `PATCH …/bans/{subject}`) emits a `BANNED` event carrying the new `expiresAt` (an idempotent re-assert) so the client re-bases its countdown; a shortened time or a lift still resolves on the client `now`-tick. A `// Wave 2 (ADR-0007)` emit-marker already sits in `updateBanDuration` — wire the producer there in P2.1.
 
 ## Phased build (only after the gate opens)
 
@@ -106,6 +107,7 @@ Moderator bans/unbans (chat-service ModerationService)
 | SSE auth friction (localStorage token, not cookie) | D1 fetch-based Bearer decided up front |
 | Duplicate/again-delivered events | D2 idempotency on `eventId` |
 | Gateway buffering SSE | P2.4 explicitly configures buffering off + long timeout |
+| **Global gateway `response-timeout` (10s) severs SSE** — added in Wave-1.1 (`gateway-service` httpclient) to bound slow routes | P2.4 must **exclude** `/api/notifications/stream` from the global timeout: give the SSE route its own `response-timeout: -1` (or a per-route override), not the 10s default. Flagged in the Wave-1.1 retrospective (§3 G2). |
 
 ## Non-goals / condition-deferred
 

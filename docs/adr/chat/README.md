@@ -10,3 +10,4 @@
 | [0005](0005-moderation-domain-condition-triggered.md) | Moderation Stays a Chat Kind — `moderation` Domain is Condition-Triggered | accepted | 2026-07-11 |
 | [0006](0006-moderation-ux-capability-and-push-split.md) | Chat Moderation UX — Client Capability Signal, Temp-Bans, and Enforcement-Floor / Proactive-Push Split | accepted (Wave 1) | 2026-07-12 |
 | [0007](0007-proactive-push-infrastructure-gated.md) | Proactive Moderation Push is Infrastructure-Gated — Kafka Broker Ownership + Notification-Service Foundation | accepted | 2026-07-12 |
+| [0008](0008-modify-ban-duration-viewerbanned-and-config-hardening.md) | Chat Moderation Wave 1.1 — Modify-Ban-Duration In Place, `viewerBanned` Room Metadata, and Config-Only Perf/Log Hardening | accepted | 2026-07-12 |

@@ -40,8 +40,16 @@ public class ChatBan implements Persistable<UUID> {
     @Column("banned_subject")
     private String bannedSubject;
 
+    /** Denormalized display name of the banned user; {@code null} when unknown. */
+    @Column("banned_username")
+    private String bannedUsername;
+
     @Column("banned_by_subject")
     private String bannedBySubject;
+
+    /** Denormalized display name of the moderator; {@code null} when unknown. */
+    @Column("banned_by_username")
+    private String bannedByUsername;
 
     private String reason;
 
@@ -57,7 +65,9 @@ public class ChatBan implements Persistable<UUID> {
     public static ChatBan create(
             UUID roomId,
             String bannedSubject,
+            String bannedUsername,
             String bannedBySubject,
+            String bannedByUsername,
             String reason,
             OffsetDateTime now,
             OffsetDateTime expiresAt) {
@@ -66,7 +76,9 @@ public class ChatBan implements Persistable<UUID> {
         ban.setNew(true);
         ban.setRoomId(roomId);
         ban.setBannedSubject(bannedSubject);
+        ban.setBannedUsername(bannedUsername);
         ban.setBannedBySubject(bannedBySubject);
+        ban.setBannedByUsername(bannedByUsername);
         ban.setReason(reason);
         ban.setCreatedAt(now);
         ban.setExpiresAt(expiresAt);
@@ -74,6 +86,20 @@ public class ChatBan implements Persistable<UUID> {
     }
 
     // -- domain ------------------------------------------------------------
+
+    /**
+     * A ban with no {@link #expiresAt} is permanent; otherwise it is active until
+     * that instant passes. This is the single source of truth for "is this ban in
+     * effect" — {@code BanSendGuard} (send path) and {@code ChatService.getRoom}
+     * ({@code viewerBanned} signal) both delegate here, and the SQL predicate in
+     * {@code ReactiveChatBanRepository.findActiveByRoomId} mirrors it.
+     *
+     * @param now the reference instant to compare against (caller-supplied so the
+     *            check is deterministic and testable)
+     */
+    public boolean isActive(OffsetDateTime now) {
+        return expiresAt == null || expiresAt.isAfter(now);
+    }
 
     @Override
     public UUID getId() {

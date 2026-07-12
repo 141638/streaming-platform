@@ -61,10 +61,37 @@ public class ChatAuthorization {
         if (!properties.enabled()) {
             return Mono.empty();
         }
+        if (jwt == null) {
+            return Mono.error(new ChatAccessDeniedException(required, "anonymous"));
+        }
         if (EntitlementMatcher.isAuthorized(jwt, required)) {
             return Mono.empty();
         }
         return Mono.error(new ChatAccessDeniedException(required, EntitlementMatcher.subject(jwt)));
+    }
+
+    /**
+     * Answer whether the JWT <em>holds</em> the given authority — a pure
+     * capability query, <b>independent of the {@code chat.pbac.enabled}
+     * dark-launch flag</b>.
+     *
+     * <p>Unlike {@link #requireAccess}, this never short-circuits on the flag and
+     * never errors: it is used to surface capability signals to clients (e.g.
+     * {@code RoomResponse.viewerCanModerate}) so the UI can render moderator
+     * affordances even while enforcement ships dark. Enforcement gating lives in
+     * {@link #requireAccess}; capability display must not depend on it.
+     *
+     * <p>A {@code null} principal (genuinely unauthenticated request) yields
+     * {@code false} rather than throwing.
+     *
+     * @return {@code Mono.just(true)} when the {@code ent} claim authorizes
+     *         {@code required}; {@code Mono.just(false)} otherwise
+     */
+    public Mono<Boolean> hasCapability(Jwt jwt, RequiredAuthority required) {
+        if (jwt == null) {
+            return Mono.just(false);
+        }
+        return Mono.just(EntitlementMatcher.isAuthorized(jwt, required));
     }
 
     // ── exception type ─────────────────────────────────────────────────────

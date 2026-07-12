@@ -37,4 +37,31 @@
     flex-shrink: 0;
     margin-top: 2px;
   }
+
+  // Slim moderator toolbar: sits above the message stream
+  .mod-toolbar {
+    border-bottom: 1px solid var(--color-border-2);
+    background-color: var(--color-surface-1);
+  }
+
+  .mod-toolbar-label {
+    color: var(--color-text-tertiary);
+    letter-spacing: 0.02em;
+
+    .pi {
+      color: var(--color-brand);
+    }
+  }
+
+  // Per-message mod actions: hidden until the row is hovered/focused, but
+  // always reachable by keyboard (opacity, never display:none).
+  .mod-actions {
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .chat-row:hover .mod-actions,
+  .chat-row:focus-within .mod-actions {
+    opacity: 1;
+  }
 }

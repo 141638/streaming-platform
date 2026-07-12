@@ -1,5 +1,6 @@
 package com.streaming.chat.api;
 
+import com.streaming.chat.api.dto.BanDurationRequest;
 import com.streaming.chat.api.dto.BanRequest;
 import com.streaming.chat.api.dto.BanResponse;
 import com.streaming.chat.application.ModerationService;
@@ -11,6 +12,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -36,7 +38,9 @@ public class ModerationController {
     private final ModerationService moderationService;
 
     /**
-     * Ban a user from a room.
+     * Ban a user from a room. The moderator's display name is derived from the
+     * JWT {@code attr.username} (never the body); the banned user's display name
+     * is supplied by the client, which already holds it from the message context.
      */
     @PostMapping(path = "/rooms/{roomKey}/bans", consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
@@ -45,7 +49,23 @@ public class ModerationController {
             @PathVariable String roomKey,
             @Valid @RequestBody BanRequest body
     ) {
-        return moderationService.ban(jwt, roomKey, body.bannedSubject(), body.reason());
+        return moderationService.ban(
+                jwt, roomKey, body.bannedSubject(), body.bannedUsername(),
+                JwtAttr.username(jwt), body.reason(), body.durationSeconds());
+    }
+
+    /**
+     * Re-base an existing ban's duration in place (moderator-only). Returns the
+     * updated ban, or {@code 404} when the subject has no ban in the room.
+     */
+    @PatchMapping(path = "/rooms/{roomKey}/bans/{subject}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<BanResponse> updateBanDuration(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String roomKey,
+            @PathVariable String subject,
+            @Valid @RequestBody BanDurationRequest body
+    ) {
+        return moderationService.updateBanDuration(jwt, roomKey, subject, body.durationSeconds());
     }
 
     /**

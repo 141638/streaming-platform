@@ -1,6 +1,5 @@
 package com.streaming.chat.application;
 
-import com.streaming.chat.domain.ChatBan;
 import com.streaming.chat.domain.ChatRoom;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatBanRepository;
 import java.time.OffsetDateTime;
@@ -31,16 +30,11 @@ public class BanSendGuard implements SendGuard {
 
     @Override
     public Mono<Void> check(ChatRoom room, String authorSubject) {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         return banRepository.findByRoomIdAndBannedSubject(room.getId(), authorSubject)
-                .filter(BanSendGuard::isActive)
+                .filter(ban -> ban.isActive(now))
                 .flatMap(ban -> Mono.<Void>error(
                         new UserBannedException(room.getExternalKey(), authorSubject)));
-    }
-
-    /** A ban with no expiry is permanent; otherwise it is active until it lapses. */
-    private static boolean isActive(ChatBan ban) {
-        OffsetDateTime expiresAt = ban.getExpiresAt();
-        return expiresAt == null || expiresAt.isAfter(OffsetDateTime.now(ZoneOffset.UTC));
     }
 
     // -- exception ---------------------------------------------------------

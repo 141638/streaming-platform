@@ -2,9 +2,11 @@ package com.streaming.chat.application;
 
 import com.streaming.chat.api.dto.MessageResponse;
 import com.streaming.chat.api.dto.RoomResponse;
+import com.streaming.chat.domain.ChatBan;
 import com.streaming.chat.domain.ChatMessage;
 import com.streaming.chat.domain.ChatRoom;
 import com.streaming.chat.infrastructure.cache.RedisMessageCache;
+import com.streaming.chat.infrastructure.persistence.ReactiveChatBanRepository;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatMessageRepository;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatRoomRepository;
 import com.streaming.chat.security.AuthAction;
@@ -24,6 +26,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Application service for chat message operations.
@@ -53,6 +56,7 @@ public class ChatService {
     private final RedisMessageCache cache;
     private final SendGuard sendGuard;
     private final ChatAuthorization chatAuthorization;
+    private final ReactiveChatBanRepository banRepository;
 
     /**
      * Send a message to a chat room.
@@ -167,7 +171,13 @@ public class ChatService {
     /**
      * Look up a room by its external key.
      *
-     * <p>Enforces PBAC {@code chat:room read} against the room owner.
+     * <p>Enforces PBAC {@code chat:room read} against the room owner, then
+     * attaches two per-caller signals: a {@code viewerCanModerate} capability bit
+     * (from the {@code ent} claim, independent of {@code chat.pbac.enabled}) and a
+     * {@code viewerBanned} resource-state bit (an active ban for the caller in this
+     * room). The latter lets the client disable the composer on room load without
+     * a failed send, independently of the push pipeline. An unauthenticated caller
+     * ({@code jwt == null}) yields {@code false} for both rather than erroring.
      *
      * @param jwt the authenticated caller's validated access token
      * @param roomKey the room's external key
@@ -181,7 +191,29 @@ public class ChatService {
                                 AuthResourceDomain.CHAT, AuthResourceKind.ROOM,
                                 AuthAction.READ, room.getBroadcasterSubject()))
                         .thenReturn(room))
-                .map(RoomResponse::from);
+                .flatMap(room -> Mono.zip(
+                                chatAuthorization.hasCapability(jwt, new RequiredAuthority(
+                                        AuthResourceDomain.CHAT, AuthResourceKind.MODERATION,
+                                        AuthAction.MODERATE, room.getBroadcasterSubject())),
+                                resolveViewerBanned(jwt, room.getId()))
+                        .map(signals -> RoomResponse.from(room, signals.getT1(), signals.getT2())));
+    }
+
+    /**
+     * Resolve whether the caller currently has an <em>active</em> ban in the room.
+     * A {@code null} principal (unauthenticated) is never banned. Reuses the same
+     * {@code (room_id, banned_subject)} unique-indexed lookup as the send guard and
+     * the entity's {@link ChatBan#isActive(OffsetDateTime)} rule, so the metadata
+     * signal matches exactly what {@code BanSendGuard} enforces.
+     */
+    private Mono<Boolean> resolveViewerBanned(Jwt jwt, UUID roomId) {
+        if (jwt == null) {
+            return Mono.just(false);
+        }
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        return banRepository.findByRoomIdAndBannedSubject(roomId, jwt.getSubject())
+                .map(ban -> ban.isActive(now))
+                .defaultIfEmpty(false);
     }
 
     /**

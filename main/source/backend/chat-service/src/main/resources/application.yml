@@ -17,6 +17,14 @@ spring:
     url: "r2dbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:streaming-platform}?options=search_path%3Dchat"
     username: ${POSTGRES_USER:postgres}
     password: ${POSTGRES_PASSWORD:123456a}
+    pool:
+      # Connection liveness: validate a pooled connection before handing it out and
+      # cap acquire wait. Without this, the pool can serve a connection a firewall/PG
+      # silently dropped during the 30m default idle window, and the first query then
+      # blocks on a dead socket for seconds (the "slow first request after idle").
+      validation-query: "SELECT 1"
+      max-acquire-time: 3s
+      max-idle-time: 5m
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -31,6 +39,12 @@ spring:
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      # This team does not operate a Kafka broker yet, so the consumer container
+      # would otherwise start at boot and retry-loop against an unreachable broker,
+      # flooding the logs with NetworkClient connection-refused warnings. Keep it
+      # from starting; flip to true (env) once a broker is owned — see ADR-0007.
+      auto-startup: ${KAFKA_LISTENER_ENABLED:false}
 
 eureka:
   client:
@@ -48,6 +62,13 @@ management:
   endpoint:
     health:
       show-details: always
+
+logging:
+  level:
+    # Belt-and-suspenders for anyone who DOES enable the Kafka listener without a
+    # broker: silence the connect-retry chatter while still surfacing real ERRORs.
+    org.apache.kafka.clients.NetworkClient: ERROR
+    org.apache.kafka.clients.consumer.internals: ERROR
 
 chat:
   cache:

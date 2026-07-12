@@ -8,10 +8,10 @@ import { ButtonModule } from 'primeng/button';
 import { TooltipModule } from 'primeng/tooltip';
 
 /** Stable pseudo-subscriber count derived from the category name. */
-function pseudoSubscriberCount(name: string): string {
+function pseudoSubscriberCount(name: string | null): string {
   let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  for (let i = 0; i < (name?.length ?? 0); i++) {
+    hash = name!.charCodeAt(i) + ((hash << 5) - hash);
   }
   const n = Math.abs(hash % 50_000) + 500;
   if (n >= 10_000) {
@@ -24,16 +24,16 @@ function pseudoSubscriberCount(name: string): string {
 }
 
 /** Derive a stable hue from a category name for the placeholder thumbnail. */
-function categoryHue(name: string): number {
+function categoryHue(name: string | null): number {
   let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  for (let i = 0; i < (name?.length ?? 0); i++) {
+    hash = name!.charCodeAt(i) + ((hash << 5) - hash);
   }
   return Math.abs(hash % 360);
 }
 
 interface CategoryDisplay {
-  readonly name: string;
+  readonly name: string | null;
   readonly hue: number;
   readonly subscribers: string;
   readonly thumbnailStyle: Record<string, string>;
@@ -48,11 +48,13 @@ interface CategoryDisplay {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CategoryStripComponent {
-  public readonly categories = input.required<readonly string[]>();
+  public readonly categories = input.required<
+    readonly (string | null)[] | null
+  >();
 
   protected readonly displayCategories = computed<readonly CategoryDisplay[]>(
     () =>
-      this.categories().map((name) => {
+      this.categories()?.map((name) => {
         const hue = categoryHue(name);
         return {
           name,
@@ -62,6 +64,6 @@ export class CategoryStripComponent {
             background: `linear-gradient(135deg, oklch(55% 0.14 ${hue}), oklch(40% 0.12 ${(hue + 40) % 360}))`,
           },
         };
-      }),
+      }) ?? [],
   );
 }

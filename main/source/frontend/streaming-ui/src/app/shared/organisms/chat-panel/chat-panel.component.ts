@@ -8,6 +8,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import {
   AfterViewInit,
   Component,
+  computed,
   DestroyRef,
   inject,
   Input,
@@ -18,6 +19,8 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
+import { DialogModule } from 'primeng/dialog';
+import { DrawerModule } from 'primeng/drawer';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
@@ -27,8 +30,14 @@ import {
   MessageType,
 } from '../../../core/contracts/chat-message-response.dto';
 import { RoomResponseDto } from '../../../core/contracts/room-response.dto';
+import { dicebearAvatarUrl, truncateSub } from '../../../core/lib/avatar';
+import { friendlyChatMessage, parseChatApiError } from '../../../core/lib/chat-error';
 import { AuthService } from '../../../core/services/auth.service';
+import { ChatModerationService } from '../../../core/services/chat-moderation.service';
 import { ChatService } from '../../../core/services/chat.service';
+import { BanUserDialogComponent } from '../../molecules/ban-user-dialog/ban-user-dialog.component';
+import { MessageModActionsComponent } from '../../molecules/message-mod-actions/message-mod-actions.component';
+import { BanListPanelComponent } from '../ban-list-panel/ban-list-panel.component';
 
 /** Client-side message status for optimistic sends. */
 type MessageStatus = 'sending' | 'failed' | 'sent';
@@ -36,19 +45,6 @@ type MessageStatus = 'sending' | 'failed' | 'sent';
 interface DisplayMessage extends ChatMessageResponseDto {
   readonly status: MessageStatus;
   readonly clientId: string;
-}
-
-/**
- * Build a DiceBear avatar URL from a seed string.
- * Deterministic — same seed always produces the same avatar.
- */
-function dicebearAvatarUrl(seed: string): string {
-  return `https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(seed)}`;
-}
-
-/** Truncate a UUID-style sub to a shorter display-safe label. */
-function truncateSub(sub: string): string {
-  return sub.length > 12 ? sub.substring(0, 8) + '…' : sub;
 }
 
 const INITIAL_PAGE_SIZE = 50;
@@ -67,10 +63,16 @@ const NEAR_TOP_THRESHOLD = 120;
     InputTextModule,
     MessageModule,
     ProgressSpinnerModule,
+    DrawerModule,
+    DialogModule,
     CdkVirtualScrollViewport,
     CdkVirtualForOf,
     CdkFixedSizeVirtualScroll,
+    BanListPanelComponent,
+    BanUserDialogComponent,
+    MessageModActionsComponent,
   ],
+  providers: [ChatModerationService],
   templateUrl: './chat-panel.component.html',
   styleUrl: './chat-panel.component.scss',
 })
@@ -82,6 +84,7 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
 
   private readonly chatService = inject(ChatService);
   private readonly authService = inject(AuthService);
+  protected readonly mod = inject(ChatModerationService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly fb = inject(FormBuilder);
 
@@ -90,6 +93,30 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
   protected readonly loading = signal(true);
   protected readonly sending = signal(false);
   protected readonly errorMessage = signal<string | null>(null);
+  protected readonly bannedState = signal(false);
+  protected readonly bannedMessage = computed(() =>
+    friendlyChatMessage('CHAT_USER_BANNED'),
+  );
+  protected readonly canModerate = signal(false);
+  protected readonly moderationOpen = signal(false);
+  protected readonly banDialogOpen = signal(false);
+  protected readonly banTarget = signal<{
+    subject: string;
+    username: string | null;
+  } | null>(null);
+  protected readonly pendingUnbanTarget = signal<{
+    subject: string;
+    username: string | null;
+  } | null>(null);
+  protected readonly pendingUnbanName = computed(() => {
+    const target = this.pendingUnbanTarget();
+    return target === null
+      ? ''
+      : (target.username ?? truncateSub(target.subject));
+  });
+  protected readonly banCountLabel = computed(() =>
+    String(this.mod.bannedSubjects().size),
+  );
   protected readonly roomStatus = signal<'active' | 'archived' | 'not-found'>(
     'active',
   );
@@ -97,6 +124,14 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
   protected readonly showNewMessageHint = signal(false);
   protected readonly loadingOlder = signal(false);
   protected readonly hasMoreBefore = signal(true);
+  protected readonly inputPlaceholder = computed(() => {
+    if (this.bannedState()) {
+      return 'You are banned from this room';
+    }
+    return this.roomStatus() === 'archived'
+      ? 'This room is archived'
+      : 'Type a message…';
+  });
 
   protected readonly messageInput = this.fb.control('');
 
@@ -180,6 +215,13 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
       .subscribe({
         next: (response) => this.replaceTempMessage(clientId, response),
         error: (err: unknown) => {
+          if (parseChatApiError(err)?.code === 'CHAT_USER_BANNED') {
+            this.messages.update((msgs) =>
+              msgs.filter((m) => m.clientId !== clientId),
+            );
+            this.bannedState.set(true);
+            return;
+          }
           this.markMessageFailed(clientId);
           const message =
             err instanceof HttpErrorResponse && err.status === 400
@@ -210,13 +252,109 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
       )
       .subscribe({
         next: (response) => this.addServerMessage(response),
-        error: () => {
+        error: (err: unknown) => {
+          if (parseChatApiError(err)?.code === 'CHAT_USER_BANNED') {
+            this.bannedState.set(true);
+            return;
+          }
           this.messages.update((msgs) => [
             ...msgs,
             { ...failed, status: 'failed' as const },
           ]);
           this.errorMessage.set('Network error. Please try again.');
         },
+      });
+  }
+
+  /** Clear the banned state so the user can retry (e.g. after a temp-ban lapses). */
+  protected clearBanned(): void {
+    this.bannedState.set(false);
+    this.errorMessage.set(null);
+  }
+
+  // ── Moderation ─────────────────────────────────────────────────────────
+
+  /** Toggle the moderation drawer. */
+  protected toggleModeration(): void {
+    this.moderationOpen.update((open) => !open);
+  }
+
+  /** Open the ban dialog targeting a specific message's author. */
+  protected openBanDialog(msg: DisplayMessage): void {
+    this.banTarget.set({
+      subject: msg.authorSubject,
+      username: msg.authorUsername,
+    });
+    this.banDialogOpen.set(true);
+  }
+
+  /** Close the ban dialog without issuing a ban. */
+  protected closeBanDialog(): void {
+    this.banDialogOpen.set(false);
+  }
+
+  /** Issue the ban for the current dialog target, then close the dialog. */
+  protected confirmBan(payload: {
+    reason: string | null;
+    durationSeconds: number | null;
+  }): void {
+    const target = this.banTarget();
+    if (!target) {
+      this.closeBanDialog();
+      return;
+    }
+
+    this.mod
+      .ban(this.roomKey, {
+        bannedSubject: target.subject,
+        bannedUsername: target.username,
+        reason: payload.reason,
+        durationSeconds: payload.durationSeconds,
+      })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        error: (err: unknown) => this.errorMessage.set(this.moderationError(err)),
+      });
+
+    this.closeBanDialog();
+  }
+
+  /** Open the unban-confirm dialog for a message row's author. */
+  protected requestUnban(msg: DisplayMessage): void {
+    this.pendingUnbanTarget.set({
+      subject: msg.authorSubject,
+      username: msg.authorUsername,
+    });
+  }
+
+  /** Dismiss the unban-confirm dialog without lifting the ban. */
+  protected cancelUnban(): void {
+    this.pendingUnbanTarget.set(null);
+  }
+
+  /**
+   * The confirm dialog binds {@code visible} one-way off an object signal;
+   * reconcile our state whenever PrimeNG drives {@code visibleChange} to false
+   * (X / mask / ESC) so the close can't be reasserted mid-animation.
+   */
+  protected onUnbanDialogVisibleChange(visible: boolean): void {
+    if (!visible) {
+      this.cancelUnban();
+    }
+  }
+
+  /** Lift the pending target's ban, then close the dialog. */
+  protected confirmUnban(): void {
+    const target = this.pendingUnbanTarget();
+    this.pendingUnbanTarget.set(null);
+    if (target === null) {
+      return;
+    }
+    this.mod
+      .unban(this.roomKey, target.subject)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        error: (err: unknown) => this.errorMessage.set(this.moderationError(err)),
       });
   }
 
@@ -265,6 +403,34 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
   // ── Private helpers: init ──────────────────────────────────────────────
 
   /**
+   * Adopt the room's moderation capability. When the caller can moderate,
+   * eagerly load the ban roster once so inline per-message state
+   * ({@code bannedSubjects}) is populated without opening the drawer.
+   */
+  private applyModerationCapability(room: RoomResponseDto): void {
+    this.canModerate.set(room.viewerCanModerate);
+    if (!room.viewerCanModerate) {
+      return;
+    }
+    this.mod
+      .loadBans(this.roomKey)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        error: () => {
+          // Non-fatal: inline badges simply stay unpopulated until refresh.
+        },
+      });
+  }
+
+  /** Map a moderation action failure to friendly, user-facing copy. */
+  private moderationError(err: unknown): string {
+    const parsed = parseChatApiError(err);
+    return parsed === null
+      ? 'Moderation action failed. Please try again.'
+      : friendlyChatMessage(parsed.code);
+  }
+
+  /**
    * Check the room status before starting polling and enabling input.
    */
   private checkRoomStatus(): void {
@@ -273,6 +439,11 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (room: RoomResponseDto) => {
+          this.applyModerationCapability(room);
+          // Enforcement floor on room load: a banned viewer sees the disabled input
+          // + banner immediately, without waiting for a failed send or the (future)
+          // push pipeline. The 403 floor in send() stays as a backstop.
+          this.bannedState.set(room.viewerBanned);
           if (room.status === 'ARCHIVED') {
             this.roomStatus.set('archived');
             this.loadInitialMessages();

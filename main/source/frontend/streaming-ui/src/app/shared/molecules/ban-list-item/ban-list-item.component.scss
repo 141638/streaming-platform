@@ -1,0 +1,67 @@
+:host {
+  display: block;
+
+  .ban-row {
+    background-color: var(--color-surface-2);
+    border: 1px solid transparent;
+    transition:
+      border-color 150ms ease,
+      background-color 150ms ease;
+  }
+
+  // Hover/focus-within lifts the row so the destructive action reads clearly
+  .ban-row:hover,
+  .ban-row:focus-within {
+    border-color: var(--color-border-1);
+    background-color: var(--color-surface-1);
+  }
+
+  .ban-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .ban-identity {
+    color: var(--color-text-primary);
+  }
+
+  .ban-reason {
+    color: var(--color-text-muted);
+    // Reason is length-capped at the source (ban dialog maxlength), so let it
+    // wrap fully instead of clamping; break long unbroken tokens defensively.
+    overflow-wrap: anywhere;
+  }
+
+  .ban-meta {
+    color: var(--color-text-dim);
+  }
+
+  // Full-width rule (the card's own padding gives the inset) separating the
+  // identity header from the action footer.
+  .ban-divider {
+    border-top: 1px solid var(--color-border-1);
+  }
+
+  // Raw styled countdown (replaces the old p-tag) — compact, tabular so the
+  // digits don't jitter as the "expires in" tick advances.
+  .ban-expires {
+    color: var(--color-text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .ban-expires-permanent {
+    color: var(--red-500);
+    font-weight: 600;
+  }
+
+  // While the moderator stages a duration change the value shows the pending
+  // ladder label (italic) instead of the live countdown — nothing is sent until
+  // they hit apply.
+  .ban-expires-pending {
+    color: var(--primary-color);
+    font-style: italic;
+  }
+}

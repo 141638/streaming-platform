@@ -1,0 +1,16 @@
+:host {
+  display: block;
+
+  .ban-panel-title {
+    color: var(--color-text-primary);
+    letter-spacing: 0.01em;
+  }
+
+  .ban-empty {
+    color: var(--color-text-muted);
+
+    .pi {
+      color: var(--color-text-dim);
+    }
+  }
+}

@@ -1,4 +1,24 @@
 <div class="chat-panel flex flex-column overflow-auto flex-auto surface-card">
+  <!-- Moderator toolbar -->
+  @if (canModerate()) {
+    <div class="mod-toolbar flex align-items-center justify-content-between gap-2 px-3 py-2">
+      <span class="mod-toolbar-label flex align-items-center gap-2 text-xs font-semibold">
+        <span class="pi pi-shield"></span>
+        Moderator tools
+      </span>
+      <p-button
+        type="button"
+        icon="pi pi-shield"
+        [label]="banCountLabel()"
+        severity="secondary"
+        [text]="true"
+        size="small"
+        ariaLabel="Toggle moderation panel"
+        (click)="toggleModeration()"
+      />
+    </div>
+  }
+
   <!-- Archived banner -->
   @if (roomStatus() === 'archived') {
     <div class="px-3 pt-3">
@@ -14,6 +34,23 @@
       <p-message severity="error" styleClass="w-full text-sm">
         {{ err }}
       </p-message>
+    </div>
+  }
+
+  <!-- Banned banner -->
+  @if (bannedState()) {
+    <div class="px-3 pt-3 flex flex-column gap-2">
+      <p-message severity="error" styleClass="w-full text-sm">
+        {{ bannedMessage() }}
+      </p-message>
+      <button
+        pButton
+        type="button"
+        class="p-button-text p-button-sm align-self-start"
+        label="Try again"
+        icon="pi pi-refresh"
+        (click)="clearBanned()"
+      ></button>
     </div>
   }
 
@@ -113,9 +150,9 @@
           </div>
         } @else {
           <!-- Other user's message: left-aligned -->
-          <div class="flex justify-content-start gap-2">
+          <div class="chat-row flex justify-content-start align-items-center gap-2">
             <img
-              class="chat-avatar"
+              class="chat-avatar align-self-start"
               [src]="avatarUrlFor(msg)"
               [alt]="displayNameFor(msg) + ' avatar'"
               loading="lazy"
@@ -136,6 +173,16 @@
                 {{ msg.createdAt | date: 'shortTime' }}
               </span>
             </div>
+            @if (canModerate()) {
+              <app-message-mod-actions
+                class="mod-actions align-self-center"
+                [authorSubject]="msg.authorSubject"
+                [authorUsername]="msg.authorUsername"
+                [isBanned]="mod.bannedSubjects().has(msg.authorSubject)"
+                (ban)="openBanDialog(msg)"
+                (unban)="requestUnban(msg)"
+              />
+            }
           </div>
         }
       </div>
@@ -177,16 +224,71 @@
       pInputText
       class="flex-auto"
       [formControl]="messageInput"
-      [placeholder]="roomStatus() === 'archived' ? 'This room is archived' : 'Type a message…'"
+      [placeholder]="inputPlaceholder()"
       (keydown.enter)="send()"
-      [disabled]="roomStatus() === 'archived'"
+      [disabled]="roomStatus() === 'archived' || bannedState()"
     />
     <p-button
       type="button"
       icon="pi pi-send"
       [loading]="sending()"
-      [disabled]="messageInput.invalid || sending() || roomStatus() === 'archived'"
+      [disabled]="messageInput.invalid || sending() || roomStatus() === 'archived' || bannedState()"
       (click)="send()"
     ></p-button>
   </div>
+
+  <!-- Moderation drawer (lazy body so loadBans fires on open) -->
+  <p-drawer
+    [(visible)]="moderationOpen"
+    position="right"
+    header="Moderation"
+    [style]="{ width: '24rem' }"
+  >
+    @if (moderationOpen()) {
+      <app-ban-list-panel [roomKey]="roomKey" />
+    }
+  </p-drawer>
+
+  <!-- Ban dialog (rendered on demand: created fresh per open, destroyed on close) -->
+  @if (banDialogOpen()) {
+    <app-ban-user-dialog
+      [(visible)]="banDialogOpen"
+      [target]="banTarget()"
+      (confirm)="confirmBan($event)"
+      (cancel)="closeBanDialog()"
+    />
+  }
+
+  <!-- Unban confirm (per-message row action) -->
+  <p-dialog
+    [visible]="pendingUnbanTarget() !== null"
+    [modal]="true"
+    [draggable]="false"
+    [resizable]="false"
+    [style]="{ width: '22rem' }"
+    header="Unban user"
+    (visibleChange)="onUnbanDialogVisibleChange($event)"
+  >
+    <div class="flex flex-column gap-3 pt-2">
+      <span class="text-sm">
+        Unban <span class="font-semibold">{{ pendingUnbanName() }}</span>? They will
+        be able to send messages here again.
+      </span>
+      <div class="flex justify-content-end gap-2">
+        <p-button
+          type="button"
+          label="Cancel"
+          severity="secondary"
+          [text]="true"
+          (click)="cancelUnban()"
+        />
+        <p-button
+          type="button"
+          label="Unban"
+          icon="pi pi-lock-open"
+          (click)="confirmUnban()"
+        />
+      </div>
+    </div>
+  </p-dialog>
 </div>

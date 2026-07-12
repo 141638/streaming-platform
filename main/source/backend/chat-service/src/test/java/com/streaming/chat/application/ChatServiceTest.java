@@ -9,6 +9,7 @@ import com.streaming.chat.config.ChatCacheProperties;
 import com.streaming.chat.domain.ChatMessage;
 import com.streaming.chat.domain.ChatRoom;
 import com.streaming.chat.infrastructure.cache.RedisMessageCache;
+import com.streaming.chat.infrastructure.persistence.ReactiveChatBanRepository;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatMessageRepository;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatRoomRepository;
 import com.streaming.chat.security.ChatAuthorization;
@@ -54,6 +55,8 @@ class ChatServiceTest extends AbstractCacheIntegrationTest {
     @Autowired
     private ReactiveChatMessageRepository messageRepository;
     @Autowired
+    private ReactiveChatBanRepository banRepository;
+    @Autowired
     private RedisMessageCache cache;
     @Autowired
     private ReactiveStringRedisTemplate redisTemplate;
@@ -69,7 +72,7 @@ class ChatServiceTest extends AbstractCacheIntegrationTest {
     void setUp() {
         // PBAC disabled → requireAccess short-circuits to Mono.empty()
         Mockito.when(authz.requireAccess(any(), any())).thenReturn(Mono.empty());
-        service = new ChatService(roomRepository, messageRepository, cache, noOpGuard, authz);
+        service = new ChatService(roomRepository, messageRepository, cache, noOpGuard, authz, banRepository);
         // clean slate — PG then Redis
         messageRepository.deleteAll().block(Duration.ofSeconds(10));
         roomRepository.deleteAll().block(Duration.ofSeconds(10));
@@ -171,7 +174,7 @@ class ChatServiceTest extends AbstractCacheIntegrationTest {
                     new ReactiveStringRedisTemplate(brokenFactory),
                     new ChatCacheProperties(Duration.ofSeconds(1)));
             ChatService brokenService = new ChatService(
-                    roomRepository, messageRepository, brokenCache, noOpGuard, authz);
+                    roomRepository, messageRepository, brokenCache, noOpGuard, authz, banRepository);
 
             // Act + Assert
             StepVerifier.create(brokenService.getRecentMessages(JWT, roomKey))
@@ -220,7 +223,7 @@ class ChatServiceTest extends AbstractCacheIntegrationTest {
         // Spy cache: addToRecent silently fails; evictRoom delegates to the real impl
         RedisMessageCache spyCache = Mockito.spy(cache);
         Mockito.doReturn(Mono.just(false)).when(spyCache).addToRecent(anyString(), any());
-        ChatService svc = new ChatService(roomRepository, messageRepository, spyCache, noOpGuard, authz);
+        ChatService svc = new ChatService(roomRepository, messageRepository, spyCache, noOpGuard, authz, banRepository);
 
         // Act — the send persists to PG but the cache write "fails"
         MessageResponse sent = svc.sendMessage(JWT, roomKey, SUB, USERNAME, "real message")

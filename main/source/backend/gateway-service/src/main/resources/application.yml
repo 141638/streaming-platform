@@ -6,6 +6,13 @@ spring:
     name: gateway-service
   cloud:
     gateway:
+      httpclient:
+        # Bound connect + overall response time so a stale/black-holed Eureka
+        # instance can't hang a request up to Spring Cloud Gateway's 45s default
+        # connect-timeout (with an otherwise unbounded response) before the Retry
+        # filter moves on. Config-only — chat-moderation Wave-1.1 perf hardening.
+        connect-timeout: 2000
+        response-timeout: 10s
       default-filters:
         - name: Retry
           args:

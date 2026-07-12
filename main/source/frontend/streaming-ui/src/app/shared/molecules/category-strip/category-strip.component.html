@@ -1,50 +1,51 @@
 @if (displayCategories().length) {
-  <div class="flex flex-column gap-3">
+<div class="flex flex-column gap-3">
     <span class="text-lg font-semibold">Recently in</span>
 
     <div class="flex gap-3 overflow-x-auto pb-2 category-rail">
-      @for (cat of displayCategories(); track cat.name) {
+        @for (cat of displayCategories(); track cat.name) {
         <div
-          class="category-card flex-shrink-0 border-round-lg overflow-hidden surface-card border-1 surface-border transition-duration-150 hover:shadow-3 cursor-pointer"
+                class="category-card flex-shrink-0 border-round-lg overflow-hidden surface-card border-1 surface-border transition-duration-150 hover:shadow-3 cursor-pointer"
         >
-          <!-- 3/4 thumbnail -->
-          <div
-            class="category-thumb flex align-items-center justify-content-center"
+            <!-- 3/4 thumbnail -->
+            <div
+                    class="category-thumb flex align-items-center justify-content-center"
             [style]="cat.thumbnailStyle"
-          >
-            <span
-              class="text-5xl font-bold"
-              style="color: oklch(95% 0 0 / 80%)"
             >
-              {{ cat.name.charAt(0).toUpperCase() }}
+            <span
+                    class="text-5xl font-bold"
+                    style="color: oklch(95% 0 0 / 80%)"
+            >
+                {{ cat.name?.charAt(0)?.toUpperCase() }}
             </span>
-          </div>
+        </div>
 
-          <!-- Info -->
-          <div class="flex flex-column gap-1 p-2">
+        <!-- Info -->
+        <div class="flex flex-column gap-1 p-2">
             <span
-              class="text-sm font-semibold white-space-nowrap overflow-hidden text-overflow-ellipsis"
+                    class="text-sm font-semibold white-space-nowrap overflow-hidden text-overflow-ellipsis"
             >
-              {{ cat.name }}
+                {{ cat.name }}
             </span>
             <span class="text-xs" style="color: var(--color-text-dim)">
-              {{ cat.subscribers }} subscribers
+                {{ cat.subscribers }} subscribers
             </span>
 
             <!-- Subscribe button (shell — deferred until category subscriptions are implemented) -->
             <button
-              pButton
-              type="button"
-              label="Follow"
-              icon="pi pi-heart"
-              class="p-button-sm p-button-outlined w-full mt-1"
-              disabled
-              [pTooltip]="'Category subscriptions coming soon'"
-              tooltipPosition="bottom"
-            ></button>
-          </div>
-        </div>
-      }
+                    pButton
+                    type="button"
+                    label="Follow"
+                    icon="pi pi-heart"
+                    class="p-button-sm p-button-outlined w-full mt-1"
+                    disabled
+            [pTooltip]="'Category subscriptions coming soon'"
+            tooltipPosition="bottom"
+            >
+        </button>
     </div>
-  </div>
-}
+</div>
+        }
+        </div>
+        </div>
+        }

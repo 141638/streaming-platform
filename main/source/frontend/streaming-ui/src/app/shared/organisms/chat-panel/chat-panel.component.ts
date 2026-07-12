@@ -19,6 +19,7 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
+import { DialogModule } from 'primeng/dialog';
 import { DrawerModule } from 'primeng/drawer';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
@@ -63,6 +64,7 @@ const NEAR_TOP_THRESHOLD = 120;
     MessageModule,
     ProgressSpinnerModule,
     DrawerModule,
+    DialogModule,
     CdkVirtualScrollViewport,
     CdkVirtualForOf,
     CdkFixedSizeVirtualScroll,
@@ -102,6 +104,16 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
     subject: string;
     username: string | null;
   } | null>(null);
+  protected readonly pendingUnbanTarget = signal<{
+    subject: string;
+    username: string | null;
+  } | null>(null);
+  protected readonly pendingUnbanName = computed(() => {
+    const target = this.pendingUnbanTarget();
+    return target === null
+      ? ''
+      : (target.username ?? truncateSub(target.subject));
+  });
   protected readonly banCountLabel = computed(() =>
     String(this.mod.bannedSubjects().size),
   );
@@ -307,10 +319,39 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
     this.closeBanDialog();
   }
 
-  /** Lift a subject's ban inline from a message row. */
-  protected quickUnban(msg: DisplayMessage): void {
+  /** Open the unban-confirm dialog for a message row's author. */
+  protected requestUnban(msg: DisplayMessage): void {
+    this.pendingUnbanTarget.set({
+      subject: msg.authorSubject,
+      username: msg.authorUsername,
+    });
+  }
+
+  /** Dismiss the unban-confirm dialog without lifting the ban. */
+  protected cancelUnban(): void {
+    this.pendingUnbanTarget.set(null);
+  }
+
+  /**
+   * The confirm dialog binds {@code visible} one-way off an object signal;
+   * reconcile our state whenever PrimeNG drives {@code visibleChange} to false
+   * (X / mask / ESC) so the close can't be reasserted mid-animation.
+   */
+  protected onUnbanDialogVisibleChange(visible: boolean): void {
+    if (!visible) {
+      this.cancelUnban();
+    }
+  }
+
+  /** Lift the pending target's ban, then close the dialog. */
+  protected confirmUnban(): void {
+    const target = this.pendingUnbanTarget();
+    this.pendingUnbanTarget.set(null);
+    if (target === null) {
+      return;
+    }
     this.mod
-      .unban(this.roomKey, msg.authorSubject)
+      .unban(this.roomKey, target.subject)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         error: (err: unknown) => this.errorMessage.set(this.moderationError(err)),

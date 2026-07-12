@@ -51,7 +51,7 @@
     [resizable]="false"
     [style]="{ width: '22rem' }"
     header="Unban user"
-    (onHide)="cancelUnban()"
+    (visibleChange)="onUnbanDialogVisibleChange($event)"
   >
     <div class="flex flex-column gap-3 pt-2">
       <span class="text-sm">

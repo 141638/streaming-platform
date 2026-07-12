@@ -180,7 +180,7 @@
                 [authorUsername]="msg.authorUsername"
                 [isBanned]="mod.bannedSubjects().has(msg.authorSubject)"
                 (ban)="openBanDialog(msg)"
-                (unban)="quickUnban(msg)"
+                (unban)="requestUnban(msg)"
               />
             }
           </div>
@@ -258,4 +258,37 @@
       (cancel)="closeBanDialog()"
     />
   }
+
+  <!-- Unban confirm (per-message row action) -->
+  <p-dialog
+    [visible]="pendingUnbanTarget() !== null"
+    [modal]="true"
+    [draggable]="false"
+    [resizable]="false"
+    [style]="{ width: '22rem' }"
+    header="Unban user"
+    (visibleChange)="onUnbanDialogVisibleChange($event)"
+  >
+    <div class="flex flex-column gap-3 pt-2">
+      <span class="text-sm">
+        Unban <span class="font-semibold">{{ pendingUnbanName() }}</span>? They will
+        be able to send messages here again.
+      </span>
+      <div class="flex justify-content-end gap-2">
+        <p-button
+          type="button"
+          label="Cancel"
+          severity="secondary"
+          [text]="true"
+          (click)="cancelUnban()"
+        />
+        <p-button
+          type="button"
+          label="Unban"
+          icon="pi pi-lock-open"
+          (click)="confirmUnban()"
+        />
+      </div>
+    </div>
+  </p-dialog>
 </div>

@@ -97,6 +97,18 @@ export class BanListPanelComponent implements OnInit {
     this.pendingUnban.set(null);
   }
 
+  /**
+   * The dialog binds {@code visible} one-way off an object signal, so reconcile
+   * our state whenever PrimeNG drives {@code visibleChange} to false (X / mask /
+   * ESC). Handling this synchronously — rather than the post-animation onHide —
+   * avoids the re-render reasserting {@code visible=true} mid-close.
+   */
+  protected onUnbanDialogVisibleChange(visible: boolean): void {
+    if (!visible) {
+      this.cancelUnban();
+    }
+  }
+
   protected confirmUnban(): void {
     const ban = this.pendingUnban();
     this.pendingUnban.set(null);

@@ -238,7 +238,12 @@
   </div>
 
   <!-- Moderation drawer (lazy body so loadBans fires on open) -->
-  <p-drawer [(visible)]="moderationOpen" position="right" header="Moderation">
+  <p-drawer
+    [(visible)]="moderationOpen"
+    position="right"
+    header="Moderation"
+    [style]="{ width: '24rem' }"
+  >
     @if (moderationOpen()) {
       <app-ban-list-panel [roomKey]="roomKey" />
     }
@@ -246,7 +251,7 @@
 
   <!-- Ban dialog -->
   <app-ban-user-dialog
-    [visible]="banDialogOpen()"
+    [(visible)]="banDialogOpen"
     [target]="banTarget()"
     (confirm)="confirmBan($event)"
     (cancel)="closeBanDialog()"

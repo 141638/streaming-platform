@@ -5,6 +5,7 @@ import {
   effect,
   inject,
   input,
+  model,
   output,
 } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -56,7 +57,7 @@ const DEFAULT_DURATION_SECONDS = 86_400;
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class BanUserDialogComponent {
-  public readonly visible = input.required<boolean>();
+  public readonly visible = model<boolean>(false);
   public readonly target = input<BanTarget | null>(null);
 
   public readonly confirm = output<BanConfirmation>();

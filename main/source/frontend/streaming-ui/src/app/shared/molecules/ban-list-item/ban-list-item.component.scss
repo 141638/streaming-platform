@@ -34,4 +34,17 @@
   .ban-meta {
     color: var(--color-text-dim);
   }
+
+  // Raw styled countdown (replaces the old p-tag) — compact, tabular so the
+  // digits don't jitter as the "expires in" tick advances.
+  .ban-expires {
+    color: var(--color-text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .ban-expires-permanent {
+    color: var(--red-500);
+    font-weight: 600;
+  }
 }

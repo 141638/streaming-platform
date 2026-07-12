@@ -295,6 +295,7 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
     this.mod
       .ban(this.roomKey, {
         bannedSubject: target.subject,
+        bannedUsername: target.username,
         reason: payload.reason,
         durationSeconds: payload.durationSeconds,
       })
@@ -398,6 +399,10 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
       .subscribe({
         next: (room: RoomResponseDto) => {
           this.applyModerationCapability(room);
+          // Enforcement floor on room load: a banned viewer sees the disabled input
+          // + banner immediately, without waiting for a failed send or the (future)
+          // push pipeline. The 403 floor in send() stays as a backstop.
+          this.bannedState.set(room.viewerBanned);
           if (room.status === 'ARCHIVED') {
             this.roomStatus.set('archived');
             this.loadInitialMessages();

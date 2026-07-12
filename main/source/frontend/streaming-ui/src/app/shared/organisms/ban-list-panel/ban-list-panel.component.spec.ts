@@ -22,7 +22,9 @@ describe('BanListPanelComponent', () => {
     id: `id-${subject}`,
     roomId: 'r1',
     bannedSubject: subject,
+    bannedUsername: subject,
     bannedBySubject: 'mod-1',
+    bannedByUsername: 'mod',
     reason: null,
     createdAt: '2026-07-11T00:00:00Z',
     expiresAt: null,
@@ -94,15 +96,42 @@ describe('BanListPanelComponent', () => {
     req.flush([makeBan('userA'), makeBan('userB')]);
   });
 
-  it('delegates unban to the moderation service', () => {
+  it('opens a confirm dialog on request (no DELETE yet), then unbans on confirm', () => {
     fixture.detectChanges();
     httpTesting.expectOne(bansUrl).flush([makeBan('userA')]);
     fixture.detectChanges();
 
-    component['onUnban']('userA');
+    component['onUnbanRequest']('userA'); // opens confirm — no HTTP yet
+    httpTesting.expectNone(`${bansUrl}/userA`);
+
+    component['confirmUnban'](); // now performs the DELETE
 
     const req = httpTesting.expectOne(`${bansUrl}/userA`);
     expect(req.request.method).toBe('DELETE');
     req.flush(null, { status: 204, statusText: 'No Content' });
+  });
+
+  it('does not unban when the confirm dialog is cancelled', () => {
+    fixture.detectChanges();
+    httpTesting.expectOne(bansUrl).flush([makeBan('userA')]);
+    fixture.detectChanges();
+
+    component['onUnbanRequest']('userA');
+    component['cancelUnban']();
+
+    httpTesting.expectNone(`${bansUrl}/userA`);
+  });
+
+  it('applies an inline duration change via PATCH', () => {
+    fixture.detectChanges();
+    httpTesting.expectOne(bansUrl).flush([makeBan('userA')]);
+    fixture.detectChanges();
+
+    component['onDurationChange']({ subject: 'userA', durationSeconds: 3600 });
+
+    const req = httpTesting.expectOne(`${bansUrl}/userA`);
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual({ durationSeconds: 3600 });
+    req.flush({ ...makeBan('userA'), expiresAt: '2026-07-11T01:00:00Z' });
   });
 });

@@ -21,7 +21,9 @@ describe('ChatModerationService', () => {
     id: `id-${subject}`,
     roomId: 'r1',
     bannedSubject: subject,
+    bannedUsername: subject,
     bannedBySubject: 'mod-1',
+    bannedByUsername: 'mod',
     reason: null,
     createdAt: '2026-07-11T00:00:00Z',
     expiresAt,
@@ -105,5 +107,38 @@ describe('ChatModerationService', () => {
       .expectOne(`${base}/userC`)
       .flush(authzDenied.body, authzDenied.opts);
     expect(service.bannedSubjects().has('userC')).toBe(true);
+  });
+
+  it('updateDuration PATCHes the subject and replaces the roster row', () => {
+    service.loadBans(roomKey).subscribe();
+    httpTesting
+      .expectOne(base)
+      .flush([makeBan('userD', '2026-07-11T01:00:00Z')]);
+
+    service.updateDuration(roomKey, 'userD', 604800).subscribe();
+
+    const req = httpTesting.expectOne(`${base}/userD`);
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual({ durationSeconds: 604800 });
+    req.flush(makeBan('userD', '2026-07-18T00:00:00Z'));
+
+    const row = service.bans().find((b) => b.bannedSubject === 'userD');
+    expect(row?.expiresAt).toBe('2026-07-18T00:00:00Z');
+  });
+
+  it('updateDuration with a null duration promotes the ban to permanent', () => {
+    service.loadBans(roomKey).subscribe();
+    httpTesting
+      .expectOne(base)
+      .flush([makeBan('userE', '2026-07-11T01:00:00Z')]);
+
+    service.updateDuration(roomKey, 'userE', null).subscribe();
+
+    const req = httpTesting.expectOne(`${base}/userE`);
+    expect(req.request.body).toEqual({ durationSeconds: null });
+    req.flush(makeBan('userE', null));
+
+    const row = service.bans().find((b) => b.bannedSubject === 'userE');
+    expect(row?.expiresAt).toBeNull();
   });
 });

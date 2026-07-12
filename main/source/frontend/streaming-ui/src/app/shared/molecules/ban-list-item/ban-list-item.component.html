@@ -1,38 +1,58 @@
-<div class="ban-row flex align-items-center gap-3 p-2 border-round-lg">
+<div class="ban-row flex align-items-stretch gap-3 p-2 border-round-lg">
   <img
-    class="ban-avatar"
+    class="ban-avatar align-self-center"
     [src]="avatarUrl()"
-    [alt]="subjectLabel() + ' avatar'"
+    [alt]="nameLabel() + ' avatar'"
     loading="lazy"
   />
 
-  <div class="flex flex-column gap-1 flex-auto min-w-0">
+  <div class="flex flex-column justify-content-center gap-1 flex-auto min-w-0">
     <span class="ban-identity text-sm font-semibold white-space-nowrap overflow-hidden text-overflow-ellipsis">
-      {{ subjectLabel() }}
+      {{ nameLabel() }}
     </span>
     <span class="ban-reason text-xs white-space-nowrap overflow-hidden text-overflow-ellipsis">
       {{ reasonText() }}
     </span>
-    <span class="ban-meta text-xs">
+    <span class="ban-meta text-xs white-space-nowrap overflow-hidden text-overflow-ellipsis">
       {{ bannedByLabel() }}
     </span>
   </div>
 
-  <div class="flex flex-column align-items-end gap-2 flex-initial">
-    <p-tag
-      [value]="durationLabel()"
-      [severity]="durationSeverity()"
-      [icon]="durationIcon()"
-    />
-    <p-button
+  <div class="flex flex-column align-items-end justify-content-between gap-2 flex-initial">
+    <button
+      pButton
       type="button"
-      severity="danger"
-      size="small"
-      icon="pi pi-times"
-      label="Unban"
-      [text]="true"
-      styleClass="ban-unban-btn"
+      class="p-button-text p-button-sm p-button-rounded ban-unban-btn"
+      icon="pi pi-lock-open"
+      ariaLabel="Unban user"
       (click)="onUnban()"
-    />
+    ></button>
+
+    <div class="ban-duration-editor flex align-items-center gap-1">
+      <button
+        pButton
+        type="button"
+        class="p-button-text p-button-sm p-button-rounded"
+        icon="pi pi-chevron-down"
+        [disabled]="!canStepDown()"
+        ariaLabel="Shorten ban duration"
+        (click)="onStepShorter()"
+      ></button>
+      <span
+        class="ban-expires text-xs"
+        [class.ban-expires-permanent]="isPermanent()"
+      >
+        {{ durationLabel() }}
+      </span>
+      <button
+        pButton
+        type="button"
+        class="p-button-text p-button-sm p-button-rounded"
+        icon="pi pi-chevron-up"
+        [disabled]="!canStepUp()"
+        ariaLabel="Extend ban duration"
+        (click)="onStepLonger()"
+      ></button>
+    </div>
   </div>
 </div>

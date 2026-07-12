@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   DestroyRef,
   inject,
   input,
@@ -9,25 +10,36 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ButtonModule } from 'primeng/button';
+import { DialogModule } from 'primeng/dialog';
 import { MessageModule } from 'primeng/message';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
 import { finalize } from 'rxjs';
+import { BanResponseDto } from '../../../core/contracts/ban-response.dto';
+import { displayName } from '../../../core/lib/avatar';
 import { friendlyChatMessage, parseChatApiError } from '../../../core/lib/chat-error';
+import { formatExpiresIn } from '../../../core/lib/time';
 import { ChatModerationService } from '../../../core/services/chat-moderation.service';
-import { BanListItemComponent } from '../../molecules/ban-list-item/ban-list-item.component';
+import {
+  BanListItemComponent,
+  DurationChange,
+} from '../../molecules/ban-list-item/ban-list-item.component';
 
 /**
  * The moderation roster. Smart + OnPush: it drives the room-scoped
  * {@link ChatModerationService} (resolved from the chat-panel provider),
  * loads the active bans on init, and delegates row rendering to
  * {@link BanListItemComponent}. Expiry filtering + the live tick live in the
- * service, so this panel only owns transient load/error UI state.
+ * service, so this panel only owns transient load/error UI state plus the
+ * unban-confirm dialog. A roster unban is confirmed first (the inline unban from
+ * a message row stays immediate); a row's duration-ladder edit is applied via
+ * {@code updateDuration}.
  */
 @Component({
   selector: 'app-ban-list-panel',
   standalone: true,
   imports: [
     ButtonModule,
+    DialogModule,
     MessageModule,
     ProgressSpinnerModule,
     BanListItemComponent,
@@ -44,6 +56,23 @@ export class BanListPanelComponent implements OnInit {
 
   protected readonly loading = signal(false);
   protected readonly error = signal<string | null>(null);
+  protected readonly pendingUnban = signal<BanResponseDto | null>(null);
+
+  protected readonly pendingUnbanName = computed(() => {
+    const ban = this.pendingUnban();
+    return ban === null
+      ? ''
+      : displayName(ban.bannedSubject, ban.bannedUsername);
+  });
+  protected readonly pendingUnbanExpiry = computed(() => {
+    const ban = this.pendingUnban();
+    if (ban === null) {
+      return '';
+    }
+    return ban.expiresAt === null
+      ? 'is permanent'
+      : formatExpiresIn(ban.expiresAt, this.mod.now());
+  });
 
   // ── Lifecycle ──────────────────────────────────────────────────────────
 
@@ -57,17 +86,43 @@ export class BanListPanelComponent implements OnInit {
     this.loadBans();
   }
 
-  protected onUnban(subject: string): void {
+  /** Open the confirm dialog for a roster unban (a message-row unban stays immediate). */
+  protected onUnbanRequest(subject: string): void {
+    const ban =
+      this.mod.activeBans().find((b) => b.bannedSubject === subject) ?? null;
+    this.pendingUnban.set(ban);
+  }
+
+  protected cancelUnban(): void {
+    this.pendingUnban.set(null);
+  }
+
+  protected confirmUnban(): void {
+    const ban = this.pendingUnban();
+    this.pendingUnban.set(null);
+    if (ban === null) {
+      return;
+    }
     // The service removes optimistically and restores on error.
     this.mod
-      .unban(this.roomKey(), subject)
+      .unban(this.roomKey(), ban.bannedSubject)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         error: (err: unknown) => this.error.set(this.toMessage(err)),
       });
   }
 
-  // ── Private methods ────────────────────────────────────────────────────
+  /** Re-base a ban's duration from a row's inline ladder editor. */
+  protected onDurationChange(change: DurationChange): void {
+    this.mod
+      .updateDuration(this.roomKey(), change.subject, change.durationSeconds)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        error: (err: unknown) => this.error.set(this.toMessage(err)),
+      });
+  }
+
+  // ── Private methods ──────────────────────────────────────────────────────
 
   private loadBans(): void {
     this.loading.set(true);

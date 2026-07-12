@@ -84,6 +84,33 @@ export class ChatModerationService {
   }
 
   /**
+   * Re-base a subject's ban duration in place (the streamer's 1h→24h→7d→permanent
+   * edit) instead of unban + re-ban. On success the returned ban replaces the
+   * matching roster row via {@code update} against the current value; on error the
+   * roster is left untouched. {@code durationSeconds === null} promotes to permanent.
+   */
+  public updateDuration(
+    roomKey: string,
+    subject: string,
+    durationSeconds: number | null,
+  ): Observable<BanResponseDto> {
+    return this.http
+      .patch<BanResponseDto>(
+        `${this.basePath}/${roomKey}/bans/${encodeURIComponent(subject)}`,
+        { durationSeconds },
+      )
+      .pipe(
+        tap((updated) =>
+          this._bans.update((current) =>
+            current.map((ban) =>
+              ban.bannedSubject === updated.bannedSubject ? updated : ban,
+            ),
+          ),
+        ),
+      );
+  }
+
+  /**
    * Lift a subject's ban — optimistically removed, restored on error. Both the
    * removal and the rollback re-insert operate on the current value (not a
    * whole-list snapshot), so a concurrent load/mutation is preserved.

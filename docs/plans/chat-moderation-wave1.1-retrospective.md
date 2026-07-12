@@ -110,7 +110,7 @@ The generalized anti-pattern → fix was extracted to a global learned skill: `~
 | # | Gap | Status |
 |---|-----|--------|
 | G10 | Dialog needed two fix passes (symptom, then root cause) | **Resolved + generalized** — `95eca24` + global skill (§8.2) |
-| G11 | Repo hygiene: stray root `package.json`/`package-lock.json` (npx/prettier-hook junk); orphan `typescript-eslint` devDep in `streaming-ui/package.json` | Root junk **removed**; the devDep left **uncommitted** (not this refactor) — user's call |
+| G11 | Repo hygiene: stray root `package.json`/`package-lock.json` (npx/prettier-hook junk); a transient `typescript-eslint` devDep churn in `streaming-ui/package.json` | **Resolved** — root junk removed; the devDep reverted (working tree matches HEAD, clean) |
 | G12 | Meta north-star drift: memory `multi-agent-orchestration-goal` says full-pipeline multi-agent orchestration, but Wave 1/1.1 ran mostly single-threaded | **Open (surfaced to user)** — hold, scope down, or retire the goal |
 
 ### 8.5 Carry-forward tasks created

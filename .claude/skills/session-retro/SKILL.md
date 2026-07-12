@@ -9,6 +9,14 @@ metadata:
 
 At the end of every feature-building session, perform a structured retrospective that reconciles what was built against what was planned, updates stale documentation, and captures architectural decisions made during implementation.
 
+## Substance Gate (READ FIRST)
+
+Not every session produces novel patterns, architectural decisions, or plan deviations. Before entering the full five-phase workflow, ask:
+
+> Did this session introduce a decision not already documented? A pattern not already captured? A deviation from an existing plan?
+
+If the answer to all three is **no**, skip directly to Phase 5 and report: **"No pattern deemed noticeable or needs updating."** Do not create or modify any documents. This prevents noise documents that dilute the value of real retrospectives.
+
 ## When to Activate
 
 - User says "retro", "retrospective", "/retro", "wrap up the session", "let's do a review of what we did"

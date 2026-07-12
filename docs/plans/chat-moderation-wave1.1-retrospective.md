@@ -1,8 +1,8 @@
 # Chat Moderation — Wave 1.1 — Implementation Retrospective
 
-**Date:** 2026-07-12
-**Status:** **Complete** — backend + frontend shipped and committed; a few items flagged for the user to run in their environment (perf confirmation, Testcontainers, visual check).
-**Branch:** `feat/chat-moderation-ux` (tip `dfc2b53`). This session added 5 commits on top of `bb59184`.
+**Date:** 2026-07-12 (updated — post-promotion follow-up appended, §8)
+**Status:** **Complete** — backend + frontend shipped and committed; a follow-up dialog refactor (`95eca24`) landed after promotion (§8). Items flagged for the user's environment (perf confirmation, Testcontainers, visual check) remain open.
+**Branch:** `feat/chat-moderation-ux` (tip `95eca24`). This session added 5 feature/config/doc commits on top of `bb59184`, plus the retro-promotion (`86b9539`) and the dialog follow-up (`95eca24`).
 **Plan:** `~/.claude/plans/zippy-cuddling-dragonfly.md` (approved). Progress mirror: memory `chat-moderation-ux-progress`.
 
 > An earlier revision of this file was an *interim* checkpoint (backend written but
@@ -92,3 +92,26 @@ On-plan; the only addition was the auth-service side-quests (ecj fix committed; 
 3. **Testcontainers + Karma unrun locally** — CI (with Docker/Chrome) is the real gate (G8/G9).
 4. **Denormalized-username staleness** — accepted; documented in ADR-0008 (G4).
 5. **Wave 2 remains dependency-gated** — Kafka broker ownership + notification-service foundation (ADR-0007); nothing here depends on it (the enforcement floor is complete).
+
+## 8. Post-promotion follow-up (appended this session)
+
+After this retrospective was promoted to Complete (`86b9539`), one more change landed and a second retro pass swept the delta.
+
+### 8.1 Dialog rendered on demand (`95eca24`)
+The Wave-1.1 dialog fix (`fd56eee`: two-way `model()` + drop `dismissableMask`) treated the *symptom*. Hands-on use still wiped the ban dialog's in-progress reason. Root cause, found this session: the dialog was **rendered eagerly for every viewer** and reset its form inside a **`visible`-watching `effect()`**, which re-fires on any re-touch of the two-way binding. **Fix:** render on demand — `@if (banDialogOpen())` in `chat-panel` — so a fresh instance initializes the form clean from its field initializer; the reset `effect()` + empty constructor were deleted; `<form [formGroup]>` → `<div [formGroup]>`; `p-select` got `appendTo="body"`; the spec asserts a fresh instance starts clean. `ng build` + spec `tsc` green. Not converted to PrimeNG `DialogService` (the lighter `@if` lazy-render satisfied "render on demand"). This is the **only Wave-1.1 fix that needed a second pass** — the session's key learning.
+
+### 8.2 Pattern captured globally
+The generalized anti-pattern → fix was extracted to a global learned skill: `~/.claude/skills/learned/angular-dialog-reset-via-render-on-demand.md` (`/learn-eval`, verdict Save/Global). Reusable in any Angular 17+ project; no ADR (a pattern, not an architectural decision).
+
+### 8.3 Team-retro insight — D2 narrowed Wave 2's remaining scope
+`viewerBanned` (ADR-0008 D2) delivered a **load-time proactive disable without the push pipeline**, via room metadata. ADR-0006 had parked "disable before you try" in Wave 2. Net effect: **Wave 2's remaining value is now only live *mid-session* push + rich reason/countdown** — the "banned on load" case is already solved by the floor + D2. Wave 2 is less urgent than ADR-0006 originally framed; a scope note for whoever resumes it.
+
+### 8.4 Fresh gap sweep (delta since promotion)
+| # | Gap | Status |
+|---|-----|--------|
+| G10 | Dialog needed two fix passes (symptom, then root cause) | **Resolved + generalized** — `95eca24` + global skill (§8.2) |
+| G11 | Repo hygiene: stray root `package.json`/`package-lock.json` (npx/prettier-hook junk); orphan `typescript-eslint` devDep in `streaming-ui/package.json` | Root junk **removed**; the devDep left **uncommitted** (not this refactor) — user's call |
+| G12 | Meta north-star drift: memory `multi-agent-orchestration-goal` says full-pipeline multi-agent orchestration, but Wave 1/1.1 ran mostly single-threaded | **Open (surfaced to user)** — hold, scope down, or retire the goal |
+
+### 8.5 Carry-forward tasks created
+`#15` confirm perf fix empirically (G3) · `#16` Testcontainers + Karma in CI (G8/G9) · `#17` rebase onto develop after the PBAC branch merges (+ exclude the notifications SSE route from the gateway `response-timeout`, G2).

@@ -2,7 +2,6 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
-  effect,
   inject,
   input,
   model,
@@ -39,8 +38,10 @@ const DEFAULT_DURATION_SECONDS = 86_400;
 /**
  * Modal for issuing a ban. Dumb + OnPush: the parent owns {@code visible} and
  * the {@code target}; this component only collects a reason + duration and emits
- * the confirmation. The form is reset every time the dialog re-opens so a stale
- * reason never leaks between targets.
+ * the confirmation. The parent renders this dialog on demand (host {@code @if}),
+ * so every open creates a fresh instance whose form initializes clean from the
+ * field initializer below — no stale reason ever leaks between targets, and no
+ * {@code visible}-watching reset effect is needed.
  */
 @Component({
   selector: 'app-ban-user-dialog',
@@ -90,18 +91,6 @@ export class BanUserDialogComponent {
     const target = this.target();
     return target === null ? '' : dicebearAvatarUrl(target.subject);
   });
-
-  public constructor() {
-    // Reset to a clean 24h default each time the dialog opens.
-    effect(() => {
-      if (this.visible()) {
-        this.form.reset({
-          reason: '',
-          duration: DEFAULT_DURATION_SECONDS,
-        });
-      }
-    });
-  }
 
   // ── Public methods ─────────────────────────────────────────────────────
 

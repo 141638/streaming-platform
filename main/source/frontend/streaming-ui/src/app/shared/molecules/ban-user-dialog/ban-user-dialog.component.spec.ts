@@ -71,17 +71,21 @@ describe('BanUserDialogComponent', () => {
     expect(cancelled).toBe(true);
   });
 
-  it('resets a dirty form when the dialog re-opens', () => {
+  it('starts each fresh instance with a clean form (reset-on-reopen is now parent recreation)', () => {
+    // Dirty the first instance.
     open();
     component['form'].controls.reason.setValue('stale note');
     component['form'].controls.duration.setValue(604800);
 
-    fixture.componentRef.setInput('visible', false);
-    fixture.detectChanges();
-    fixture.componentRef.setInput('visible', true);
-    fixture.detectChanges();
+    // The parent re-opens by destroying + recreating the dialog (host @if),
+    // not by toggling `visible` on a retained instance. A new instance
+    // initializes the form to clean defaults via its field initializer.
+    const freshFixture = TestBed.createComponent(BanUserDialogComponent);
+    const fresh = freshFixture.componentInstance;
+    freshFixture.componentRef.setInput('visible', true);
+    freshFixture.detectChanges();
 
-    expect(component['form'].controls.reason.value).toBe('');
-    expect(component['form'].controls.duration.value).toBe(86400);
+    expect(fresh['form'].controls.reason.value).toBe('');
+    expect(fresh['form'].controls.duration.value).toBe(86400);
   });
 });

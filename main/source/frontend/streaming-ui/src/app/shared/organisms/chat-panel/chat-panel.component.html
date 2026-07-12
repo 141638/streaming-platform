@@ -249,11 +249,13 @@
     }
   </p-drawer>
 
-  <!-- Ban dialog -->
-  <app-ban-user-dialog
-    [(visible)]="banDialogOpen"
-    [target]="banTarget()"
-    (confirm)="confirmBan($event)"
-    (cancel)="closeBanDialog()"
-  />
+  <!-- Ban dialog (rendered on demand: created fresh per open, destroyed on close) -->
+  @if (banDialogOpen()) {
+    <app-ban-user-dialog
+      [(visible)]="banDialogOpen"
+      [target]="banTarget()"
+      (confirm)="confirmBan($event)"
+      (cancel)="closeBanDialog()"
+    />
+  }
 </div>

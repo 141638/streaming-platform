@@ -1,95 +1,94 @@
-# Chat Moderation — Wave 1.1 — Implementation Retrospective (INTERIM)
+# Chat Moderation — Wave 1.1 — Implementation Retrospective
 
 **Date:** 2026-07-12
-**Status:** **Partial / checkpoint** — backend (Workstreams A + B) written & **compile-green**, but **uncommitted** and the `:chat-service:test` suite **not yet run**; frontend (C–F) and docs (G) not started. Session paused to resume next working day.
-**Branch:** `feat/chat-moderation-ux` (tip `bb59184`; this session added **0 commits** — all work is in the working tree).
+**Status:** **Complete** — backend + frontend shipped and committed; a few items flagged for the user to run in their environment (perf confirmation, Testcontainers, visual check).
+**Branch:** `feat/chat-moderation-ux` (tip `dfc2b53`). This session added 5 commits on top of `bb59184`.
 **Plan:** `~/.claude/plans/zippy-cuddling-dragonfly.md` (approved). Progress mirror: memory `chat-moderation-ux-progress`.
 
-> This is an *interim* retro taken mid-implementation at the user's request, before
-> pausing. It deliberately does **not** accept any ADR or mark shipped work — nothing
-> is committed or runtime-verified yet. Its value is capturing the session's decisions,
-> the backend checkpoint, and (§3) the forward-gaps found while reviewing.
+> An earlier revision of this file was an *interim* checkpoint (backend written but
+> uncommitted, tests not run). This revision reconciles the finished session:
+> all workstreams landed, the backend test blocker was fixed, and the work is
+> committed feature-by-feature.
 
 ## 0. Session arc
 
-1. **Feedback intake** — user raised 6 items after Wave 1 hands-on: (1) Kafka consumer log noise, (2) slow APIs, (3) ban-drawer UX (names-not-ids, broken duration dropdown, row redesign, unban-confirm), (4) new **edit-ban-duration-in-place** capability, (5) dead ban-dialog X button, (6) `chatBanned` on room metadata.
-2. **Investigation** — two parallel read-only agents established root causes (see §4) before any code.
-3. **Planning** — a plan was drafted and approved; two decisions were locked via the user (see §4).
-4. **Implementation** — backend Workstreams A (schema + moderation API) and B (config hardening) completed and compiled; frontend + docs deferred to next session.
+1. **Feedback intake** — 6 items after Wave 1 hands-on: Kafka log noise, slow APIs, ban-drawer UX (names-not-ids, broken duration dropdown, row redesign, unban-confirm), edit-ban-duration-in-place, dead ban-dialog X, `chatBanned` on room metadata.
+2. **Blueprint + baseline verify** — surveyed the real FE code; ran the backend suite and caught a red test (interim retro risk G1 materialized).
+3. **Pre-flight asks** — three durable principles captured (embedding-first schema, test-env deferral, lightweight testing scope); an unrelated auth-service startup failure investigated and root-caused.
+4. **Implementation** — A-fix → Frontend C→D→E→F → docs G, then 5 grouped commits.
 
 ## 1. What was implemented (vs the plan)
 
-| Plan item | Where | State |
-|-----------|-------|-------|
-| A1 `V5__chat_ban_usernames.sql` (banned_username, banned_by_username) | new migration | ✅ written, compile-green, **uncommitted** |
-| A2 `ChatBan` +2 username fields, `create(...)` 8-arg, shared `isActive(now)` | `domain/ChatBan.java` | ✅ |
-| A2 `BanSendGuard` delegates to `ban.isActive(now)` (dedupe) | `application/BanSendGuard.java` | ✅ |
-| A2 `BanRequest.bannedUsername`, `BanResponse` +2 usernames, `BanDurationRequest` | `api/dto/*` | ✅ |
-| A3 `ModerationService.ban(...)` capture usernames + **`updateBanDuration(...)`** + `BanNotFoundException` | `application/ModerationService.java` | ✅ |
-| A4 `ModerationController` **`PATCH /rooms/{roomKey}/bans/{subject}`** + `JwtAttr.username(jwt)` | `api/ModerationController.java` | ✅ |
-| A5 `RoomResponse.viewerBanned`; `getRoom` `Mono.zip(hasCapability, resolveViewerBanned)` + inject ban repo | `api/dto/RoomResponse.java`, `application/ChatService.java` | ✅ |
-| A5 `CHAT_BAN_NOT_FOUND` → 404 | `api/error/ChatExceptionHandler.java` | ✅ |
-| A6 tests: 5 files updated for new arities + new coverage (username capture, updateBanDuration re-base/permanent/404, PATCH controller, 4× viewerBanned) | `src/test/...` | ✅ compile-green, **not run** |
-| B1 Kafka `listener.auto-startup: ${KAFKA_LISTENER_ENABLED:false}` + `NetworkClient`/`consumer.internals` log level ERROR | `chat-service/application.yml` | ✅ |
-| B2 R2DBC pool `validation-query`/`max-acquire-time`/`max-idle-time` | `chat-service/application.yml` | ✅ |
-| B3 gateway `httpclient.connect-timeout: 2000`, `response-timeout: 10s` | `gateway-service/application.yml` | ✅ |
+| Plan item | Commit | Notes |
+|-----------|--------|-------|
+| A backend: `V5` usernames, `ChatBan.isActive`, `updateBanDuration` (PATCH), `viewerBanned`, `BanNotFoundException`→404 | `543309b` | from prior session; **A-fix** this session made the suite green |
+| A-fix: `reBasesExpiry` test modelled a DB-hydrated row (`setNew(false)`) + `isSameAs` identity assertion | `543309b` | closes interim gap G1 (test asserted R2DBC hydration a Mockito fixture can't reproduce) |
+| B config: Kafka `auto-startup` gate + log levels; R2DBC pool liveness; gateway timeouts | `064b8ee` | config-only, reversible |
+| C frontend: contracts (+`viewerBanned`, +ban usernames) + `ChatModerationService.updateDuration` | `fd56eee` | |
+| D frontend: dialog two-way `model()` + drop `dismissableMask` (fixes dropdown/reason-wipe/X); forward `bannedUsername` | `fd56eee` | one root cause, three symptoms |
+| E frontend: ban-row redesign (names, unlock icon, raw expires-in, chevron ladder), unban-confirm dialog, wider drawer | `fd56eee` | |
+| F frontend: `viewerBanned` → `bannedState` on room load | `fd56eee` | floor stays backstop |
+| G: FE specs updated, `ng build` gate, ADR-0008, README row, Wave-2 emit-note | `fd56eee` (specs), `dfc2b53` (docs) | |
+| Unrelated: auth-service ecj type-inference test errors | `2824c11` | split out — not chat |
+
+**Verification run:** chat-service Mockito tests green (incl. A-fix); `ng build` green; spec `tsc` green. (Testcontainers not run — see §3.)
 
 ## 2. What was deferred (documented, with tracking reference)
 
 | Item | Deferred to | Tracked in | Reason |
 |------|-------------|------------|--------|
-| Frontend C (contracts + `ChatModerationService.updateDuration`) | next session | plan + memory | time-box; backend contract had to land first |
-| Frontend D (dialog fix: `model()` visibility, drop `dismissableMask`) | next session | plan + memory | — |
-| Frontend E (ban-row redesign, inline duration ladder, unban-confirm) | next session | plan + memory | — |
-| Frontend F (`viewerBanned` → `bannedState` on room load) | next session | plan + memory | — |
-| Docs G (ADR-0008, README row, `ng build` gate, `:chat-service:test` run) | next session | plan + memory | — |
-| **Real-time push** of the duration-delta / ban / unban to the banned user | Wave 2 | ADR-0007, Wave-2 plan | infrastructure-gated (Kafka broker + notification-service foundation) |
+| Real-time push of the duration-delta / ban / unban | Wave 2 | ADR-0007, Wave-2 plan (`// Wave 2` emit-marker in `updateBanDuration`) | infrastructure-gated (Kafka broker + notification-service foundation) |
+| Duration-change audit trail | condition-triggered | ADR-0008 (G5) | not needed until an audit requirement appears |
+| Uploaded-avatar embedding on `chat_ban` | condition-triggered | ADR-0008 (D3) | avatars are derived (DiceBear) today; embed only when real uploads exist |
 
-## 3. Deferred but NOT documented — gaps found during this retro (highest-value sweep)
+## 3. Deferred but not fully resolved — gap sweep (updated)
 
-| # | Gap | Recommended action |
-|---|-----|--------------------|
-| G1 | **Backend tests compile but were never executed.** Runtime/logic risks not yet exercised: R2DBC `save()` issuing UPDATE on a loaded `ChatBan` (`isNew=false`), and the new `Mono.zip` in `getRoom`. | Run `:chat-service:test` **first** next session; treat A as unverified until green. |
-| G2 | **Gateway `response-timeout: 10s` will kill Wave-2 SSE.** The notifications SSE route (`/api/notifications/stream`) is long-lived; a 10s global response-timeout would sever it. | When Wave-2 lands, exclude the SSE route from the global timeout (per-route `response-timeout: -1` or a dedicated route). **Added a risk row to the Wave-2 plan** (this retro). |
-| G3 | **Perf fix applied but not empirically confirmed.** The gateway/R2DBC config addresses the *most likely* cause; the direct-vs-gateway discriminating test was not run, so we may have treated a plausible-but-wrong cause. | Run the direct-call-vs-gateway comparison next session before claiming the slowness is fixed. |
-| G4 | **Denormalized usernames on `chat_ban` can go stale** (a later rename isn't reflected). Same accepted tradeoff as `chat_message.author_username`, but not written down. | Document as a known tradeoff in ADR-0008; acceptable for KISS (display-only, sub is the identity). |
-| G5 | **`updateBanDuration` overwrites `expiresAt` with no history/audit** of duration changes. | Note in ADR-0008; a duration-change audit trail is a condition-deferred concern, not needed now. |
-| G6 | **`auto-startup: false` makes `StreamControlListener` inert locally** — STREAM_CREATED room-lifecycle won't fire unless `KAFKA_LISTENER_ENABLED=true`. | Behaviour change captured in the yaml comment + memory; call out in ADR-0008 so it isn't a surprise. |
-| G7 | **CRLF/LF churn**: git warned LF→CRLF on every touched backend file. | Cosmetic; ensure `.gitattributes`/editor keeps LF so the eventual diff is content-only, not line-ending noise. |
+| # | Gap | Status |
+|---|-----|--------|
+| G1 | Backend tests compiled but never run | **Resolved** — ran the suite, found + fixed `reBasesExpiry`; Mockito set green (`543309b`) |
+| G2 | Gateway `response-timeout: 10s` will sever Wave-2 SSE | **Documented** — risk row in Wave-2 plan + ADR-0008; exclude `/api/notifications/stream` when Wave 2 lands |
+| G3 | Perf fix not empirically confirmed | **Open (flagged to user)** — run the direct-vs-gateway comparison before declaring the slowness closed; noted as an ADR-0008 risk |
+| G4 | Denormalized usernames go stale on rename | **Documented** — accepted tradeoff in ADR-0008 (D3); `subject` stays the identity |
+| G5 | `updateBanDuration` overwrites `expiresAt` with no history | **Documented** — ADR-0008; condition-deferred |
+| G6 | `auto-startup:false` makes `StreamControlListener` inert locally | **Documented** — yaml comment + ADR-0008 |
+| G7 | CRLF/LF churn on touched files | **Ongoing (cosmetic)** — git normalizes on commit; `.gitattributes` LF would remove the noise |
+| G8 | Testcontainers tests (`ChatServiceTest`, `RedisMessageCache`, `RedisReconnectListener`) not run — no Docker locally | **Flagged to user** per `test-env-deferral-policy`; run when Docker is up |
+| G9 | FE specs can't run locally (Karma needs Chrome) | **Flagged** — gate was `ng build` + `tsc -p tsconfig.spec.json`; run Karma in CI |
 
-## 4. Architectural decisions made this session (candidates for ADR)
+## 4. Architectural decisions made this session
 
-1. **Modify-ban-duration in place** (`PATCH …/bans/{subject}`, re-base `expiresAt` off *now* on the loaded row) instead of unban+re-ban. *Why:* one moderator action, one future notification (vs two), preserves the `(room, subject)` row. → **ADR-0008** (write next session, with the code).
-2. **`viewerBanned` room-metadata signal** — the enforcement floor on room load, independent of the (future) push pipeline; mirrors `viewerCanModerate`, reuses `ChatBan.isActive`. → **ADR-0008**.
-3. **FE-supplied `bannedUsername` + denormalized storage** (locked decision) over a cross-service auth lookup. *Why:* KISS, client already holds the name, matches `chat_message.author_username` precedent. → note in **ADR-0008** with the staleness tradeoff (G4).
-4. **Config-only perf + log-noise hardening** (locked decision: apply now). Kafka `auto-startup` gate, R2DBC pool liveness, gateway timeouts. *Why:* root cause is infra (gateway↔Eureka), not the auth guard; all reversible. → summarise in **ADR-0008** (or a short perf note) with the SSE caveat (G2).
-   - **Recommendation:** a single **ADR-0008** ("modify-ban-duration + `viewerBanned` metadata + config hardening") next session, authored alongside the commit. Do **not** back-date or pre-accept it now — nothing is shipped.
+1. **ADR-0008 written & Accepted** (`dfc2b53`): modify-ban-duration in place, `viewerBanned` room metadata, the **embed-cross-service-display-fields** convention, and config-only perf/log hardening. Supersedes the interim "write next session" note.
+2. **Embed-cross-service reference data** promoted from the `chat_message.author_username` precedent to a **standing convention** (ADR-0008 D3 + memory `embed-cross-service-reference-data`): store a denormalized copy of another service's display fields at write time; never id-only + read-time cross-service lookup.
+3. **Test-environment deferral** (memory `test-env-deferral-policy`): tests needing Docker/Redis/Kafka/MCP are written + flagged, not run locally.
+4. **Lightweight testing scope for this pet project** (memory `lightweight-testing-scope`): relax TDD/E2E/80%-coverage; a few simple tests + cheap gates (build/type-check). Overrides `.claude/rules/common/testing.md` defaults here.
+5. **VS Code launch needs `processResources`** (memory `vscode-launch-needs-processresources`): a backend service launched from VS Code runs with stale/missing `application.yml` unless its launch config has a `processResources` preLaunchTask → surfaces as "datasource url not specified." Diagnosed for auth-service; the user fixed via a VS Code cache refresh (the launch-config edit was reverted).
 
-## 5. Documents to update (state)
+## 5. Documents updated / created this session
 
-| Document | State | Action |
-|----------|-------|--------|
-| `docs/adr/chat/0008-*.md` | does not exist | **create next session** (§4), status Accepted at commit time |
-| `docs/adr/chat/README.md` | current | add ADR-0008 row **when the file exists** (not before — avoid a dead link) |
-| `docs/plans/chat-moderation-wave2-proactive-push.md` | slightly stale | **updated in this retro**: `updateBanDuration` emit-point + SSE-vs-gateway-timeout risk (G2) |
-| memory `chat-moderation-ux-progress` | current | already updated with the full checkpoint |
-| this retrospective | new | created this session |
+| Document | State | Action taken |
+|----------|-------|--------------|
+| `docs/adr/chat/0008-*.md` | created, **Accepted** | modify-duration + viewerBanned + embed convention + config hardening (`dfc2b53`) |
+| `docs/adr/chat/README.md` | current | ADR-0008 row added |
+| `docs/plans/chat-moderation-wave2-proactive-push.md` | current | `updateBanDuration` emit-point + response-timeout-vs-SSE risk row |
+| this retrospective | promoted to **Complete** | interim → final with commit hashes |
+| `docs/IMPLEMENTATION-PLAN.md` | current | no change — it doesn't track at Wave-1.1 granularity (the dedicated plan + ADRs do) |
+| memory (`chat-moderation-ux-progress`, +4 new) | current | progress + 4 new principles recorded |
 
 ## 6. Execution order (planned vs actual)
 
-| Planned | Actual | Status |
+| Planned | Actual | Commit |
 |---------|--------|--------|
-| A backend schema+API | done, compile-green, uncommitted | ✅ (test run pending) |
-| B config hardening | done | ✅ (runtime verify pending) |
-| C–F frontend | — | ⏳ next session |
-| G tests+docs | — | ⏳ next session |
+| A-fix → confirm green | done | `543309b` |
+| C → D → E → F | done in order | `fd56eee` |
+| G tests + docs | done | `fd56eee` / `dfc2b53` |
+| commit feature-by-feature | 5 commits (auth split out, chat-be, config, fe, docs) | `2824c11`…`dfc2b53` |
 
-On-plan; no re-ordering. Nothing committed yet → the first commit(s) happen next session after `:chat-service:test` is green.
+On-plan; the only addition was the auth-service side-quests (ecj fix committed; startup diagnosis → memory).
 
 ## 7. Risks carried forward
 
-1. **Unverified backend** — compile-green ≠ test-green. Run `:chat-service:test` before building on it (G1).
-2. **Perf fix may target the wrong cause** — confirm with the direct-vs-gateway test (G3).
-3. **Gateway timeout vs future SSE** — must be excluded for the Wave-2 stream (G2, now in the Wave-2 plan).
-4. **Uncommitted work** — a large working-tree delta could be lost if the tree is disturbed; state is captured in memory + this doc as insurance. Commit early next session.
-5. **Denormalized-username staleness** — accepted, to be documented in ADR-0008 (G4).
+1. **Perf fix may target the wrong cause** — confirm with the direct-vs-gateway test (G3).
+2. **Gateway timeout vs future SSE** — must exclude the notifications stream in Wave 2 (G2).
+3. **Testcontainers + Karma unrun locally** — CI (with Docker/Chrome) is the real gate (G8/G9).
+4. **Denormalized-username staleness** — accepted; documented in ADR-0008 (G4).
+5. **Wave 2 remains dependency-gated** — Kafka broker ownership + notification-service foundation (ADR-0007); nothing here depends on it (the enforcement floor is complete).

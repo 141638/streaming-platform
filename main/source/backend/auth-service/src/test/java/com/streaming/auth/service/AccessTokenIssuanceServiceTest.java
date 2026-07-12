@@ -4,8 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.streaming.auth.persistence.entity.PolicyEntity;
@@ -19,7 +17,6 @@ import com.streaming.auth.token.IssuedAccessToken;
 import com.streaming.auth.token.JwtIssuerProperties;
 import com.streaming.auth.token.policy.EntitlementLinesMaterializer;
 import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.JwsHeader;
 import io.jsonwebtoken.Jwt;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -151,7 +148,9 @@ class AccessTokenIssuanceServiceTest {
             assertThat(claims.getAudience()).contains("streaming-control-plane");
             assertThat(claims.getSubject()).isEqualTo(USER_ID.toString());
             assertThat(claims.get("ver", Integer.class)).isEqualTo(1);
-            assertThat(claims.get("ent", List.class)).contains("allow stream:session:self create read");
+            @SuppressWarnings("unchecked")
+            List<String> ent = claims.get("ent", List.class);
+            assertThat(ent).contains("allow stream:session:self create read");
 
             @SuppressWarnings("unchecked")
             Map<String, Object> parsedAttr = claims.get("attr", Map.class);
@@ -225,7 +224,9 @@ class AccessTokenIssuanceServiceTest {
             assertThat(claims.getAudience()).contains("stream-service-internal");
             assertThat(claims.getIssuer()).isEqualTo("https://auth.streaming.local");
             assertThat(claims.get("ver", Integer.class)).isEqualTo(1);
-            assertThat(claims.get("ent", List.class)).contains("allow stream:publish-key:* validate_publish");
+            @SuppressWarnings("unchecked")
+            List<String> ent = claims.get("ent", List.class);
+            assertThat(ent).contains("allow stream:publish-key:* validate_publish");
             // Service tokens have no attr claim
             assertThat(claims.containsKey("attr")).isFalse();
         }

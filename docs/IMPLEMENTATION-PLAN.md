@@ -1,6 +1,6 @@
 # Implementation Plan
 
-**Last updated:** 2026-07-13
+**Last updated:** 2026-07-14
 **Current phase:** 6 — Production Hardening (active: Kafka outbox pattern) → then 4 — Viewer Experience
 **Active blueprint:** [outbox-and-phase4-blueprint.md](plans/outbox-and-phase4-blueprint.md) — Path C hybrid sequencing
 **Next session:** Start with Task A1 (outbox schema migration)
@@ -564,7 +564,7 @@ live feed.
 
 ## Phase 3 — Real-time Chat ⚡
 
-**Status:** In Progress — 3.1 (service layer) and 3.2 (JWT identity) committed. 3.5 (frontend) built but uncommitted. Redis infrastructure not yet defined.
+**Status:** Done — all items complete. System messages, emoji picker, and @mentions shipped 2026-07-13.
 
 **Goal:** Viewers in a stream room can chat. Messages persist to PostgreSQL with Redis as the hot cache. Room lifecycle is driven by stream events from Kafka.
 
@@ -580,37 +580,76 @@ Chat ADRs recorded across Phase 3 — see [docs/adr/chat/](adr/chat/):
 | [0003](adr/chat/0003-cache-staleness-on-redis-restart.md) | Cache staleness on Redis restart — TTL + evict-on-reconnect + evict-on-write-failure |
 | [0004](adr/chat/0004-two-layer-chat-authorization.md) | Two-layer chat authorization — PBAC capability (`ent`) + resource-state moderation (bans); grammar flattened in auth V10 |
 | [0005](adr/chat/0005-moderation-domain-condition-triggered.md) | Moderation stays a chat kind — `moderation`-domain alternative is condition-triggered, not phase-deferred |
+| [0006](adr/chat/0006-moderation-ux-capability-and-push-split.md) | Moderation UX split — shipped enforcement floor + deferred proactive push (Wave 2) |
+| [0007](adr/chat/0007-proactive-push-infrastructure-gated.md) | Wave 2 proactive push is infrastructure-gated — Kafka broker ownership + notification-service foundation are hard prerequisites |
+| [0008](adr/chat/0008-modify-ban-duration-viewerbanned-and-config-hardening.md) | Modify ban duration, `viewerBanned` on room metadata, config hardening (Kafka log noise, R2DBC pool, gateway timeouts) |
+| [0009](adr/chat/0009-mention-precision-and-autocomplete.md) | @mention precision — backend is parsing authority, frontend autocomplete gates precision; three-tier suggestion system |
 
 ### Scaffold Artifacts
 
 ```
 chat-service/src/main/java/com/streaming/chat/
 ├── api/
-│   ├── ChatController.java              ← rewritten: @AuthenticationPrincipal, delegates to ChatService
-│   └── dto/
-│       ├── SendMessageRequest.java       ← { @NotBlank String content } — no author field
-│       ├── MessageResponse.java          ← from(ChatMessage, roomKey)
-│       └── RoomResponse.java             ← from(ChatRoom): externalKey, status, createdAt, archivedAt
+│   ├── ChatController.java              ← @AuthenticationPrincipal, delegates to ChatService
+│   ├── ModerationController.java         ← GET/POST/DELETE /v1/rooms/{roomKey}/bans, gated by moderate
+│   ├── JwtAttr.java                      ← static helpers: username(), verifiedStreamer() from JWT attr
+│   ├── dto/
+│   │   ├── SendMessageRequest.java       ← { @NotBlank String content } — no author field
+│   │   ├── MessageResponse.java          ← from(ChatMessage, roomKey)
+│   │   ├── RoomResponse.java             ← externalKey, status, createdAt, archivedAt, viewerCanModerate, viewerBanned
+│   │   ├── BanRequest.java               ← { bannedSubject, bannedUsername, reason, durationSeconds }
+│   │   ├── BanResponse.java              ← id, roomId, bannedSubject, bannedUsername, bannedBySubject, bannedByUsername, reason, createdAt, expiresAt
+│   │   └── BanDurationRequest.java       ← { durationSeconds } for PATCH /bans/{subject}
+│   └── error/
+│       ├── ChatApiError.java             ← structured error envelope with code + message
+│       └── ChatExceptionHandler.java     ← maps BanNotFoundException→404, UserBannedException→403 CHAT_USER_BANNED
 ├── application/
-│   ├── ChatService.java                  ← cache-aside orchestration (PG-first writes, Redis-first reads)
-│   └── RoomService.java                  ← getOrCreate + archive (idempotent)
+│   ├── ChatService.java                  ← cache-aside orchestration (PG-first writes, Redis-first reads) + sendSystemMessage()
+│   ├── RoomService.java                  ← getOrCreate + archive (idempotent)
+│   ├── ModerationService.java            ← ban, listBans, activeBans, bannedSubjects, updateBanDuration, unban
+│   ├── BanSendGuard.java                 ← Layer-2 (resource-state): PG-direct active ban check per send
+│   └── SendGuard.java                    ← @ConditionalOnMissingBean no-op seam
 ├── domain/
 │   ├── ChatRoom.java                     ← entity → chat.chat_room, Persistable<UUID>
-│   ├── ChatMessage.java                  ← entity → chat.chat_message, Persistable<UUID>
-│   └── RoomStatus.java                   ← ACTIVE, ARCHIVED with wireValue()
+│   ├── ChatMessage.java                  ← entity → chat.chat_message, Persistable<UUID>; create() + createSystem()
+│   ├── ChatBan.java                      ← entity → chat.chat_ban; isActive(now) instance method
+│   ├── RoomStatus.java                   ← ACTIVE, ARCHIVED with wireValue()
+│   └── MessageType.java                  ← NORMAL, SUPER_CHAT, SYSTEM enum
+├── messaging/
+│   ├── StreamControlListener.java        ← STREAM_CREATED→getOrCreate+system message, STREAM_ENDED→archive+evict+system message
+│   └── StreamEvent.java                  ← record (eventType, streamId, broadcasterSubject)
+├── security/
+│   ├── ChatAuthorization.java            ← requireAccess() + hasCapability(); PBAC-COMMON-CANDIDATE
+│   ├── EntitlementMatcher.java           ← JWT ent claim parser + policy evaluator; PBAC-COMMON-CANDIDATE
+│   ├── AuthAction.java                   ← PBAC action enum
+│   ├── AuthResourceDomain.java           ← PBAC domain enum
+│   ├── AuthResourceKind.java             ← PBAC kind enum
+│   └── RequiredAuthority.java            ← @PreAuthorize annotation stub
 ├── infrastructure/
 │   ├── persistence/
 │   │   ├── ReactiveChatRoomRepository.java       ← findByExternalKey, existsByExternalKey
-│   │   └── ReactiveChatMessageRepository.java    ← findByRoomIdOrderByCreatedAtDesc, findByRoomIdAndCreatedAtBeforeOrderByCreatedAtDesc
+│   │   ├── ReactiveChatMessageRepository.java    ← findByRoomIdOrderByCreatedAtDesc, findByRoomIdAndCreatedAtBeforeOrderByCreatedAtDesc
+│   │   └── ReactiveChatBanRepository.java        ← findByRoomIdAndBannedSubject, findAllByRoomIdAndExpiresAfterOrNull
 │   └── cache/
-│       └── RedisMessageCache.java        ← ZSET per room (key: chat:room:{roomKey}:recent), 100-msg cap
+│       ├── RedisMessageCache.java        ← ZSET per room (key: chat:room:{roomKey}:recent), 100-msg cap
+│       └── RedisReconnectListener.java   ← evict-on-reconnect (ADR-0003 mechanism #2)
 └── config/
-    ├── SecurityConfig.java               ← existing, unchanged
-    ├── JwtProperties.java                ← existing, unchanged
-    └── ChatAuthenticationEntryPoint.java ← existing, unchanged
+    ├── SecurityConfig.java               ← anyExchange().authenticated()
+    ├── JwtProperties.java                ← JWT issuer + HMAC secret config
+    ├── ChatAuthenticationEntryPoint.java ← 401 WWW-Authenticate suppression
+    ├── ChatPbacProperties.java           ← chat.pbac.enabled flag (CHAT_PBAC_ENABLED)
+    ├── ChatCacheProperties.java          ← chat.cache.room.ttl (CHAT_CACHE_ROOM_TTL)
+    ├── GuardConfig.java                   ← @ConditionalOnMissingBean no-op SendGuard default
+    ├── R2dbcConfig.java                   ← JSONB converters (SocialLinks R/W)
+    ├── StringToMessageTypeConverter.java  ← R2DBC reading converter
+    └── MessageTypeToStringConverter.java  ← R2DBC writing converter
 
-V1__bootstrap_chat_schema.sql             ← existing: chat schema + chat_room + chat_message tables
-V2__add_room_status.sql                   ← new: status + archived_at on chat.chat_room
+V1__bootstrap_chat_schema.sql             ← chat schema + chat_room + chat_message tables
+V2__add_room_status.sql                   ← status + archived_at on chat.chat_room
+V3__chat_message_types_and_ban.sql         ← message_type, gift_amount, gift_currency, chat_ban table, broadcaster_subject
+V4__fix_message_type_varchar.sql           ← CHECK constraint alignment
+V5__chat_ban_usernames.sql                ← banned_username, banned_by_username on chat_ban
+V6__add_message_mentions.sql              ← mentions TEXT[] column + GIN index on chat_message
 ```
 
 ### Work Items
@@ -847,7 +886,14 @@ V2__add_room_status.sql                   ← new: status + archived_at on chat.
 - [x] 3.6 — Cache integration testing (2026-07-11) — Testcontainers suite written (cache-aside, TTL, evict-on-reconnect, evict-on-write-failure); **not yet executed — needs Docker host**
 - [x] 3.7 — Cache warm-up completion (`getMessagesBefore` backfill gap)
 
-### 3.4 Implementation Notes (2026-07-11)
+### Deferred Validation (Docker-gated)
+
+- 3.3 integration test: `STREAM_CREATED` Kafka event → room exists in chat DB → send message succeeds
+- 3.4 integration test: user without `send` entitlement on room gets `403 AUTHZ_DENIED`
+- 3.6 Testcontainers suite execution (`RedisMessageCacheTest`, `ChatServiceTest`) — written, never run
+- Frontend Karma specs for `ChatPanelComponent` and `ChatService` — written, never run (needs Chrome/Karma)
+
+### Phase 3 Checklist
 
 Built as two parallel agent tracks over a shared Phase 0 foundation; see
 [docs/plans/chat-3.4-3.6-blueprint.md](plans/chat-3.4-3.6-blueprint.md).
@@ -899,14 +945,14 @@ ADR-0003 §Deferred).
 | Feature | Schema Done? | Deferred To | Notes |
 |---------|-------------|-------------|-------|
 | Superchat (real payments) | ✅ `message_type`, `gift_amount`, `gift_currency` | Phase 5+ | Payment infra needed; `gift_amount` drives color intensity + pin duration; `giftMessage` dropped — redundant with `body` |
-| User banning enforcement | ✅ `chat_ban` table | 3.4 | `sendMessage()` ban check + moderator REST endpoints needed |
-| System messages (producer) | ✅ `message_type = SYSTEM` | 3.4 or later | Business design needed: which events generate system messages? |
-| @mentions | ❌ (no schema — user ID embedded in text) | Later | Needs autocomplete UI + notification integration |
-| Emoji input | ❌ (no schema) | Later | Needs PrimeNG emoji picker evaluation |
+| User banning enforcement | ✅ `chat_ban` table | 3.4 | ✅ Done — `BanSendGuard` + moderation REST endpoints shipped 2026-07-11 |
+| System messages (producer) | ✅ `message_type = SYSTEM` | 3.4 or later | ✅ Done — `ChatMessage.createSystem()`, `ChatService.sendSystemMessage()`, `StreamControlListener` wiring shipped 2026-07-14 |
+| @mentions | ✅ V6 migration (`TEXT[] mentions`) | Later | ✅ Done — backend regex parsing + `getParticipants` endpoint + p-autocomplete UI + three-tier suggestions shipped 2026-07-14 |
+| Emoji input | ✅ (no schema needed) | Later | ✅ Done — p-overlayPanel + 50-emoji EMOJI_LIST + cursor save/restore shipped 2026-07-14 |
 | Reply threading | ❌ (needs `parent_message_id`) | Later | Schema impact review needed |
 | Real avatar upload (MinIO) | ❌ | Phase 4+ | ADR-0006; DiceBear is the fallback for now |
-| `ChangeDetectionStrategy.OnPush` | N/A | Tech debt | Noted in 3.5 known gaps |
-| Unit tests for ChatPanelComponent | N/A | 3.6 | Zero test coverage currently |
+| `ChangeDetectionStrategy.OnPush` | N/A | — | ✅ Done — applied to ChatPanelComponent 2026-07-13 |
+| Unit tests for ChatPanelComponent | N/A | — | ✅ Done — `chat-panel.component.spec.ts` + `chat.service.spec.ts` written 2026-07-14 (compile-only gate; Karma needs Chrome) |
 
 ### How to Resume (cold start)
 

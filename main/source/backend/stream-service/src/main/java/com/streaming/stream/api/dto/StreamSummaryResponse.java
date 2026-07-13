@@ -14,6 +14,7 @@ public record StreamSummaryResponse(
         UUID categoryId,
         List<String> tags,
         String thumbnailUrl,
+        Long views,
         OffsetDateTime createdAt,
         OffsetDateTime scheduledAt,
         String broadcasterUsername
@@ -27,6 +28,7 @@ public record StreamSummaryResponse(
                 entity.getCategoryId(),
                 entity.getTags() != null ? List.copyOf(Arrays.asList(entity.getTags())) : List.of(),
                 entity.getThumbnailUrl(),
+                entity.getViews(),
                 entity.getCreatedAt(),
                 entity.getScheduledAt(),
                 entity.getBroadcasterUsername()

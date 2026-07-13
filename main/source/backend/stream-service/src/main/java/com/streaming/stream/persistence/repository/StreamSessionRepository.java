@@ -16,4 +16,10 @@ public interface StreamSessionRepository extends ReactiveCrudRepository<StreamSe
     Mono<StreamSessionEntity> findByStreamKeyHash(String streamKeyHash);
 
     Flux<StreamSessionEntity> findAllByBroadcasterUsernameOrderByCreatedAtDesc(String broadcasterUsername);
+
+    /**
+     * Newest single session for a channel — used by the identity endpoint
+     * to resolve verified status without fetching all sessions.
+     */
+    Mono<StreamSessionEntity> findFirstByBroadcasterUsernameOrderByCreatedAtDesc(String broadcasterUsername);
 }

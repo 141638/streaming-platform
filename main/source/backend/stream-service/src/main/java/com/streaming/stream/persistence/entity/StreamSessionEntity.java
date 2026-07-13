@@ -88,6 +88,21 @@ public class StreamSessionEntity implements Persistable<UUID> {
     private String thumbnailUrl;
 
     /**
+     * URL of the archived VOD; {@code null} until the streamer explicitly
+     * archives the ended stream. Set by {@code POST /v1/streams/{id}/archive}.
+     * Served from SRS DVR persistent volume. See Phase 2.5c blueprint.
+     */
+    @Column("archived_url")
+    private String archivedUrl;
+
+    /**
+     * Accumulated view count. Updated via scheduled Redis flush (see ADR-0008).
+     * Defaults to 0 for new and pre-existing streams.
+     */
+    @Column("views")
+    private Long views;
+
+    /**
      * Public channel handle denormalized from JWT attr at stream creation.
      * Client-read-only — never accepted from the request body.
      * {@code NULL} for pre-existing rows or tokens issued before the

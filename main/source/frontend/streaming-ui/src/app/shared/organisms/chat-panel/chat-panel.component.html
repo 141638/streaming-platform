@@ -103,7 +103,7 @@
         @if (msg.messageType === messageType.SYSTEM) {
           <!-- System message: centered badge -->
           <div class="flex justify-content-center py-1">
-            <span class="text-xs px-3 py-1 border-round-xl" style="background: var(--surface-200); color: var(--color-text-muted)">
+            <span class="text-xs px-3 py-1 border-round-xl system-badge">
               {{ msg.body }}
             </span>
           </div>
@@ -219,23 +219,75 @@
   }
 
   <!-- Input bar -->
-  <div class="chat-input-bar flex gap-2 p-3 border-top-1 surface-border flex-initial">
-    <input
-      pInputText
-      class="flex-auto"
-      [formControl]="messageInput"
-      [placeholder]="inputPlaceholder()"
-      (keydown.enter)="send()"
+  <div class="chat-input-bar flex align-items-center gap-2 p-3 border-top-1 surface-border flex-initial" style="position: relative;">
+    <p-button
+      type="button"
+      icon="pi pi-face-smile"
+      severity="secondary"
+      [text]="true"
+      size="small"
       [disabled]="roomStatus() === 'archived' || bannedState()"
+      ariaLabel="Open emoji picker"
+      (mousedown)="captureCursor()"
+      (click)="emojiOverlay.toggle($event)"
     />
+    <div class="flex-auto">
+      <p-autocomplete
+        #autoCompleteRef
+        [formControl]="messageInput"
+        [suggestions]="mentionSuggestions()"
+        (completeMethod)="completeMentions($event)"
+        (onSelect)="onMentionSelect($event)"
+        (onShow)="onMentionPanelShow()"
+        (onHide)="onMentionPanelHide()"
+        [dropdown]="false"
+        [forceSelection]="false"
+        [disabled]="roomStatus() === 'archived' || bannedState()"
+        [placeholder]="inputPlaceholder()"
+        inputStyleClass="w-full"
+        styleClass="w-full"
+        (keydown)="onInputKeydown($event)"
+        [minLength]="1"
+        inputId="chat-message-input"
+      >
+        <ng-template pTemplate="item" let-name>
+          <div class="flex align-items-center gap-2 px-2 py-1">
+            @if (isMentionFallback(name)) {
+              <span class="pi pi-user-plus text-color-secondary"></span>
+              <span class="text-sm text-color-secondary">Add <span class="font-semibold text-color-primary">&#64;{{ name }}</span></span>
+            } @else {
+              <span class="text-sm font-medium">&#64;{{ name }}</span>
+            }
+          </div>
+        </ng-template>
+      </p-autocomplete>
+    </div>
     <p-button
       type="button"
       icon="pi pi-send"
       [loading]="sending()"
       [disabled]="messageInput.invalid || sending() || roomStatus() === 'archived' || bannedState()"
       (click)="send()"
-    ></p-button>
+    />
   </div>
+
+  <!-- Emoji picker overlay -->
+  <p-popover
+    #emojiOverlay
+    [dismissable]="true"
+    (onShow)="emojiPickerOpen.set(true)"
+    (onHide)="emojiPickerOpen.set(false)"
+  >
+    <div class="emoji-grid flex flex-wrap gap-1 p-2" style="max-width: 20rem;">
+      @for (emoji of EMOJI_LIST; track emoji) {
+        <button
+          type="button"
+          class="emoji-btn flex align-items-center justify-content-center border-round cursor-pointer p-2"
+          (click)="insertEmoji(emoji)"
+        >{{ emoji }}</button>
+      }
+    </div>
+  </p-popover>
 
   <!-- Moderation drawer (lazy body so loadBans fires on open) -->
   <p-drawer

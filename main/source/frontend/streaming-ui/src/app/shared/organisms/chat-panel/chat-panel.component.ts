@@ -7,6 +7,7 @@ import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   AfterViewInit,
+  ChangeDetectionStrategy,
   Component,
   computed,
   DestroyRef,
@@ -17,12 +18,18 @@ import {
   viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
+import {
+  AutoCompleteCompleteEvent,
+  AutoCompleteModule,
+  AutoCompleteSelectEvent,
+} from 'primeng/autocomplete';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { DrawerModule } from 'primeng/drawer';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
+import { PopoverModule } from 'primeng/popover';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
 import { catchError, finalize, interval, of, switchMap } from 'rxjs';
 import {
@@ -31,7 +38,10 @@ import {
 } from '../../../core/contracts/chat-message-response.dto';
 import { RoomResponseDto } from '../../../core/contracts/room-response.dto';
 import { dicebearAvatarUrl, truncateSub } from '../../../core/lib/avatar';
-import { friendlyChatMessage, parseChatApiError } from '../../../core/lib/chat-error';
+import {
+  friendlyChatMessage,
+  parseChatApiError,
+} from '../../../core/lib/chat-error';
 import { AuthService } from '../../../core/services/auth.service';
 import { ChatModerationService } from '../../../core/services/chat-moderation.service';
 import { ChatService } from '../../../core/services/chat.service';
@@ -53,15 +63,71 @@ const POLL_INTERVAL_MS = 3000;
 const NEAR_BOTTOM_THRESHOLD = 80;
 const NEAR_TOP_THRESHOLD = 120;
 
+/** Curated emoji set for the in-chat picker — no dependency needed. */
+const EMOJI_LIST: string[] = [
+  '😀',
+  '😂',
+  '🤣',
+  '😍',
+  '🥰',
+  '😎',
+  '🤩',
+  '😇',
+  '🤔',
+  '😅',
+  '👍',
+  '👎',
+  '👏',
+  '🙌',
+  '💪',
+  '🤝',
+  '🔥',
+  '🎉',
+  '❤️',
+  '💔',
+  '😢',
+  '😡',
+  '🤬',
+  '😱',
+  '🥺',
+  '🙏',
+  '✨',
+  '💯',
+  '🎯',
+  '⭐',
+  '🍕',
+  '☕',
+  '🎮',
+  '📺',
+  '🎵',
+  '📷',
+  '💻',
+  '🐱',
+  '🐶',
+  '🌻',
+  '👋',
+  '🤷',
+  '💀',
+  '👀',
+  '🧠',
+  '🗿',
+  '🚀',
+  '💩',
+  '🫡',
+  '🥳',
+];
+
 @Component({
   selector: 'app-chat-panel',
   standalone: true,
   imports: [
     ReactiveFormsModule,
+    AutoCompleteModule,
     ButtonModule,
     DatePipe,
     InputTextModule,
     MessageModule,
+    PopoverModule,
     ProgressSpinnerModule,
     DrawerModule,
     DialogModule,
@@ -75,6 +141,7 @@ const NEAR_TOP_THRESHOLD = 120;
   providers: [ChatModerationService],
   templateUrl: './chat-panel.component.html',
   styleUrl: './chat-panel.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ChatPanelComponent implements AfterViewInit, OnDestroy {
   /** The room's external key — determines which room to connect to. */
@@ -137,6 +204,57 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
 
   protected readonly currentUserSub = signal<string | null>(null);
   protected readonly currentUsername = signal<string | null>(null);
+
+  // ── Emoji picker ────────────────────────────────────────────────────────
+
+  protected readonly EMOJI_LIST = EMOJI_LIST;
+  protected readonly emojiPickerOpen = signal(false);
+
+  /** Saved cursor position — captured on mousedown before focus shifts away from the input. */
+  private savedSelectionStart: number | null = null;
+  private savedSelectionEnd: number | null = null;
+
+  // ── @mention autocomplete ───────────────────────────────────────────────
+
+  /** Unique chatters from the current message list, most recent first. */
+  protected readonly uniqueChatters = computed(() => {
+    const seen = new Set<string>();
+    const chatters: string[] = [];
+    for (let i = this.messages().length - 1; i >= 0; i--) {
+      const name = this.messages()[i].authorUsername;
+      if (name !== null && name !== 'System' && !seen.has(name)) {
+        seen.add(name);
+        chatters.push(name);
+      }
+    }
+    return chatters;
+  });
+
+  /** Suggestions for p-autocomplete — set by completeMethod, consumed by template. */
+  protected readonly mentionSuggestions = signal<string[]>([]);
+
+  /** Whether the mention autocomplete overlay panel is currently visible. */
+  protected readonly mentionPanelVisible = signal(false);
+
+  /**
+   * Snapshot of the input text and @ position captured in
+   * {@link #completeMentions}, before p-autocomplete overwrites the input
+   * on select. Used in {@link #onMentionSelect} to reconstruct the text
+   * around the replaced mention.
+   */
+  private savedMentionStart: number | null = null;
+  private savedOriginalQuery: string | null = null;
+
+  /**
+   * Guard flag set true in {@link #onMentionSelect} so the Enter keydown
+   * handler (which fires after p-autocomplete has already selected the item
+   * and cleared suggestions) can skip sending. Auto-clears via microtask.
+   */
+  private mentionJustSelected = false;
+
+  /** Monotonic counter for API requests — only the latest response is applied. */
+  private mentionRequestId = 0;
+
   private clientIdCounter = 0;
   private isNearBottom = true;
   private oldestCursor: string | null = null;
@@ -199,6 +317,7 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
       giftAmount: null,
       giftCurrency: null,
       createdAt: new Date().toISOString(),
+      mentions: [],
       status: 'sending',
       clientId,
     };
@@ -313,7 +432,8 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
       })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        error: (err: unknown) => this.errorMessage.set(this.moderationError(err)),
+        error: (err: unknown) =>
+          this.errorMessage.set(this.moderationError(err)),
       });
 
     this.closeBanDialog();
@@ -354,7 +474,8 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
       .unban(this.roomKey, target.subject)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        error: (err: unknown) => this.errorMessage.set(this.moderationError(err)),
+        error: (err: unknown) =>
+          this.errorMessage.set(this.moderationError(err)),
       });
   }
 
@@ -440,9 +561,6 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
       .subscribe({
         next: (room: RoomResponseDto) => {
           this.applyModerationCapability(room);
-          // Enforcement floor on room load: a banned viewer sees the disabled input
-          // + banner immediately, without waiting for a failed send or the (future)
-          // push pipeline. The 403 floor in send() stays as a backstop.
           this.bannedState.set(room.viewerBanned);
           if (room.status === 'ARCHIVED') {
             this.roomStatus.set('archived');
@@ -675,6 +793,232 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
       { ...response, status: 'sent' as const, clientId: response.id },
     ]);
     requestAnimationFrame(() => this.scrollToBottom());
+  }
+
+  // ── Emoji picker ────────────────────────────────────────────────────────
+
+  /** Save cursor position before focus is lost when clicking the emoji button. */
+  protected captureCursor(): void {
+    const input = document.getElementById(
+      'chat-message-input',
+    ) as HTMLInputElement | null;
+    if (input) {
+      this.savedSelectionStart = input.selectionStart;
+      this.savedSelectionEnd = input.selectionEnd;
+    }
+  }
+
+  /** Toggle the emoji picker overlay. Closes mentions if open. */
+  protected toggleEmojiPicker(): void {
+    this.emojiPickerOpen.update((v) => !v);
+  }
+
+  /** Insert an emoji at the saved cursor position and close the picker. */
+  protected insertEmoji(emoji: string): void {
+    this.insertAtCursor(emoji);
+    this.emojiPickerOpen.set(false);
+  }
+
+  /** Insert text at the saved cursor position, restoring focus afterward. */
+  private insertAtCursor(text: string): void {
+    const input = document.getElementById(
+      'chat-message-input',
+    ) as HTMLInputElement | null;
+    if (!input) return;
+    // Use saved cursor position (captured on mousedown before blur), falling
+    // back to the end of the current value if nothing was saved.
+    const start =
+      this.savedSelectionStart ?? input.selectionStart ?? input.value.length;
+    const end = this.savedSelectionEnd ?? input.selectionEnd ?? start;
+    const current = this.messageInput.value ?? '';
+    this.messageInput.setValue(
+      current.slice(0, start) + text + current.slice(end),
+    );
+    // Clear saved positions after use
+    this.savedSelectionStart = null;
+    this.savedSelectionEnd = null;
+    requestAnimationFrame(() => {
+      const pos = start + text.length;
+      input.setSelectionRange(pos, pos);
+      input.focus();
+    });
+  }
+
+  // ── @mention autocomplete (p-autocomplete) ──────────────────────────────
+
+  /**
+   * Autocomplete complete-method — parses the input for a @mention trigger,
+   * snapshots the original text (so {@link #onMentionSelect} can reconstruct
+   * after p-autocomplete overwrites the input), then fetches suggestions
+   * from local chatters and the participants API.
+   */
+  protected completeMentions(event: AutoCompleteCompleteEvent): void {
+    const mention = this.detectMention(event.query, event.query.length);
+    if (mention !== null) {
+      // Snapshot original text before p-autocomplete can overwrite it on select
+      this.savedMentionStart = mention.start;
+      this.savedOriginalQuery = event.query;
+      this.fetchMentionSuggestions(mention.query);
+    } else {
+      this.savedMentionStart = null;
+      this.savedOriginalQuery = null;
+      this.mentionSuggestions.set([]);
+      this.mentionPanelVisible.set(false);
+    }
+  }
+
+  /**
+   * Autocomplete on-select handler — uses the saved original text (from
+   * {@link #completeMentions}) to replace only the @query portion with the
+   * selected username, leaving surrounding text intact. p-autocomplete has
+   * already overwritten the form control value at this point, so we
+   * reconstruct from the snapshot.
+   *
+   * <p>Sets {@link #mentionJustSelected} so the Enter keydown handler (which
+   * fires after this, since p-autocomplete's internal handler runs on the
+   * input before the event bubbles to our host binding) can skip sending.
+   */
+  protected onMentionSelect(event: AutoCompleteSelectEvent): void {
+    const selected = event.value as string;
+    const start = this.savedMentionStart;
+    const original = this.savedOriginalQuery;
+    if (start === null || original === null) return;
+
+    const before = original.slice(0, start);
+    // Compute the query length from the original text: @ + query → end of word or string
+    const afterAt = original.slice(start + 1);
+    const spaceOrEnd = afterAt.search(/[\s]|$/);
+    const queryLen = spaceOrEnd === -1 ? afterAt.length : spaceOrEnd;
+    const after = original.slice(start + 1 + queryLen);
+
+    this.messageInput.setValue(before + '@' + selected + ' ' + after);
+    this.mentionSuggestions.set([]);
+    this.mentionPanelVisible.set(false);
+    this.savedMentionStart = null;
+    this.savedOriginalQuery = null;
+
+    // Guard against the Enter keydown that's about to bubble to our handler
+    this.mentionJustSelected = true;
+    // Auto-clear after this event cycle so click-selects don't block the next Enter
+    setTimeout(() => {
+      this.mentionJustSelected = false;
+    }, 0);
+
+    const input = document.getElementById(
+      'chat-message-input',
+    ) as HTMLInputElement | null;
+    const newPos = start + selected.length + 2; // @name + trailing space
+    requestAnimationFrame(() => {
+      input?.setSelectionRange(newPos, newPos);
+      input?.focus();
+    });
+  }
+
+  /** Find a valid @mention trigger in the text before cursor. */
+  private detectMention(
+    text: string,
+    cursorPos: number,
+  ): { query: string; start: number } | null {
+    const before = text.slice(0, cursorPos);
+    const atIndex = before.lastIndexOf('@');
+    if (atIndex === -1) return null;
+    const charBeforeAt = atIndex > 0 ? before[atIndex - 1] : ' ';
+    if (!/[\s]/.test(charBeforeAt)) return null;
+    const query = before.slice(atIndex + 1);
+    if (query.includes(' ') || query.length > 32) return null;
+    return { query, start: atIndex };
+  }
+
+  /**
+   * Fetch mention suggestions: instant local results from visible chatters
+   * first, then enriched with API results (anyone who ever chatted in this
+   * room). Uses a monotonic request-id so only the latest API response is
+   * applied, preventing stale merges on rapid typing.
+   */
+  private fetchMentionSuggestions(query: string): void {
+    const q = query.toLowerCase();
+    const chatters = this.uniqueChatters();
+    // Tier 1: local chatters (instant)
+    const local: string[] =
+      q.length === 0
+        ? chatters.slice(0, 8)
+        : chatters.filter((n) => n.toLowerCase().startsWith(q)).slice(0, 8);
+    // Exact-match fallback for unknown users
+    if (local.length === 0 && q.length >= 2) {
+      local.push(query);
+    }
+    this.mentionSuggestions.set(local);
+    this.mentionPanelVisible.set(local.length > 0);
+
+    // Tier 2: API participants (anyone who ever chatted in this room)
+    const requestId = ++this.mentionRequestId;
+    this.chatService
+      .getParticipants(this.roomKey, q, 10)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (participants) => {
+          // Stale response — a newer completeMethod call already fired
+          if (requestId !== this.mentionRequestId) return;
+          const seen = new Set(this.mentionSuggestions());
+          for (const p of participants) {
+            if (!seen.has(p)) seen.add(p);
+          }
+          this.mentionSuggestions.set([...seen].slice(0, 10));
+        },
+        error: () => {
+          // Non-fatal: local results are already shown
+        },
+      });
+  }
+
+  /** p-autocomplete overlay panel became visible. */
+  protected onMentionPanelShow(): void {
+    // Panel visibility is also tracked via mentionPanelVisible,
+    // but onShow confirms p-autocomplete actually rendered the overlay.
+    this.mentionPanelVisible.set(true);
+  }
+
+  /** p-autocomplete overlay panel was dismissed (Escape, click-away, blur). */
+  protected onMentionPanelHide(): void {
+    this.mentionPanelVisible.set(false);
+    this.savedMentionStart = null;
+    this.savedOriginalQuery = null;
+  }
+
+  /**
+   * Send on Enter when no mention dropdown is active.
+   *
+   * <p>p-autocomplete's internal keydown handler fires on the input element
+   * before the event bubbles to our host binding. When the mention panel is
+   * open pressing Enter selects the highlighted item and fires
+   * {@link #onMentionSelect} first — which sets {@link #mentionJustSelected}.
+   * We check that flag first so we don't send immediately after a selection.
+   * {@link #mentionPanelVisible} is the fallback check for cases where
+   * p-autocomplete shows the panel but no selection occurs.
+   */
+  protected onInputKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Enter' || event.shiftKey) return;
+
+    // p-autocomplete just selected a mention → don't send
+    if (this.mentionJustSelected) {
+      this.mentionJustSelected = false;
+      event.preventDefault();
+      return;
+    }
+
+    // Mention panel is still open (arrow keys, etc.) → let p-autocomplete handle it
+    if (this.mentionPanelVisible()) return;
+
+    event.preventDefault();
+    this.send();
+  }
+
+  /**
+   * Whether a mention suggestion is a fallback — not a known chatter in the
+   * current room. Rendered with a distinct "Add user" affordance in the template.
+   */
+  protected isMentionFallback(name: string): boolean {
+    return !this.uniqueChatters().includes(name);
   }
 
   private generateClientId(): string {

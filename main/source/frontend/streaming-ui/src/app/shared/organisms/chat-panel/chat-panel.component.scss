@@ -64,4 +64,54 @@
   .chat-row:focus-within .mod-actions {
     opacity: 1;
   }
+
+  // System message badge: solid pill with muted text
+  .system-badge {
+    background: var(--surface-200);
+    color: var(--color-text-muted);
+  }
+
+  // Emoji picker grid buttons
+  .emoji-btn {
+    width: 2rem;
+    height: 2rem;
+    font-size: 1.2rem;
+    border: none;
+    background: transparent;
+    transition: background 150ms ease;
+    cursor: pointer;
+
+    &:hover,
+    &:focus-visible {
+      background: var(--surface-100);
+    }
+  }
+}
+
+// Autocomplete dropdown panel: PrimeNG renders this in the overlay layer,
+// outside the component host, so we style via ::ng-deep scoped to :host.
+:host ::ng-deep {
+  .p-autocomplete-panel {
+    background: var(--color-surface-1);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--color-border-1);
+
+    .p-autocomplete-item {
+      &:hover,
+      &.p-focus {
+        background: var(--color-brand-ring);
+      }
+    }
+  }
+
+  // Overlay panel (emoji picker): solid background with blur for depth
+  .p-overlaypanel {
+    background: var(--color-surface-1);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--color-border-1);
+
+    .p-overlaypanel-content {
+      background: transparent;
+    }
+  }
 }

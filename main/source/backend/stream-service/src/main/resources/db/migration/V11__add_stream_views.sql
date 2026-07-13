@@ -1,0 +1,2 @@
+ALTER TABLE stream.stream_session
+    ADD COLUMN IF NOT EXISTS views BIGINT NOT NULL DEFAULT 0;

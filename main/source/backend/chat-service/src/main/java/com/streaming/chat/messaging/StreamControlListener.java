@@ -3,6 +3,7 @@ package com.streaming.chat.messaging;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.streaming.chat.application.ChatService;
 import com.streaming.chat.application.RoomService;
 import com.streaming.chat.infrastructure.cache.RedisMessageCache;
 import org.slf4j.Logger;
@@ -17,6 +18,9 @@ import org.springframework.stereotype.Component;
  * notification-service). Room creation on {@code STREAM_CREATED} and archival
  * on {@code STREAM_ENDED} are both idempotent — duplicate or out-of-order
  * events are safe.
+ *
+ * <p>Posts a system message to the room on stream start / stream end so
+ * viewers see lifecycle announcements inline in chat.
  */
 @Component
 public class StreamControlListener {
@@ -25,11 +29,13 @@ public class StreamControlListener {
 
     private final RoomService roomService;
     private final RedisMessageCache cache;
+    private final ChatService chatService;
     private final ObjectMapper objectMapper;
 
-    public StreamControlListener(RoomService roomService, RedisMessageCache cache) {
+    public StreamControlListener(RoomService roomService, RedisMessageCache cache, ChatService chatService) {
         this.roomService = roomService;
         this.cache = cache;
+        this.chatService = chatService;
         this.objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
     }
 
@@ -55,6 +61,9 @@ public class StreamControlListener {
                                 room.getExternalKey(), room.getStatus().wireValue()))
                         .doOnError(err -> log.error("Failed to create room for streamId={}: {}",
                                 event.streamId(), err.getMessage()))
+                        .then(chatService.sendSystemMessage(event.streamId(), "Stream started"))
+                        .doOnSuccess(msg -> log.info("System message posted for STREAM_CREATED: roomKey={}",
+                                event.streamId()))
                         .subscribe();
             } else if (event.isStreamEnded()) {
                 roomService.archive(event.streamId())
@@ -66,6 +75,9 @@ public class StreamControlListener {
                         })
                         .doOnError(err -> log.error("Failed to archive room for streamId={}: {}",
                                 event.streamId(), err.getMessage()))
+                        .then(chatService.sendSystemMessage(event.streamId(), "Stream ended"))
+                        .doOnSuccess(msg -> log.info("System message posted for STREAM_ENDED: roomKey={}",
+                                event.streamId()))
                         .subscribe();
             } else {
                 log.debug("Ignoring stream event type={} (no chat lifecycle action)", event.eventType());

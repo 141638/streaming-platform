@@ -1,12 +1,7 @@
 package com.streaming.chat.api;
 
-import com.streaming.chat.api.dto.MessageResponse;
-import com.streaming.chat.api.dto.RoomResponse;
-import com.streaming.chat.api.dto.SendMessageRequest;
-import com.streaming.chat.application.ChatService;
-import com.streaming.common.api.ApiMessage;
-import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
+import java.util.List;
+
 import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -17,13 +12,23 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import com.streaming.chat.api.dto.MessageResponse;
+import com.streaming.chat.api.dto.RoomResponse;
+import com.streaming.chat.api.dto.SendMessageRequest;
+import com.streaming.chat.application.ChatService;
+import com.streaming.common.api.ApiMessage;
+
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
  * REST controller for chat operations.
  *
- * <p>The author identity is always extracted from the JWT, never from the
+ * <p>
+ * The author identity is always extracted from the JWT, never from the
  * request body. The {@code authorSubject} comes from {@code sub};
  * {@code authorUsername} is a convenience denormalization from
  * {@code attr.username}.
@@ -43,7 +48,8 @@ public class ChatController {
     /**
      * Send a message to a chat room.
      *
-     * <p>The room must already exist (created from a {@code STREAM_CREATED} Kafka
+     * <p>
+     * The room must already exist (created from a {@code STREAM_CREATED} Kafka
      * event) and be active — sending to a missing or archived room errors. The
      * author is derived from {@code jwt.subject} and {@code jwt.attr.username},
      * not from the request body.
@@ -52,8 +58,7 @@ public class ChatController {
     public Mono<MessageResponse> sendMessage(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable String roomKey,
-            @Valid @RequestBody SendMessageRequest body
-    ) {
+            @Valid @RequestBody SendMessageRequest body) {
         String authorSubject = jwt.getSubject();
         String authorUsername = JwtAttr.username(jwt);
         return chatService.sendMessage(jwt, roomKey, authorSubject, authorUsername, body.content());
@@ -66,8 +71,7 @@ public class ChatController {
     @GetMapping("/rooms/{roomKey}")
     public Mono<RoomResponse> getRoom(
             @AuthenticationPrincipal Jwt jwt,
-            @PathVariable String roomKey
-    ) {
+            @PathVariable String roomKey) {
         return chatService.getRoom(jwt, roomKey);
     }
 
@@ -81,14 +85,28 @@ public class ChatController {
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable String roomKey,
             @RequestParam(required = false) String before,
-            @RequestParam(defaultValue = "50") int limit
-    ) {
+            @RequestParam(defaultValue = "50") int limit) {
         if (before != null && !before.isBlank()) {
             return chatService.getMessagesBefore(jwt, roomKey, before, limit)
                     .flatMapMany(Flux::fromIterable);
         }
         return chatService.getRecentMessages(jwt, roomKey)
                 .flatMapMany(Flux::fromIterable);
+    }
+
+    /**
+     * Find distinct author usernames for @mention autocomplete.
+     * Returns anyone who has ever chatted in this room (not just the current
+     * visible message list). Pass {@code q} for prefix filtering
+     * (case-insensitive).
+     */
+    @GetMapping("/rooms/{roomKey}/participants")
+    public Mono<List<String>> getParticipants(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String roomKey,
+            @RequestParam(defaultValue = "") String q,
+            @RequestParam(defaultValue = "10") int limit) {
+        return chatService.getParticipants(roomKey, q, limit);
     }
 
 }

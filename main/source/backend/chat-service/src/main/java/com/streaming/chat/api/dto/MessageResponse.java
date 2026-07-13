@@ -5,6 +5,9 @@ import com.streaming.chat.domain.MessageType;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -20,7 +23,8 @@ public record MessageResponse(
         String messageType,
         BigDecimal giftAmount,
         String giftCurrency,
-        OffsetDateTime createdAt
+        OffsetDateTime createdAt,
+        List<String> mentions
 ) {
     /**
      * Build a response from a persisted message and the room's external key.
@@ -36,7 +40,8 @@ public record MessageResponse(
                 msg.getMessageType() != null ? msg.getMessageType().wireValue() : MessageType.NORMAL.wireValue(),
                 msg.getGiftAmount(),
                 msg.getGiftCurrency(),
-                msg.getCreatedAt()
+                msg.getCreatedAt(),
+                msg.getMentions() != null ? Arrays.asList(msg.getMentions()) : Collections.emptyList()
         );
     }
 }

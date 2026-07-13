@@ -25,8 +25,11 @@ import reactor.core.publisher.Mono;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * Application service for chat message operations.
@@ -50,6 +53,9 @@ public class ChatService {
 
     private static final Logger log = LoggerFactory.getLogger(ChatService.class);
     private static final int MAX_RECENT = 50;
+
+    /** Extracts @username mentions from message bodies. Must be preceded by whitespace or start-of-string. */
+    private static final Pattern MENTION_PATTERN = Pattern.compile("(?<!\\w)@(\\w{1,32})");
 
     private final ReactiveChatRoomRepository roomRepository;
     private final ReactiveChatMessageRepository messageRepository;
@@ -91,12 +97,60 @@ public class ChatService {
                 .flatMap(room -> persistAndCache(room, authorSubject, authorUsername, body, now));
     }
 
+    /**
+     * Post a system message to a chat room — automated announcements (stream
+     * started, stream ended, etc.) that bypass JWT-based PBAC authorization and
+     * the ban guard. The room must exist and be active.
+     *
+     * @param roomKey the room's external key
+     * @param body    the system message content
+     * @return the posted message as a response DTO
+     */
+    public Mono<MessageResponse> sendSystemMessage(String roomKey, String body) {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        return roomRepository.findByExternalKey(roomKey)
+                .switchIfEmpty(Mono.error(new RoomNotFoundException(roomKey)))
+                .filter(ChatRoom::isActive)
+                .switchIfEmpty(Mono.error(new RoomArchivedException(roomKey)))
+                .flatMap(room -> {
+                    ChatMessage msg = ChatMessage.createSystem(room.getId(), body, now);
+                    return messageRepository.save(msg)
+                            .map(saved -> MessageResponse.from(saved, room.getExternalKey()))
+                            .flatMap(this::cacheWrite);
+                });
+    }
+
     private Mono<MessageResponse> persistAndCache(
             ChatRoom room, String authorSubject, String authorUsername, String body, OffsetDateTime now) {
-        ChatMessage msg = ChatMessage.create(room.getId(), authorSubject, authorUsername, body, now);
+        List<String> mentionList = parseMentions(body);
+        String[] mentions = mentionList.toArray(new String[0]);
+        ChatMessage msg = ChatMessage.create(room.getId(), authorSubject, authorUsername, body, now, mentions);
+        // DEFERRED (Phase 6 — Notification Service):
+        // For each username in `mentions`:
+        //   1. Resolve user subject from auth-service or local denormalization
+        //   2. Check SSE presence
+        //   3. If online → push SSE notification
+        //   4. If offline → queue email digest (batch window: 15 min)
+        //   5. Email deep-link: /stream/{roomKey}?scrollTo={messageId}
         return messageRepository.save(msg)
                 .map(saved -> MessageResponse.from(saved, room.getExternalKey()))
                 .flatMap(this::cacheWrite);
+    }
+
+    /**
+     * Extract @username mentions from the message body.
+     * The backend is the authority on who got mentioned — the client
+     * autocomplete is UX-only. Matches {@code @word} where word is 1–32
+     * word characters preceded by whitespace or start-of-string.
+     */
+    static List<String> parseMentions(String body) {
+        if (body == null || body.isBlank()) {
+            return Collections.emptyList();
+        }
+        return MENTION_PATTERN.matcher(body).results()
+                .map(r -> r.group(1))
+                .distinct()
+                .collect(Collectors.toList());
     }
 
     /**
@@ -290,6 +344,24 @@ public class ChatService {
         } catch (Exception e) {
             return Instant.now();
         }
+    }
+
+    /**
+     * Get distinct author usernames for a room, filtered by prefix query.
+     * Used by the @mention autocomplete for Tier-2 participant discovery —
+     * finds anyone who has ever chatted in this room, not just visible
+     * messages.
+     *
+     * @param roomKey the room's external key
+     * @param query   prefix filter (case-insensitive); empty returns top 10
+     * @param limit   max results (default 10)
+     */
+    public Mono<List<String>> getParticipants(String roomKey, String query, int limit) {
+        return roomRepository.findByExternalKey(roomKey)
+                .switchIfEmpty(Mono.error(new RoomNotFoundException(roomKey)))
+                .flatMapMany(room -> messageRepository
+                        .findDistinctAuthorUsernamesByRoomId(room.getId(), query != null ? query : "", limit))
+                .collectList();
     }
 
     // -- exceptions --------------------------------------------------------

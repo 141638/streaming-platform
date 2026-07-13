@@ -66,7 +66,7 @@ Not automatic — agents are invoked **on your explicit request** or via command
 - **Backend**: Java 21 / Spring Boot / Gradle — layered reactive (WebFlux + R2DBC) with hexagonal ports
 - **Frontend**: Angular with PrimeNG — atomic design methodology
 - **Infrastructure**: PostgreSQL, Redis, Kafka, SRS (media server) — Docker Compose for local dev
-- **Docs**: `docs/ARCHITECTURE.md`, `docs/SERVICE-ARCHITECTURE.md`
+- **Docs**: `docs/ARCHITECTURE.md`, `docs/SERVICE-ARCHITECTURE.md`, `docs/REDIS-KAFKA-PRODUCTION-GAP.md`
 
 ## Coding Style
 

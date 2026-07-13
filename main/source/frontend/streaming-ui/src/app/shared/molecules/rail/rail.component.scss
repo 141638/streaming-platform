@@ -1,0 +1,52 @@
+:host {
+  display: block;
+}
+
+.rail-viewport {
+  position: relative;
+}
+
+.rail-track {
+  scrollbar-width: none;
+  cursor: grab;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.rail-card-skeleton {
+  width: 16rem;
+  flex-shrink: 0;
+}
+
+.rail-chevron {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  backdrop-filter: blur(4px);
+  background: var(--surface-overlay, rgba(0, 0, 0, 0.4)) !important;
+  color: var(--text-color, #fff) !important;
+
+  &-left {
+    left: 0.25rem;
+  }
+
+  &-right {
+    right: 0.25rem;
+  }
+}
+
+.rail-see-more {
+  color: var(--color-accent, var(--primary-color));
+  transition: opacity 150ms ease;
+
+  &:hover {
+    opacity: 0.7;
+  }
+}

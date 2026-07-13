@@ -1,17 +1,12 @@
 import {
   ChangeDetectionStrategy,
   Component,
-  ElementRef,
   input,
-  signal,
-  viewChild,
 } from '@angular/core';
 import { RouterModule } from '@angular/router';
-import { CardModule } from 'primeng/card';
-import { ButtonModule } from 'primeng/button';
-import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { StreamSummaryResponseDto } from '../../../core/contracts/stream-summary-response.dto';
+import { RailComponent } from '../../molecules/rail/rail.component';
 import { StreamStatusBadgeComponent } from '../../molecules/stream-status-badge/stream-status-badge.component';
 
 /** Derive a stable hue from a category name for the placeholder thumbnail. */
@@ -23,15 +18,17 @@ function categoryHue(name: string): number {
   return Math.abs(hash % 360);
 }
 
+/**
+ * A rail of session cards for the channel Home tab. Delegates scroll
+ * behaviour and header to {@link RailComponent}; only owns card rendering.
+ */
 @Component({
   selector: 'app-session-rail',
   standalone: true,
   imports: [
     RouterModule,
-    CardModule,
-    ButtonModule,
-    SkeletonModule,
     TooltipModule,
+    RailComponent,
     StreamStatusBadgeComponent,
   ],
   templateUrl: './session-rail.component.html',
@@ -41,63 +38,6 @@ function categoryHue(name: string): number {
 export class SessionRailComponent {
   public readonly sessions = input.required<readonly StreamSummaryResponseDto[]>();
   public readonly loading = input(false);
-
-  private readonly railRef = viewChild.required<ElementRef<HTMLElement>>('rail');
-
-  protected readonly canScrollLeft = signal(false);
-  protected readonly canScrollRight = signal(true);
-
-  // ── Drag scroll ─────────────────────────────────────────────────────────
-
-  private dragging = false;
-  private startX = 0;
-  private startScroll = 0;
-
-  protected onMouseDown(event: MouseEvent): void {
-    this.dragging = true;
-    this.startX = event.clientX;
-    this.startScroll = this.railRef().nativeElement.scrollLeft;
-    event.preventDefault();
-  }
-
-  protected onMouseMove(event: MouseEvent): void {
-    if (!this.dragging) {
-      return;
-    }
-    const dx = this.startX - event.clientX;
-    this.railRef().nativeElement.scrollLeft = this.startScroll + dx;
-  }
-
-  protected onMouseUp(): void {
-    this.dragging = false;
-    this.updateScrollState();
-  }
-
-  // ── Chevron buttons ─────────────────────────────────────────────────────
-
-  protected scrollLeft(): void {
-    const el = this.railRef().nativeElement;
-    el.scrollBy({ left: -el.clientWidth * 0.6, behavior: 'smooth' });
-    setTimeout(() => this.updateScrollState(), 300);
-  }
-
-  protected scrollRight(): void {
-    const el = this.railRef().nativeElement;
-    el.scrollBy({ left: el.clientWidth * 0.6, behavior: 'smooth' });
-    setTimeout(() => this.updateScrollState(), 300);
-  }
-
-  private updateScrollState(): void {
-    const el = this.railRef().nativeElement;
-    this.canScrollLeft.set(el.scrollLeft > 4);
-    this.canScrollRight.set(
-      el.scrollLeft < el.scrollWidth - el.clientWidth - 4,
-    );
-  }
-
-  protected onScroll(): void {
-    this.updateScrollState();
-  }
 
   // ── Display helpers ─────────────────────────────────────────────────────
 
@@ -123,16 +63,12 @@ export class SessionRailComponent {
     });
   }
 
-  /** Full UTC timestamp for the hover tooltip — same pattern as chat timestamps. */
+  /** Full UTC timestamp for the hover tooltip. */
   protected tooltipDate(iso: string): string {
     const d = new Date(iso);
     return d.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
   }
 
-  /**
-   * Display name for a session's broadcaster.
-   * Falls back to "Unknown" for backfill-gap rows (pre-V7 sessions).
-   */
   protected channelName(session: StreamSummaryResponseDto): string {
     return session.broadcasterUsername ?? 'Unknown';
   }

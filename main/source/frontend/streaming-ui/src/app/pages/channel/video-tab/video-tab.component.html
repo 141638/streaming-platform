@@ -1,0 +1,196 @@
+@if (isFiltered()) {
+<!-- ═══ Filtered Grid Mode ═══════════════════════════════════════════════ -->
+
+<div class="flex flex-column gap-4 pt-2 pb-6">
+  <!-- Toolbar -->
+  <div class="flex flex-column md:flex-row align-items-start md:align-items-center justify-content-between gap-3">
+    <div class="flex align-items-center gap-3">
+      <p-select
+        [options]="filterOptions"
+        [ngModel]="typeFilter()"
+        (ngModelChange)="onTypeFilterChange($any($event))"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="Filter by"
+        styleClass="w-12rem"
+      />
+      <input
+        pInputText
+        [ngModel]="searchKeyword()"
+        (ngModelChange)="searchKeyword.set($event)"
+        (keydown.enter)="onSearch()"
+        placeholder="Search…"
+        class="w-10rem md:w-12rem"
+      />
+      <button pButton type="button" icon="pi pi-search" class="p-button-outlined" (click)="onSearch()"></button>
+    </div>
+    <div class="flex align-items-center gap-3">
+      <p-select
+        [options]="sortOptions"
+        [ngModel]="sortBy()"
+        (ngModelChange)="onSortChange($any($event))"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="Sort by"
+        styleClass="w-8rem"
+      />
+      <button pButton type="button" label="Back" icon="pi pi-arrow-left" class="p-button-text p-button-sm" (click)="clearFilter()"></button>
+    </div>
+  </div>
+
+  <!-- Grid: 6 per row max, min 22rem per card -->
+  @if (isLoading()) {
+  <div class="grid">
+    @for (i of [1,2,3,4,5,6]; track i) {
+    <div class="col-12 md:col-6 lg:col-4 xl:col-2">
+      <p-skeleton width="100%" height="12rem" borderRadius="0.75rem" />
+    </div>
+    }
+  </div>
+  } @else if (showBroadcastGrid()) {
+    @if (pageResponse(); as res) {
+    <div class="grid">
+      @for (session of res.data; track session.id) {
+      <div class="col-12 md:col-6 lg:col-4 xl:col-2">
+        <a
+          [routerLink]="['/channel', session.id]"
+          class="video-card block border-round-lg overflow-hidden surface-card border-1 surface-border no-underline cursor-pointer transition-shadow hover:shadow-3"
+        >
+          <div class="video-thumbnail relative overflow-hidden" style="aspect-ratio: 16/9;">
+            <img
+              [src]="thumbnailUrl(session)"
+              [alt]="session.title"
+              class="w-full h-full"
+              style="object-fit: cover;"
+            />
+            <app-stream-status-badge
+              [status]="session.status"
+              class="absolute"
+              style="top: 0.5rem; left: 0.5rem;"
+            />
+          </div>
+          <div class="p-3 flex flex-column gap-1">
+            <span class="text-sm font-medium line-height-2 white-space-nowrap overflow-hidden text-overflow-ellipsis">{{ session.title }}</span>
+            <span class="text-xs" style="color: var(--color-text-dim)">{{ session.createdAt | date:'mediumDate' }}</span>
+          </div>
+        </a>
+      </div>
+      }
+    </div>
+
+    <!-- Pagination -->
+    @if (totalPages() > 1) {
+    <div class="flex justify-content-center align-items-center gap-2">
+      <button pButton type="button" icon="pi pi-chevron-left" class="p-button-text p-button-sm" [disabled]="currentPage() === 0" (click)="goToPage(currentPage() - 1)"></button>
+      @for (p of [].constructor(totalPages()); track $index) {
+      <button
+        pButton
+        type="button"
+        [label]="($index + 1).toString()"
+        class="p-button-text p-button-sm"
+        [class.font-bold]="$index === currentPage()"
+        (click)="goToPage($index)"
+      ></button>
+      }
+      <button pButton type="button" icon="pi pi-chevron-right" class="p-button-text p-button-sm" [disabled]="currentPage() >= totalPages() - 1" (click)="goToPage(currentPage() + 1)"></button>
+    </div>
+    }
+    }
+  } @else {
+  <!-- Upload grid — deferred (Phase 8) -->
+  <div
+    class="flex flex-column align-items-center justify-content-center gap-3 p-6 border-round-lg surface-card border-1 surface-border"
+  >
+    <span class="pi pi-video text-4xl" style="color: var(--color-text-muted)"></span>
+    <p class="text-sm m-0" style="color: var(--color-text-muted)">
+      Uploaded videos will appear here once the video upload feature is available.
+    </p>
+  </div>
+  }
+</div>
+
+} @else {
+<!-- ═══ Default Mode: 3 rails ════════════════════════════════════════════ -->
+
+<div class="flex flex-column gap-6 pt-2 pb-6">
+
+  <!-- Recent Uploads rail (mock — Phase 8) -->
+  <app-rail
+    title="Recent Uploads"
+    [seeMoreLink]="'/@' + username + '/video'"
+    [seeMoreQueryParams]="{ type: 'upload' }"
+  >
+    @for (video of mockUploads; track video.id) {
+    <div class="rail-card flex-none w-16rem border-round-lg overflow-hidden surface-card border-1 surface-border">
+      <div
+        class="rail-card-thumb flex align-items-center justify-content-center"
+        style="height: 8rem; background: oklch(50% 0.08 250);"
+      >
+        <span class="pi pi-video text-white text-2xl"></span>
+      </div>
+      <div class="p-2 flex flex-column gap-1">
+        <span class="text-sm font-medium white-space-nowrap overflow-hidden text-overflow-ellipsis">{{ video.title }}</span>
+        <span class="text-xs" style="color: var(--color-text-dim)">
+          {{ formatCount(video.views) }} views · {{ video.duration }}
+        </span>
+      </div>
+    </div>
+    }
+  </app-rail>
+
+  <!-- Recent Broadcasts rail (real API — archived streams) -->
+  <app-rail
+    title="Recent Broadcasts"
+    [seeMoreLink]="'/@' + username + '/video'"
+    [seeMoreQueryParams]="{ type: 'archived' }"
+    [loading]="isLoading()"
+    [emptyLabel]="'No archived broadcasts yet'"
+  >
+    @for (session of broadcasts(); track session.id) {
+    <a
+      [routerLink]="['/channel', session.id]"
+      class="rail-card flex-none w-20rem border-round-lg overflow-hidden surface-card border-1 surface-border no-underline transition-shadow hover:shadow-3"
+    >
+      <div class="rail-card-thumb relative overflow-hidden" style="height: 8rem;">
+        <img
+          [src]="thumbnailUrl(session)"
+          [alt]="session.title"
+          class="w-full h-full"
+          style="object-fit: cover;"
+        />
+        <app-stream-status-badge
+          [status]="session.status"
+          class="absolute"
+          style="top: 0.5rem; left: 0.5rem;"
+        />
+      </div>
+      <div class="p-2 flex flex-column gap-1">
+        <span class="text-sm font-medium white-space-nowrap overflow-hidden text-overflow-ellipsis">{{ session.title }}</span>
+        <span class="text-xs" style="color: var(--color-text-dim)">{{ session.createdAt | date:'mediumDate' }}</span>
+      </div>
+    </a>
+    }
+  </app-rail>
+
+  <!-- Recently Added Playlists rail (mock — Phase 8) -->
+  <app-rail
+    title="Recently Added Playlists"
+    [seeMoreLink]="null"
+  >
+    @for (pl of mockPlaylists; track pl.id) {
+    <div class="rail-card flex-none w-16rem border-round-lg overflow-hidden surface-card border-1 surface-border">
+      <div
+        class="rail-card-thumb flex align-items-center justify-content-center"
+        style="height: 8rem; background: oklch(50% 0.12 150);"
+      >
+        <span class="pi pi-list text-white text-2xl"></span>
+      </div>
+      <div class="p-2 flex flex-column gap-1">
+        <span class="text-sm font-medium white-space-nowrap overflow-hidden text-overflow-ellipsis">{{ pl.title }}</span>
+        <span class="text-xs" style="color: var(--color-text-dim)">{{ pl.videoCount }} videos</span>
+      </div>
+    </div>
+    }
+  </app-rail>
+</div>
+}

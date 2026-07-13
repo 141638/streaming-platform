@@ -45,13 +45,13 @@ export class AppShellComponent {
       icon: 'pi pi-play',
       command: () => {
         const u = this.authService.myUsername();
-        this.router.navigateByUrl(u ? `/@${u}` : '/dashboard/streams');
+        this.router.navigateByUrl(u ? `/@${u}/home` : '/dashboard/streams');
       },
     },
     {
       label: 'Creator Dashboard',
       icon: 'pi pi-chart-bar',
-      disabled: true,
+      command: () => this.router.navigateByUrl('/dashboard/streams'),
     },
     {
       label: 'Stream Summary',

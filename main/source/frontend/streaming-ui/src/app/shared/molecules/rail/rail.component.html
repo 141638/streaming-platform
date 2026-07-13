@@ -1,0 +1,58 @@
+<div class="rail flex flex-column gap-2">
+  <!-- ── Header ─────────────────────────────────────────────────────────── -->
+  <div class="rail-header flex align-items-center justify-content-between">
+    <h3 class="rail-title text-lg font-semibold m-0">{{ title() }}</h3>
+    @if (seeMoreLink()) {
+      <a
+        [routerLink]="seeMoreLink()"
+        [queryParams]="seeMoreQueryParams()"
+        class="rail-see-more text-sm no-underline font-medium"
+      >
+        See more →
+      </a>
+    }
+  </div>
+
+  <!-- ── Scrollable track ───────────────────────────────────────────────── -->
+  <div class="rail-viewport relative">
+    <div
+      #rail
+      class="rail-track flex gap-3 overflow-x-auto pb-2"
+      (mousedown)="onMouseDown($event)"
+      (mousemove)="onMouseMove($event)"
+      (mouseup)="onMouseUp()"
+      (mouseleave)="onMouseUp()"
+      (scroll)="onScroll()"
+    >
+      @if (loading()) {
+        @for (i of [1, 2, 3, 4, 5]; track i) {
+          <div class="rail-card-skeleton flex-none">
+            <p-skeleton width="100%" height="8rem" borderRadius="0.75rem" />
+          </div>
+        }
+      } @else {
+        <ng-content />
+      }
+    </div>
+
+    <!-- Float chevrons -->
+    @if (canScrollLeft()) {
+      <button
+        pButton
+        type="button"
+        icon="pi pi-chevron-left"
+        class="p-button-rounded p-button-text rail-chevron rail-chevron-left"
+        (click)="scrollLeft()"
+      ></button>
+    }
+    @if (canScrollRight()) {
+      <button
+        pButton
+        type="button"
+        icon="pi pi-chevron-right"
+        class="p-button-rounded p-button-text rail-chevron rail-chevron-right"
+        (click)="scrollRight()"
+      ></button>
+    }
+  </div>
+</div>

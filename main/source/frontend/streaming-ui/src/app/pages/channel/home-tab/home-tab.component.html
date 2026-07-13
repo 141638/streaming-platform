@@ -1,0 +1,8 @@
+<div class="flex flex-column gap-4 pt-2 pb-6">
+  <app-session-rail
+    [sessions]="channel()?.sessions ?? []"
+    [loading]="loading()"
+  />
+  <app-category-strip [categories]="channel()?.recentCategories ?? []" />
+  <app-playlist-rail />
+</div>

@@ -76,6 +76,19 @@ export class StreamDetailPage implements OnInit {
     return status === 'DRAFT' || status === 'SCHEDULED';
   });
 
+  protected readonly canArchive = computed(() => {
+    const s = this.stream();
+    return s !== undefined
+      && s.status.toUpperCase() === 'ENDED'
+      && (s.archivedUrl === null || s.archivedUrl === undefined);
+  });
+
+  /** Whether the stream has been archived (archivedUrl is set). */
+  protected readonly isArchived = computed(() => {
+    const s = this.stream();
+    return s?.archivedUrl != null;
+  });
+
   /** Play URL for the stage; the shell ignores it but the Phase-4 player uses it. */
   protected readonly playUrl = computed(() => this.publishKey()?.playUrl ?? null);
 
@@ -97,6 +110,26 @@ export class StreamDetailPage implements OnInit {
 
   public onCancel(): void {
     this.runLifecycle(this.streamService.cancelStream(this.id()));
+  }
+
+  public onArchive(): void {
+    if (this.actionInProgress()) return;
+    this.actionInProgress.set(true);
+    this.errorMessage.set(undefined);
+
+    this.streamService
+      .archiveStream(this.id())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (data) => {
+          this.stream.set(data);
+          this.actionInProgress.set(false);
+        },
+        error: () => {
+          this.errorMessage.set('Failed to archive stream.');
+          this.actionInProgress.set(false);
+        },
+      });
   }
 
   public onGenerateKey(): void {

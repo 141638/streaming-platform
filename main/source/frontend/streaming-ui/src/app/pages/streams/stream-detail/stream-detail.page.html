@@ -64,6 +64,21 @@
                 [loading]="actionInProgress()"
               />
             }
+            @if (canArchive()) {
+              <p-button
+                label="Archive"
+                icon="pi pi-save"
+                severity="success"
+                (onClick)="onArchive()"
+                [loading]="actionInProgress()"
+              />
+            }
+            @if (isArchived()) {
+              <span class="text-color-secondary flex align-items-center gap-1">
+                <span class="pi pi-check-circle" style="color: var(--green-500)"></span>
+                Archived
+              </span>
+            }
             @if (canCancel()) {
               <p-button
                 label="Cancel"
@@ -74,7 +89,7 @@
                 [loading]="actionInProgress()"
               />
             }
-            @if (!canStart() && !canGoLive() && !canEnd() && !canCancel()) {
+            @if (!canStart() && !canGoLive() && !canEnd() && !canArchive() && !isArchived() && !canCancel()) {
               <span class="text-color-secondary">
                 No lifecycle actions available for this status.
               </span>

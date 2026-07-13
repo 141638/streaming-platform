@@ -9,222 +9,129 @@ import {
   signal,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { FormsModule } from '@angular/forms';
-import { RouterModule } from '@angular/router';
-import { ButtonModule } from 'primeng/button';
-import { InputTextModule } from 'primeng/inputtext';
-import { SelectModule } from 'primeng/select';
+import {
+  NavigationEnd,
+  Router,
+  RouterModule,
+  RouterOutlet,
+} from '@angular/router';
+import { ButtonDirective } from 'primeng/button';
 import { TabsModule } from 'primeng/tabs';
-import { TextareaModule } from 'primeng/textarea';
-import { finalize } from 'rxjs';
-import { ChannelResponseDto } from '../../core/contracts/channel-response.dto';
-import { SocialLinkDto } from '../../core/contracts/social-link.dto';
+import { filter, take } from 'rxjs';
+import { ChannelIdentityResponseDto } from '../../core/contracts/channel-identity-response.dto';
 import { AuthService } from '../../core/services/auth.service';
 import { StreamService } from '../../core/services/stream.service';
-import { CategoryStripComponent } from '../../shared/molecules/category-strip/category-strip.component';
-import { SocialLinksComponent } from '../../shared/molecules/social-links/social-links.component';
 import { ChannelHeaderComponent } from '../../shared/organisms/channel-header/channel-header.component';
-import { PlaylistRailComponent } from '../../shared/organisms/playlist-rail/playlist-rail.component';
-import { SessionRailComponent } from '../../shared/organisms/session-rail/session-rail.component';
 
-interface PlatformOption {
-  readonly label: string;
-  readonly value: string;
-}
+type ChannelTab = 'home' | 'video' | 'about';
 
-const PLATFORM_OPTIONS: readonly PlatformOption[] = [
-  { label: 'Twitter', value: 'twitter' },
-  { label: 'YouTube', value: 'youtube' },
-  { label: 'Instagram', value: 'instagram' },
-  { label: 'Discord', value: 'discord' },
-  { label: 'TikTok', value: 'tiktok' },
-  { label: 'Website', value: 'website' },
-];
-
+/**
+ * Channel page layout shell — owns the {@code /@username} route tree.
+ *
+ * <p>Fetches channel identity once and renders the tab list. Each tab is
+ * a child route rendered via {@code <router-outlet>}. Tab selection is
+ * derived from the active URL so deep-linking and browser back/forward
+ * work naturally.
+ */
 @Component({
   selector: 'app-channel-page',
   standalone: true,
   imports: [
     RouterModule,
-    FormsModule,
-    ButtonModule,
-    InputTextModule,
-    SelectModule,
+    RouterOutlet,
     TabsModule,
-    TextareaModule,
     ChannelHeaderComponent,
-    SessionRailComponent,
-    PlaylistRailComponent,
-    CategoryStripComponent,
-    SocialLinksComponent,
+    ButtonDirective,
   ],
   templateUrl: './channel.page.html',
   styleUrl: './channel.page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ChannelPage implements OnInit {
-  /** Bound from route param {@code :username} via {@code withComponentInputBinding()}. */
   public readonly username = input.required<string>();
 
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly router = inject(Router);
   private readonly authService = inject(AuthService);
   private readonly streamService = inject(StreamService);
-  private readonly destroyRef = inject(DestroyRef);
 
-  // ── State ───────────────────────────────────────────────────────────────
-
-  protected readonly channel = signal<ChannelResponseDto | null>(null);
-  protected readonly loading = signal(true);
-  protected readonly error = signal<string | null>(null);
+  protected readonly channel = signal<ChannelIdentityResponseDto | null>(null);
+  protected readonly verified = computed(
+    () => this.channel()?.verified ?? false,
+  );
 
   protected readonly isOwner = computed(
     () => this.authService.myUsername() === this.username(),
   );
 
-  // ── Bio editing (owner-only, About tab) ──────────────────────────────────
-
-  protected readonly editingBio = signal(false);
-  protected readonly bioDraft = signal('');
-  protected readonly savingBio = signal(false);
-
-  // ── Social links editing (owner-only, About tab) ─────────────────────────
-
-  protected readonly editingLinks = signal(false);
-  protected readonly linksDraft = signal<SocialLinkDto[]>([]);
-  protected readonly newLinkPlatform = signal<PlatformOption | null>(null);
-  protected readonly newLinkUrl = signal('');
-  protected readonly savingLinks = signal(false);
-  protected readonly platformOptions: PlatformOption[] = [...PLATFORM_OPTIONS];
-
-  // ── Lifecycle ───────────────────────────────────────────────────────────
-
   public ngOnInit(): void {
-    this.streamService
-      .getChannel(this.username())
+    // Redirect bare /@username to /@username/home so the child outlet
+    // has a matching route on initial load. Don't fetch on this instance —
+    // the redirect may destroy and recreate the component, and an HTTP
+    // request started here would be aborted mid-flight.
+    const path = this.router.url.split('?')[0];
+    if (
+      !path.endsWith('/home') &&
+      !path.endsWith('/video') &&
+      !path.endsWith('/about')
+    ) {
+      this.router.navigateByUrl(`/@${this.username()}/home`, {
+        replaceUrl: true,
+      });
+
+      // Subscribe to NavigationEnd so the fetch fires after the redirect
+      // completes — whether this component instance survives the redirect
+      // or a new one is created (where ngOnInit won't need to redirect).
+      this.router.events
+        .pipe(
+          filter((e): e is NavigationEnd => e instanceof NavigationEnd),
+          take(1),
+          takeUntilDestroyed(this.destroyRef),
+        )
+        .subscribe(() => this.loadChannelIdentity());
+      return;
+    }
+
+    // Already at the final URL — fetch immediately.
+    this.loadChannelIdentity();
+
+    // Keep activeTab in sync with the URL for browser back/forward.
+    // Don't use takeUntilDestroyed here — the subscription must survive
+    // for the lifetime of this component so every NavigationEnd is tracked.
+    this.router.events
       .pipe(
+        filter((e): e is NavigationEnd => e instanceof NavigationEnd),
         takeUntilDestroyed(this.destroyRef),
-        finalize(() => this.loading.set(false)),
       )
-      .subscribe({
-        next: (res) =>
-          this.channel.set({
-            ...res,
-            socialLinks: res.socialLinks ?? [],
-            stats: res.stats ?? {
-              totalStreams: 0,
-              totalHoursStreamed: 0,
-              topCategory: null,
-              firstStreamedAt: null,
-              categoryBreakdown: [],
-            },
-          }),
-        error: () => this.error.set('Failed to load channel'),
+      .subscribe(() => {
+        this.activeTab.set(this.tabFromUrl());
       });
   }
 
-  // ── Bio editing ─────────────────────────────────────────────────────────
-
-  protected startEditingBio(): void {
-    const current = this.channel();
-    this.bioDraft.set(current?.bio ?? '');
-    this.editingBio.set(true);
+  /** Derive selected tab from the current URL path (query-string aware). */
+  private tabFromUrl(): ChannelTab {
+    const path = this.router.url.split('?')[0];
+    if (path.endsWith('/video')) return 'video';
+    if (path.endsWith('/about')) return 'about';
+    return 'home';
   }
 
-  protected cancelEditingBio(): void {
-    this.editingBio.set(false);
-    this.bioDraft.set('');
+  /** Writable signal — updated immediately on click, synced from URL on nav. */
+  protected readonly activeTab = signal<ChannelTab>(this.tabFromUrl());
+
+  protected onTabChange(value: string): void {
+    this.activeTab.set(value as ChannelTab);
+    this.router.navigateByUrl(`/@${this.username()}/${value}`);
   }
 
-  protected saveBio(): void {
-    const ch = this.channel();
-    if (!ch) return;
-    this.savingBio.set(true);
-    this.streamService
-      .updateProfile(this.username(), this.bioDraft(), ch.socialLinks)
-      .pipe(
-        takeUntilDestroyed(this.destroyRef),
-        finalize(() => this.savingBio.set(false)),
-      )
-      .subscribe({
-        next: () => {
-          this.channel.update((c) => (c ? { ...c, bio: this.bioDraft() } : c));
-          this.editingBio.set(false);
-        },
-        error: () => {
-          // Keep the edit form open so the user doesn't lose their draft
-        },
-      });
-  }
-
-  // ── Display helpers ──────────────────────────────────────────────────────
-
-  protected streamingSince(iso: string | null): string {
-    if (!iso) return '';
-    const d = new Date(iso);
-    return d.toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'long',
+  /** Fetch channel identity for the header. One-shot — no takeUntilDestroyed. */
+  private loadChannelIdentity(): void {
+    this.streamService.getChannelIdentity(this.username()).subscribe({
+      next: (res) => this.channel.set(res),
+      error: (err: unknown) => {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        this.channel.set(null);
+      },
     });
-  }
-
-  // ── Social links editing ────────────────────────────────────────────────
-
-  protected startEditingLinks(): void {
-    const current = this.channel();
-    this.linksDraft.set(current?.socialLinks ? [...current.socialLinks] : []);
-    this.newLinkPlatform.set(null);
-    this.newLinkUrl.set('');
-    this.editingLinks.set(true);
-  }
-
-  protected cancelEditingLinks(): void {
-    this.editingLinks.set(false);
-    this.linksDraft.set([]);
-    this.newLinkPlatform.set(null);
-    this.newLinkUrl.set('');
-  }
-
-  protected addLinkDraft(): void {
-    const platform = this.newLinkPlatform();
-    const url = this.newLinkUrl().trim();
-    if (!platform || !url) return;
-
-    // Don't allow duplicate platforms
-    if (this.linksDraft().some((l) => l.platform === platform.value)) return;
-
-    this.linksDraft.update((links) => [
-      ...links,
-      { platform: platform.value, url },
-    ]);
-    this.newLinkPlatform.set(null);
-    this.newLinkUrl.set('');
-  }
-
-  protected removeLinkDraft(platform: string): void {
-    this.linksDraft.update((links) =>
-      links.filter((l) => l.platform !== platform),
-    );
-  }
-
-  protected saveLinks(): void {
-    const ch = this.channel();
-    if (!ch) return;
-    this.savingLinks.set(true);
-    this.streamService
-      .updateProfile(this.username(), ch.bio ?? '', this.linksDraft())
-      .pipe(
-        takeUntilDestroyed(this.destroyRef),
-        finalize(() => this.savingLinks.set(false)),
-      )
-      .subscribe({
-        next: () => {
-          this.channel.update((c) =>
-            c ? { ...c, socialLinks: this.linksDraft() } : c,
-          );
-          this.editingLinks.set(false);
-        },
-        error: () => {
-          // Keep the edit form open
-        },
-      });
   }
 }

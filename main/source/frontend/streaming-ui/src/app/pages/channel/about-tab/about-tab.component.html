@@ -1,0 +1,128 @@
+@if (channel(); as ch) {
+<div class="flex flex-column lg:flex-row gap-4 pt-2 pb-6">
+  <!-- ── Left column: Bio + Links ──────────────────────────── -->
+  <div class="flex flex-column gap-4 flex-1" style="min-width: 0;">
+
+    <!-- Bio -->
+    <div class="flex flex-column gap-2">
+      <span class="text-sm font-semibold" style="color: var(--color-text-secondary)">Bio</span>
+
+      @if (isOwner() && editingBio()) {
+      <textarea
+        pTextarea class="w-full" rows="4"
+        [ngModel]="bioDraft()" (ngModelChange)="bioDraft.set($event)"
+        placeholder="Tell viewers about your channel…" maxlength="2000"
+      ></textarea>
+      <div class="flex align-items-center gap-2">
+        <span class="text-xs" style="color: var(--color-text-dim)">{{ bioDraft().length }} / 2000</span>
+        <div class="flex-auto"></div>
+        <button pButton type="button" label="Cancel" class="p-button-text p-button-sm" (click)="cancelEditingBio()"></button>
+        <button pButton type="button" label="Save" icon="pi pi-check" class="p-button-sm" [loading]="savingBio()" (click)="saveBio()"></button>
+      </div>
+      } @else if (ch.bio) {
+      <p class="text-sm line-height-3 m-0" style="color: var(--color-text-primary); white-space: pre-wrap;">{{ ch.bio }}</p>
+      @if (isOwner()) {
+      <div>
+        <button pButton type="button" label="Edit" icon="pi pi-pencil" class="p-button-text p-button-sm" (click)="startEditingBio()"></button>
+      </div>
+      } } @else {
+      <p class="text-sm m-0" style="color: var(--color-text-muted)">No bio yet.</p>
+      @if (isOwner()) {
+      <div>
+        <button pButton type="button" label="Add Bio" icon="pi pi-pencil" class="p-button-outlined p-button-sm" (click)="startEditingBio()"></button>
+      </div>
+      } }
+    </div>
+
+    <!-- Social Links -->
+    <div class="flex flex-column gap-2">
+      <span class="text-sm font-semibold" style="color: var(--color-text-secondary)">Links</span>
+
+      @if (isOwner() && editingLinks()) {
+      <div class="flex flex-column gap-2">
+        @for (link of linksDraft(); track link.platform) {
+        <div class="flex align-items-center gap-2 p-2 border-round-lg surface-card border-1 surface-border">
+          <span class="text-sm font-medium flex-auto capitalize">{{ link.platform }}</span>
+          <span class="text-xs text-overflow-ellipsis overflow-hidden white-space-nowrap" style="color: var(--color-text-dim); max-width: 18rem;">{{ link.url }}</span>
+          <button pButton type="button" icon="pi pi-times" class="p-button-text p-button-sm p-button-rounded" (click)="removeLinkDraft(link.platform)" pTooltip="Remove" tooltipPosition="top"></button>
+        </div>
+        }
+        <div class="flex gap-2 align-items-start">
+          <p-select [options]="platformOptions" [(ngModel)]="newLinkPlatform" optionLabel="label" placeholder="Platform" styleClass="w-8rem" class="flex-shrink-0" />
+          <input pInputText class="flex-auto" [ngModel]="newLinkUrl()" (ngModelChange)="newLinkUrl.set($event)" placeholder="https://…" (keydown.enter)="addLinkDraft()" />
+          <button pButton type="button" icon="pi pi-plus" class="p-button-sm flex-shrink-0" (click)="addLinkDraft()" [disabled]="!newLinkPlatform() || !newLinkUrl().trim()"></button>
+        </div>
+        <div class="flex align-items-center gap-2">
+          <div class="flex-auto"></div>
+          <button pButton type="button" label="Cancel" class="p-button-text p-button-sm" (click)="cancelEditingLinks()"></button>
+          <button pButton type="button" label="Save" icon="pi pi-check" class="p-button-sm" [loading]="savingLinks()" (click)="saveLinks()"></button>
+        </div>
+      </div>
+      } @else if (ch.socialLinks?.length) {
+      <app-social-links [links]="ch.socialLinks" />
+      @if (isOwner()) {
+      <div>
+        <button pButton type="button" label="Edit" icon="pi pi-pencil" class="p-button-text p-button-sm" (click)="startEditingLinks()"></button>
+      </div>
+      } } @else {
+      <p class="text-sm m-0" style="color: var(--color-text-muted)">No links added yet.</p>
+      @if (isOwner()) {
+      <div>
+        <button pButton type="button" label="Add Links" icon="pi pi-link" class="p-button-outlined p-button-sm" (click)="startEditingLinks()"></button>
+      </div>
+      } }
+    </div>
+  </div>
+
+  <!-- ── Right column: Stats sidebar ───────────────────────── -->
+  <div class="flex flex-column gap-3" style="width: 16rem; flex-shrink: 0;">
+    <span class="text-sm font-semibold" style="color: var(--color-text-secondary)">Stats</span>
+
+    @if (ch.stats.totalStreams > 0) {
+    <div class="flex flex-column gap-2 p-3 border-round-lg surface-card border-1 surface-border">
+      <div class="flex justify-content-between align-items-center">
+        <span class="text-sm" style="color: var(--color-text-dim)">Total streams</span>
+        <span class="text-base font-bold" style="color: var(--color-text-primary)">{{ ch.stats.totalStreams }}</span>
+      </div>
+      <div class="flex justify-content-between align-items-center">
+        <span class="text-sm" style="color: var(--color-text-dim)">Hours streamed</span>
+        <span class="text-base font-bold" style="color: var(--color-text-primary)">{{ ch.stats.totalHoursStreamed }}</span>
+      </div>
+      @if (ch.stats.topCategory) {
+      <div class="flex justify-content-between align-items-center">
+        <span class="text-sm" style="color: var(--color-text-dim)">Top category</span>
+        <span class="text-base font-bold" style="color: var(--color-text-primary)">{{ ch.stats.topCategory }}</span>
+      </div>
+      }
+      @if (ch.stats.firstStreamedAt) {
+      <div class="flex justify-content-between align-items-center">
+        <span class="text-sm" style="color: var(--color-text-dim)">Streaming since</span>
+        <span class="text-base font-bold" style="color: var(--color-text-primary)">{{ streamingSince(ch.stats.firstStreamedAt) }}</span>
+      </div>
+      }
+    </div>
+
+    @if (ch.stats.categoryBreakdown?.length) {
+    <div class="flex flex-column gap-2 p-3 border-round-lg surface-card border-1 surface-border">
+      <span class="text-sm font-semibold" style="color: var(--color-text-dim)">Categories</span>
+      @for (entry of ch.stats.categoryBreakdown; track entry.category) {
+      <div class="flex justify-content-between align-items-center gap-2">
+        <span class="text-base white-space-nowrap overflow-hidden text-overflow-ellipsis" style="color: var(--color-text-primary)">{{ entry.category }}</span>
+        <span class="text-sm" style="color: var(--color-text-dim)">{{ entry.count }}</span>
+      </div>
+      }
+    </div>
+    }
+    } @else {
+    <p class="text-sm m-0 p-3 border-round-lg surface-card border-1 surface-border" style="color: var(--color-text-muted)">
+      No streams yet — stats will appear after the first stream.
+    </p>
+    }
+  </div>
+</div>
+} @else if (loading()) {
+<div class="flex flex-column align-items-center justify-content-center flex-auto gap-3">
+  <span class="pi pi-spin pi-spinner text-4xl" style="color: var(--color-text-muted)"></span>
+  <span class="text-sm" style="color: var(--color-text-muted)">Loading…</span>
+</div>
+}

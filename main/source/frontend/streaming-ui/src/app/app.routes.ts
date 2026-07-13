@@ -9,13 +9,14 @@ import { guestGuard } from './core/guards/guest.guard';
  * {@code username} route parameter.
  */
 function channelMatcher(segments: UrlSegment[]) {
-  if (segments.length === 1 && segments[0].path.startsWith('@')) {
-    const username = segments[0].path.slice(1);
+  const first = segments[0];
+  if (first && first.path.startsWith('@')) {
+    const username = first.path.slice(1);
     if (username.length === 0) {
       return null;
     }
     return {
-      consumed: segments,
+      consumed: [first],
       posParams: { username: new UrlSegment(username, {}) },
     };
   }
@@ -90,6 +91,29 @@ export const routes: Routes = [
         matcher: channelMatcher,
         loadComponent: () =>
           import('./pages/channel/channel.page').then((m) => m.ChannelPage),
+        children: [
+          {
+            path: 'home',
+            loadComponent: () =>
+              import('./pages/channel/home-tab/home-tab.component').then(
+                (m) => m.HomeTabComponent,
+              ),
+          },
+          {
+            path: 'video',
+            loadComponent: () =>
+              import('./pages/channel/video-tab/video-tab.component').then(
+                (m) => m.VideoTabComponent,
+              ),
+          },
+          {
+            path: 'about',
+            loadComponent: () =>
+              import('./pages/channel/about-tab/about-tab.component').then(
+                (m) => m.AboutTabComponent,
+              ),
+          },
+        ],
       },
       { path: '', redirectTo: 'home', pathMatch: 'full' },
     ],

@@ -1,8 +1,12 @@
 package com.streaming.stream.api;
 
 import com.streaming.common.api.ApiMessage;
+import com.streaming.stream.api.dto.BroadcastPageResponse;
 import com.streaming.stream.api.dto.CategoryResponse;
-import com.streaming.stream.api.dto.ChannelResponse;
+import com.streaming.stream.api.dto.CategoryCount;
+import com.streaming.stream.api.dto.ChannelAboutResponse;
+import com.streaming.stream.api.dto.ChannelHomeResponse;
+import com.streaming.stream.api.dto.ChannelIdentityResponse;
 import com.streaming.stream.api.dto.CreateStreamRequest;
 import com.streaming.stream.api.dto.PublishKeyResponse;
 
@@ -12,6 +16,7 @@ import com.streaming.stream.api.dto.UpdateProfileRequest;
 import com.streaming.stream.api.dto.UpdateStreamRequest;
 import com.streaming.stream.service.StreamService;
 import jakarta.validation.Valid;
+import java.net.InetSocketAddress;
 import java.net.URI;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -26,7 +31,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -73,17 +80,51 @@ public class StreamController {
     @GetMapping("/streams/{id}")
     public Mono<ResponseEntity<StreamResponse>> get(
             @AuthenticationPrincipal Jwt jwt,
-            @PathVariable UUID id) {
-        return streamService.getStream(id, jwt).map(ResponseEntity::ok);
+            @PathVariable UUID id,
+            ServerWebExchange exchange) {
+        String viewerId = resolveViewerId(jwt, exchange);
+        return streamService.getStream(id, jwt, viewerId).map(ResponseEntity::ok);
+    }
+
+    /**
+     * Resolve a viewer identifier for deduplication.
+     * Uses the JWT subject for authenticated users; falls back to client IP
+     * for anonymous viewers (future-proofing — the system currently requires
+     * authentication for all endpoints).
+     */
+    private static String resolveViewerId(Jwt jwt, ServerWebExchange exchange) {
+        String sub = jwt.getSubject();
+        if (sub != null && !sub.isBlank()) {
+            return sub;
+        }
+        InetSocketAddress remoteAddress = exchange.getRequest().getRemoteAddress();
+        if (remoteAddress != null) {
+            return "ip:" + remoteAddress.getAddress().getHostAddress();
+        }
+        return "ip:unknown";
     }
 
     // ── Channel page (authenticated, cross-user read) ────────────────────────
 
-    @GetMapping("/channels/{username}")
-    public Mono<ResponseEntity<ChannelResponse>> getChannel(
+    @GetMapping("/channels/{username}/identity")
+    public Mono<ResponseEntity<ChannelIdentityResponse>> getChannelIdentity(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable String username) {
-        return streamService.getChannel(username).map(ResponseEntity::ok);
+        return streamService.getChannelIdentity(username).map(ResponseEntity::ok);
+    }
+
+    @GetMapping("/channels/{username}/home")
+    public Mono<ResponseEntity<ChannelHomeResponse>> getChannelHome(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String username) {
+        return streamService.getChannelHome(username).map(ResponseEntity::ok);
+    }
+
+    @GetMapping("/channels/{username}/about")
+    public Mono<ResponseEntity<ChannelAboutResponse>> getChannelAbout(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String username) {
+        return streamService.getChannelAbout(username).map(ResponseEntity::ok);
     }
 
     // ── Channel profile (owner-only write) ────────────────────────────────────
@@ -163,5 +204,37 @@ public class StreamController {
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID id) {
         return streamService.getPublishKey(id, jwt).map(ResponseEntity::ok);
+    }
+
+    // ── Archive ───────────────────────────────────────────────────────────────
+
+    @PostMapping("/streams/{id}/archive")
+    public Mono<ResponseEntity<StreamResponse>> archive(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID id) {
+        return streamService.archiveStream(id, jwt).map(ResponseEntity::ok);
+    }
+
+    // ── Broadcasts (archived streams, channel-facing read) ────────────────────
+
+    @GetMapping("/channels/{username}/broadcasts/recent")
+    public Mono<ResponseEntity<Flux<StreamSummaryResponse>>> recentBroadcasts(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String username) {
+        return Mono.just(ResponseEntity.ok(
+                streamService.getRecentBroadcasts(username)));
+    }
+
+    @GetMapping("/channels/{username}/broadcasts")
+    public Mono<ResponseEntity<BroadcastPageResponse>> listBroadcasts(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String username,
+            @RequestParam(defaultValue = "") String keyword,
+            @RequestParam(defaultValue = "created_at") String sort,
+            @RequestParam(defaultValue = "desc") String order,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "24") int size) {
+        return streamService.getBroadcasts(username, keyword, sort, order, page, size)
+                .map(ResponseEntity::ok);
     }
 }

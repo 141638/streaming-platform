@@ -1,9 +1,12 @@
 package com.streaming.stream.service;
 
 import com.streaming.common.crypto.HashUtils;
+import com.streaming.stream.api.dto.BroadcastPageResponse;
 import com.streaming.stream.api.dto.CategoryCount;
 import com.streaming.stream.api.dto.CategoryResponse;
-import com.streaming.stream.api.dto.ChannelResponse;
+import com.streaming.stream.api.dto.ChannelAboutResponse;
+import com.streaming.stream.api.dto.ChannelHomeResponse;
+import com.streaming.stream.api.dto.ChannelIdentityResponse;
 import com.streaming.stream.api.dto.ChannelStats;
 import com.streaming.stream.api.dto.CreateStreamRequest;
 import com.streaming.stream.api.dto.PublishKeyResponse;
@@ -13,11 +16,13 @@ import com.streaming.stream.api.dto.StreamSummaryResponse;
 import com.streaming.stream.api.dto.UpdateProfileRequest;
 import com.streaming.stream.api.dto.UpdateStreamRequest;
 import com.streaming.stream.config.PublishTokenProperties;
+import com.streaming.stream.config.ViewCountProperties;
 import com.streaming.stream.messaging.StreamEvent;
 import com.streaming.stream.messaging.StreamEventPublisher;
 import com.streaming.stream.persistence.entity.BroadcasterProfileEntity;
 import com.streaming.stream.persistence.entity.StreamSessionEntity;
 import com.streaming.stream.persistence.entity.StreamStatus;
+import com.streaming.stream.persistence.query.BroadcastQueryBuilder;
 import com.streaming.stream.persistence.repository.BroadcasterProfileRepository;
 import com.streaming.stream.persistence.repository.StreamCategoryRepository;
 import com.streaming.stream.persistence.repository.StreamSessionRepository;
@@ -27,21 +32,28 @@ import com.streaming.stream.security.AuthResourceKind;
 import com.streaming.stream.security.JwtAttr;
 import com.streaming.stream.security.RequiredAuthority;
 import com.streaming.stream.security.StreamAuthorization;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.stream.Collectors;
+import io.r2dbc.spi.Row;
+import io.r2dbc.spi.RowMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.data.redis.core.ReactiveRedisTemplate;
+import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.function.BiFunction;
+import java.util.stream.Collectors;
 
 @Service
 public class StreamService {
@@ -55,6 +67,9 @@ public class StreamService {
     private final StreamEventPublisher eventPublisher;
     private final PublishTokenService publishTokenService;
     private final PublishTokenProperties publishTokenProps;
+    private final DatabaseClient databaseClient;
+    private final ReactiveRedisTemplate<String, String> redisTemplate;
+    private final ViewCountProperties viewCountProperties;
 
     public StreamService(StreamSessionRepository repository,
                          StreamCategoryRepository categoryRepository,
@@ -62,7 +77,10 @@ public class StreamService {
                          StreamAuthorization authorization,
                          StreamEventPublisher eventPublisher,
                          PublishTokenService publishTokenService,
-                         PublishTokenProperties publishTokenProps) {
+                         PublishTokenProperties publishTokenProps,
+                         DatabaseClient databaseClient,
+                         ReactiveRedisTemplate<String, String> redisTemplate,
+                         ViewCountProperties viewCountProperties) {
         this.repository = repository;
         this.categoryRepository = categoryRepository;
         this.profileRepository = profileRepository;
@@ -70,6 +88,9 @@ public class StreamService {
         this.eventPublisher = eventPublisher;
         this.publishTokenService = publishTokenService;
         this.publishTokenProps = publishTokenProps;
+        this.databaseClient = databaseClient;
+        this.redisTemplate = redisTemplate;
+        this.viewCountProperties = viewCountProperties;
     }
 
     // ── Create ──────────────────────────────────────────────────────────────
@@ -135,7 +156,7 @@ public class StreamService {
                 .map(StreamSummaryResponse::from);
     }
 
-    public Mono<StreamResponse> getStream(UUID id, Jwt jwt) {
+    public Mono<StreamResponse> getStream(UUID id, Jwt jwt, String viewerId) {
         return repository.findById(id)
                 .switchIfEmpty(Mono.error(new StreamNotFoundException(id)))
                 .flatMap(entity -> authorization
@@ -145,22 +166,71 @@ public class StreamService {
                         .onErrorMap(StreamAuthorization.StreamAccessDeniedException.class,
                                 e -> new StreamNotFoundException(id))
                         .thenReturn(entity))
+                .doOnSuccess(entity -> {
+                    if (!viewerId.equals(entity.getBroadcasterSubject())) {
+                        trackViewEvent(entity.getId(), viewerId).subscribe();
+                    }
+                })
                 .map(StreamResponse::from);
     }
 
     // ── Channel read (authenticated, cross-user safe) ─────────────────────────
 
-    private static final int CHANNEL_SESSION_CAP = 15;
+    private static final int CHANNEL_HOME_SESSION_CAP = 15;
 
     /**
-     * Return the safe cross-user channel projection for {@code /@username}.
+     * Return minimal identity for the channel page header.
      *
-     * <p>Any authenticated user may read any channel — this is not owner-scoped.
-     * Identity (username / verified) is resolved from the newest session with
-     * a non-null {@code broadcaster_username} to tolerate backfill-gap rows.
-     * Always returns 200 (possibly with an empty session list).
+     * <p>Fetches only the newest 1 session to resolve the verified flag.
+     * If no sessions exist yet, returns the path-variable username with
+     * {@code verified = null}.
      */
-    public Mono<ChannelResponse> getChannel(String username) {
+    public Mono<ChannelIdentityResponse> getChannelIdentity(String username) {
+        return repository.findFirstByBroadcasterUsernameOrderByCreatedAtDesc(username)
+                .map(session -> {
+                    String resolvedUsername = session.getBroadcasterUsername() != null
+                            ? session.getBroadcasterUsername() : username;
+                    return ChannelIdentityResponse.of(resolvedUsername,
+                            session.getBroadcasterVerified());
+                })
+                .defaultIfEmpty(ChannelIdentityResponse.of(username, null));
+    }
+
+    /**
+     * Return the home-tab projection: 15 most recent sessions plus distinct
+     * categories extracted from those sessions for the category strip.
+     *
+     * <p>Categories are derived from the capped rail rather than all sessions,
+     * so this endpoint never performs a full table scan.
+     */
+    public Mono<ChannelHomeResponse> getChannelHome(String username) {
+        return repository.findAllByBroadcasterUsernameOrderByCreatedAtDesc(username)
+                .take(CHANNEL_HOME_SESSION_CAP)
+                .collectList()
+                .map(sessions -> {
+                    List<StreamSummaryResponse> rail = sessions.stream()
+                            .map(StreamSummaryResponse::from)
+                            .collect(Collectors.toCollection(ArrayList::new));
+
+                    List<String> recentCategories = sessions.stream()
+                            .map(StreamSessionEntity::getCategory)
+                            .filter(c -> c != null && !c.isBlank())
+                            .distinct()
+                            .collect(Collectors.toCollection(ArrayList::new));
+
+                    return ChannelHomeResponse.of(rail, recentCategories);
+                });
+    }
+
+    /**
+     * Return the about-tab projection: bio, social links from the profile,
+     * and stats computed from <em>all</em> sessions.
+     *
+     * <p>This is the most expensive channel endpoint — stats require a full
+     * session scan — but it is only called when the user explicitly navigates
+     * to the About tab.
+     */
+    public Mono<ChannelAboutResponse> getChannelAbout(String username) {
         Mono<List<StreamSessionEntity>> sessionsMono = repository
                 .findAllByBroadcasterUsernameOrderByCreatedAtDesc(username)
                 .collectList();
@@ -173,42 +243,12 @@ public class StreamService {
                     List<StreamSessionEntity> allSessions = tuple.getT1();
                     BroadcasterProfileEntity profile = tuple.getT2();
 
-                    // Resolve identity from the newest session with non-null username
-                    String resolvedUsername = null;
-                    Boolean resolvedVerified = null;
-                    for (var s : allSessions) {
-                        if (s.getBroadcasterUsername() != null) {
-                            resolvedUsername = s.getBroadcasterUsername();
-                            resolvedVerified = s.getBroadcasterVerified();
-                            break;
-                        }
-                    }
-                    if (resolvedUsername == null) {
-                        resolvedUsername = username;
-                    }
-
-                    // Cap session list for the rail
-                    List<StreamSummaryResponse> rail = allSessions.stream()
-                            .limit(CHANNEL_SESSION_CAP)
-                            .map(StreamSummaryResponse::from)
-                            .collect(Collectors.toCollection(ArrayList::new));
-
-                    // Distinct recent categories from all sessions (not just the rail)
-                    List<String> recentCategories = allSessions.stream()
-                            .map(StreamSessionEntity::getCategory)
-                            .filter(c -> c != null && !c.isBlank())
-                            .distinct()
-                            .collect(Collectors.toCollection(ArrayList::new));
-
-                    // Social links deserialized by R2DBC converter
                     List<SocialLink> links = profile.getSocialLinks() != null
                             ? profile.getSocialLinks() : List.of();
 
-                    // Compute channel stats from all sessions
                     ChannelStats stats = computeStats(allSessions);
 
-                    return ChannelResponse.of(resolvedUsername, resolvedVerified,
-                            rail, recentCategories, profile.getBio(), links, stats);
+                    return ChannelAboutResponse.of(profile.getBio(), links, stats);
                 });
     }
 
@@ -305,7 +345,8 @@ public class StreamService {
                 .doOnSuccess(saved -> log.info("Stream updated: id={}", saved.getId()))
                 .map(StreamResponse::from)
                 .onErrorMap(OptimisticLockingFailureException.class,
-                        ex -> new StreamConflictException("Stream was modified by another operation. Reload and try again."));
+                        ex -> new StreamConflictException(
+                                "Stream was modified by another operation. Reload and try again."));
     }
 
     // ── Lifecycle transitions ───────────────────────────────────────────────
@@ -341,7 +382,8 @@ public class StreamService {
                 })
                 .map(StreamResponse::from)
                 .onErrorMap(OptimisticLockingFailureException.class,
-                        ex -> new StreamConflictException("Stream was modified by another operation. Reload and try again."));
+                        ex -> new StreamConflictException(
+                                "Stream was modified by another operation. Reload and try again."));
     }
 
     /** Transition a stream to ENDED. */
@@ -396,7 +438,7 @@ public class StreamService {
                         .thenReturn(entity))
                 .flatMap(entity -> {
                     if (entity.getStatus() != StreamStatus.DRAFT
-                            && entity.getStatus() != StreamStatus.LIVE) {
+                        && entity.getStatus() != StreamStatus.LIVE) {
                         return Mono.error(new IllegalStateException(
                                 "Publish key can only be issued for DRAFT or LIVE streams"));
                     }
@@ -459,7 +501,7 @@ public class StreamService {
                     if (entity.getStatus() != StreamStatus.SCHEDULED) {
                         return Mono.error(new IllegalStateException(
                                 "Only SCHEDULED streams can go live. Current: "
-                                        + entity.getStatus().wireValue()));
+                                + entity.getStatus().wireValue()));
                     }
 
                     OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
@@ -496,7 +538,7 @@ public class StreamService {
                 .flatMap(entity -> {
                     StreamStatus status = entity.getStatus();
                     if (status == StreamStatus.ENDED
-                            || status == StreamStatus.CANCELLED) {
+                        || status == StreamStatus.CANCELLED) {
                         return Mono.error(new InvalidPublishTokenException(
                                 "Stream is " + status.wireValue()));
                     }
@@ -519,9 +561,9 @@ public class StreamService {
                                                 return repository.save(entity)
                                                         .doOnSuccess(saved -> {
                                                             eventPublisher.publish(
-                                                                    StreamEvent.started(
-                                                                            saved.getId(),
-                                                                            saved.getBroadcasterSubject()))
+                                                                            StreamEvent.started(
+                                                                                    saved.getId(),
+                                                                                    saved.getBroadcasterSubject()))
                                                                     .subscribe();
                                                             log.info("Stream started via webhook: id={}",
                                                                     saved.getId());
@@ -551,8 +593,8 @@ public class StreamService {
                     return repository.save(entity)
                             .doOnSuccess(saved -> {
                                 eventPublisher.publish(
-                                        StreamEvent.ended(saved.getId(),
-                                                saved.getBroadcasterSubject()))
+                                                StreamEvent.ended(saved.getId(),
+                                                        saved.getBroadcasterSubject()))
                                         .subscribe();
                                 log.info("Stream ended via webhook: id={}",
                                         saved.getId());
@@ -572,6 +614,154 @@ public class StreamService {
         return categoryRepository.findAll()
                 .sort((a, b) -> Integer.compare(a.getDisplayOrder(), b.getDisplayOrder()))
                 .map(CategoryResponse::from);
+    }
+
+    // ── Archive ──────────────────────────────────────────────────────────────
+
+    /**
+     * Archive an ended stream. Owner-only. Sets {@code archived_url} on the
+     * entity. In production this copies the SRS DVR MP4 to a persistent volume;
+     * for now it sets the URL pointing at the SRS DVR path.
+     */
+    public Mono<StreamResponse> archiveStream(UUID id, Jwt jwt) {
+        return repository.findById(id)
+                .switchIfEmpty(Mono.error(new StreamNotFoundException(id)))
+                .flatMap(entity -> authorization
+                        .requireAccess(jwt, new RequiredAuthority(
+                                AuthResourceDomain.STREAM, AuthResourceKind.ARCHIVE,
+                                AuthAction.LIFECYCLE, entity.getBroadcasterSubject()))
+                        .thenReturn(entity))
+                .flatMap(entity -> {
+                    if (entity.getStatus() != StreamStatus.ENDED) {
+                        return Mono.error(new IllegalStateException(
+                                "Only ENDED streams can be archived. Current: "
+                                + entity.getStatus().wireValue()));
+                    }
+                    if (entity.getSrsName() == null) {
+                        return Mono.error(new IllegalStateException(
+                                "Cannot archive stream without srsName: id=" + id));
+                    }
+                    // Archive URL points to SRS DVR persistent path
+                    String dvrUrl = String.format("%s/dvr/%s/archive.mp4",
+                            publishTokenProps.srsHlsHost(), entity.getSrsName());
+                    entity.setArchivedUrl(dvrUrl);
+                    entity.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+                    return repository.save(entity);
+                })
+                .doOnSuccess(saved -> log.info("Stream archived: id={}", saved.getId()))
+                .map(StreamResponse::from)
+                .onErrorMap(OptimisticLockingFailureException.class,
+                        ex -> new StreamConflictException(
+                                "Stream was modified by another operation. Reload and try again."));
+    }
+
+    // ── View tracking ────────────────────────────────────────────────────────
+
+    private static final String VIEW_KEY_PREFIX = "stream:view:";
+
+    /**
+     * Track a view event in Redis with per-user-per-stream deduplication.
+     *
+     * <p>Uses a Redis Hash keyed by {@code stream:view:{streamId}:{viewerId}}.
+     * On first view within the TTL window, sets {@code user_id} and
+     * {@code first_seen_at}. On every view (including return visits), updates
+     * {@code last_seen_at} and refreshes the TTL.
+     *
+     * <p>The caller is responsible for skipping self-views
+     * (broadcaster viewing their own stream).
+     *
+     * @param streamId the stream being viewed
+     * @param viewerId JWT subject for authenticated users, or {@code ip:…}
+     *                 for anonymous viewers
+     */
+    private Mono<Void> trackViewEvent(UUID streamId, String viewerId) {
+        String key = VIEW_KEY_PREFIX + streamId + ":" + viewerId;
+        String now = String.valueOf(System.currentTimeMillis());
+        return redisTemplate.opsForHash()
+                .put(key, "user_id", viewerId)
+                .then(redisTemplate.opsForHash()
+                        .putIfAbsent(key, "first_seen_at", now))
+                .then(redisTemplate.opsForHash()
+                        .put(key, "last_seen_at", now))
+                .then(redisTemplate.expire(key, viewCountProperties.viewTtl()))
+                .doOnError(ex -> log.warn(
+                        "Failed to track view event for stream={} viewer={}: {}",
+                        streamId, viewerId, ex.getMessage()))
+                .onErrorComplete()
+                .then();
+    }
+
+    // ── Broadcasts (server-enforced status) ─────────────────────────────────
+
+    /**
+     * Row mapper: {@code stream_session} row → {@link StreamSummaryResponse}.
+     */
+    private static final BiFunction<Row, RowMetadata, StreamSummaryResponse> SUMMARY_MAPPER =
+            (row, meta) -> {
+                UUID id = row.get("id", UUID.class);
+                String title = row.get("title", String.class);
+                String statusWire = row.get("status", String.class);
+                String category = row.get("category", String.class);
+                UUID categoryId = row.get("category_id", UUID.class);
+                String[] tagArray = row.get("tags", String[].class);
+                List<String> tags = tagArray != null
+                        ? List.copyOf(Arrays.asList(tagArray)) : List.of();
+                String thumbnailUrl = row.get("thumbnail_url", String.class);
+                Long views = row.get("views", Long.class);
+                OffsetDateTime createdAt = row.get("created_at", OffsetDateTime.class);
+                OffsetDateTime scheduledAt = row.get("scheduled_at", OffsetDateTime.class);
+                String broadcasterUsername = row.get("broadcaster_username", String.class);
+
+                return new StreamSummaryResponse(id, title, statusWire, category,
+                        categoryId, tags, thumbnailUrl, views, createdAt,
+                        scheduledAt, broadcasterUsername);
+            };
+
+    /**
+     * Return the 10 most recent ENDED streams for a channel.
+     * Server-enforced: status=ENDED, ordered by created_at DESC, limit 10.
+     */
+    public Flux<StreamSummaryResponse> getRecentBroadcasts(String username) {
+        var query = BroadcastQueryBuilder.forRail(username);
+        return databaseClient.sql(query.sql())
+                .bindValues(query.bindings())
+                .map(SUMMARY_MAPPER)
+                .all();
+    }
+
+    /**
+     * Return a paginated, filterable list of broadcasts for a channel.
+     * Server-enforced: status IN (ENDED, LIVE, SCHEDULED) — never from client.
+     * Keyword search uses database-level ILIKE; sorting/pagination execute in SQL.
+     */
+    public Mono<BroadcastPageResponse> getBroadcasts(
+            String username,
+            String keyword,
+            String sort,
+            String order,
+            int page,
+            int size
+    ) {
+        List<StreamStatus> statuses = List.of(
+                StreamStatus.ENDED, StreamStatus.LIVE, StreamStatus.SCHEDULED);
+
+        var countQ = BroadcastQueryBuilder.count(username, statuses, keyword);
+        var dataQ = BroadcastQueryBuilder.forList(username, statuses,
+                keyword, sort, order, page, size);
+
+        Mono<Long> totalMono = databaseClient.sql(countQ.sql())
+                .bindValues(countQ.bindings())
+                .map(row -> row.get("total", Long.class))
+                .one();
+
+        Flux<StreamSummaryResponse> dataFlux = databaseClient.sql(dataQ.sql())
+                .bindValues(dataQ.bindings())
+                .map(SUMMARY_MAPPER)
+                .all();
+
+        return Mono.zip(totalMono, dataFlux.collectList())
+                .map(tuple -> BroadcastPageResponse.of(
+                        tuple.getT2(), tuple.getT1(), page, size));
     }
 
     // ── Private helpers ─────────────────────────────────────────────────────
@@ -659,7 +849,8 @@ public class StreamService {
                 })
                 .map(StreamResponse::from)
                 .onErrorMap(OptimisticLockingFailureException.class,
-                        ex -> new StreamConflictException("Stream was modified by another operation. Reload and try again."));
+                        ex -> new StreamConflictException(
+                                "Stream was modified by another operation. Reload and try again."));
     }
 
     // ── Private helpers ─────────────────────────────────────────────────────

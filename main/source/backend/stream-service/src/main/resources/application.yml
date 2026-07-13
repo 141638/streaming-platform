@@ -32,6 +32,13 @@ spring:
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
     admin:
       auto-create: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:r3d1s-d3v-p4ss-2024}
+      timeout: 2s
+      connect-timeout: 2s
 
 eureka:
   client:
@@ -63,3 +70,6 @@ streaming:
   srs:
     webhook:
       secret: ${SRS_WEBHOOK_SECRET:change-me}
+  view-count:
+    flush-interval-ms: 300000
+    view-ttl: ${STREAM_VIEW_TTL:24h}

@@ -9,6 +9,7 @@ export interface StreamResponseDto {
   readonly status: string;
   readonly broadcasterSubject: string;
   readonly thumbnailUrl: string | null;
+  readonly archivedUrl: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly startedAt: string | null;

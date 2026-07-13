@@ -1,8 +1,11 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
+import { BroadcastPageResponseDto } from '../contracts/broadcast-page-response.dto';
 import { CategoryResponseDto } from '../contracts/category-response.dto';
-import { ChannelResponseDto } from '../contracts/channel-response.dto';
+import { ChannelAboutResponseDto } from '../contracts/channel-about-response.dto';
+import { ChannelHomeResponseDto } from '../contracts/channel-home-response.dto';
+import { ChannelIdentityResponseDto } from '../contracts/channel-identity-response.dto';
 import { CreateStreamRequestDto } from '../contracts/create-stream-request.dto';
 import { PublishKeyResponseDto } from '../contracts/publish-key-response.dto';
 import { SocialLinkDto } from '../contracts/social-link.dto';
@@ -86,10 +89,30 @@ export class StreamService {
 
   // ── Channel page (authenticated, cross-user read) ────────────────────────
 
-  /** Fetch the safe channel projection for any user by username. */
-  public getChannel(username: string): Observable<ChannelResponseDto> {
-    return this.http.get<ChannelResponseDto>(
-      `${this.base}/channels/${username}`,
+  /** Fetch channel identity for the page header — only the newest 1 session. */
+  public getChannelIdentity(
+    username: string,
+  ): Observable<ChannelIdentityResponseDto> {
+    return this.http.get<ChannelIdentityResponseDto>(
+      `${this.base}/channels/${username}/identity`,
+    );
+  }
+
+  /** Fetch home tab data: 15-session rail + recent categories. */
+  public getChannelHome(
+    username: string,
+  ): Observable<ChannelHomeResponseDto> {
+    return this.http.get<ChannelHomeResponseDto>(
+      `${this.base}/channels/${username}/home`,
+    );
+  }
+
+  /** Fetch about tab data: bio, social links, and channel stats. */
+  public getChannelAbout(
+    username: string,
+  ): Observable<ChannelAboutResponseDto> {
+    return this.http.get<ChannelAboutResponseDto>(
+      `${this.base}/channels/${username}/about`,
     );
   }
 
@@ -105,5 +128,51 @@ export class StreamService {
       bio,
       socialLinks,
     });
+  }
+
+  // ── Archive ──────────────────────────────────────────────────────────────
+
+  /** Archive an ended stream. Owner-only. */
+  public archiveStream(id: string): Observable<StreamResponseDto> {
+    return this.http.post<StreamResponseDto>(
+      `${this.base}/streams/${id}/archive`,
+      null,
+    );
+  }
+
+  // ── Broadcasts (archived streams, channel-facing read) ───────────────────
+
+  /** Top 10 most recent archived streams for a channel. */
+  public getRecentBroadcasts(
+    username: string,
+  ): Observable<StreamSummaryResponseDto[]> {
+    return this.http.get<StreamSummaryResponseDto[]>(
+      `${this.base}/channels/${username}/broadcasts/recent`,
+    );
+  }
+
+  /**
+   * Paginated, filterable list of archived streams for a channel.
+   * Only returns streams where {@code archived_url IS NOT NULL}.
+   */
+  public getBroadcasts(
+    username: string,
+    params: {
+      keyword?: string;
+      sort?: string;
+      order?: string;
+      page?: number;
+      size?: number;
+    },
+  ): Observable<BroadcastPageResponseDto> {
+    const q = new URLSearchParams();
+    if (params.keyword) q.set('keyword', params.keyword);
+    if (params.sort) q.set('sort', params.sort);
+    if (params.order) q.set('order', params.order);
+    q.set('page', String(params.page ?? 0));
+    q.set('size', String(params.size ?? 24));
+    return this.http.get<BroadcastPageResponseDto>(
+      `${this.base}/channels/${username}/broadcasts?${q.toString()}`,
+    );
   }
 }

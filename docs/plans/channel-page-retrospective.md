@@ -1,8 +1,8 @@
 # Channel Page — Implementation Retrospective
 
 **Date:** 2026-07-10
-**Status:** Complete (Phase A+B shipped; see §4 for deferred items)
-**Reference:** [Blueprint](channel-page-phase-a-b-blueprint.md) · [Scope Review](channel-page-scope-review.md) · [IMPLEMENTATION-PLAN.md](../IMPLEMENTATION-PLAN.md)
+**Status:** Complete (Phase A+B shipped; Phase C — child routes, endpoint split, broadcast query builder — completed 2026-07-13)
+**Reference:** [Blueprint](channel-page-phase-a-b-blueprint.md) · [Scope Review](channel-page-scope-review.md) · [2.5c Retrospective](channel-2.5c-and-view-tracking-retrospective.md) · [IMPLEMENTATION-PLAN.md](../IMPLEMENTATION-PLAN.md)
 
 ---
 

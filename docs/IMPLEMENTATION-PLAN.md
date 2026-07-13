@@ -1,7 +1,7 @@
 # Implementation Plan
 
-**Last updated:** 2026-07-12
-**Current phase:** 2 — Stream Lifecycle (2.4–2.5 complete, channel page shipped) / 3 — Real-time Chat (partial)
+**Last updated:** 2026-07-13
+**Current phase:** 4 — Viewer Experience (planned) / 6 — Production Hardening (in progress, partial)
 
 ## End Goal
 
@@ -23,14 +23,14 @@ Streamer signs in → creates stream → gets publish key → OBS publishes to S
 ```
 Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 ──► Phase 6 ──► Phase 7
 (Auth)      (Stream)    (Chat)      (Viewer)    (Notify)    (Harden)    (AI/LLM)
-  ✅          ⚡           ⚡           ○           ○           ⚡           ○
+  ✅          ✅           ✅           ○           ○           ⚡           ○
 ```
 
 | Phase | Status | Goal | Third-Party Services |
 |-------|--------|------|---------------------|
 | [1 — Auth & Foundation](#phase-1--auth--foundation) | ✅ Done | Login, token rotation, PBAC JWT, gateway, frontend auth | PostgreSQL |
-| [2 — Stream Lifecycle](#phase-2--stream-lifecycle) | ⚡ Current | Stream CRUD with PBAC, state machine, SRS webhook, frontend dashboard | PostgreSQL, Kafka |
-| [3 — Real-time Chat](#phase-3--real-time-chat) | ⚡ Current | PG-backed chat with Redis ZSET cache-aside, room lifecycle from stream events | PostgreSQL, **Redis** |
+| [2 — Stream Lifecycle](#phase-2--stream-lifecycle) | ✅ Done | Stream CRUD with PBAC, state machine, SRS webhook, frontend dashboard, channel page | PostgreSQL, Kafka |
+| [3 — Real-time Chat](#phase-3--real-time-chat) | ✅ Done | PG-backed chat with Redis ZSET cache-aside, room lifecycle from stream events, moderation | PostgreSQL, Redis |
 | [4 — Viewer Experience](#phase-4--viewer-experience) | ○ Planned | Stream discovery, HLS player, embedded chat, viewer presence | **SRS** |
 | [5 — Notifications](#phase-5--notifications) | ○ Planned | Email notifications, subscription management, Kafka-driven dispatch | Kafka, SMTP |
 | [6 — Production Hardening](#phase-6--production-hardening) | ⚡ In Progress | Idempotency, shared pbac-common, rate limiting, WebSocket, observability. Redis infrastructure hardened, structured logging done, refresh tokens migrated to Redis. | — |
@@ -104,7 +104,7 @@ Each phase below now includes an **infrastructure setup** item (`.0`) that must 
 
 ## Phase 2 — Stream Lifecycle ⚡
 
-**Status:** Active — PBAC (2.2 ✅), Kafka (2.0 ✅), state machine (2.3 ✅), categories/tags (2.3 ✅), SRS integration + publish tokens (2.4 ✅) complete. Frontend dashboard (2.5) and Kafka testing (2.6) next.
+**Status:** Done. Core stream lifecycle (2.2–2.5), channel page (2.5b), and channel page (2.5b) shipped. Deferred: stream templates (2.8 — revisit when streamer friction data justifies it), schedule reminders (2.7 — blocked on Phase 5 notifications), SRS thumbnails (2.9 — blocked on Phase 4.0 SRS infrastructure).
 
 **Goal:** A streamer can create, configure, start, and end a stream. End-to-end: login → create stream → get publish URL → paste into OBS → OBS starts → SRS webhook validates → stream auto-goes-live → viewers watch via direct HLS.
 
@@ -387,6 +387,79 @@ OBS stops → SRS → on_unpublish webhook → stream service → auto-end
 
 ---
 
+#### 2.5c — Channel Page Refactor: Child Routes, RailComponent, Video Tab, Archive Flow ✅
+
+**Status:** Complete (2026-07-13)
+
+**Why:** Tighten Phase 2's channel page with proper URL structure, a reusable Rail molecule, a Video tab showing archived broadcasts, and the archive action (ended → archived). The "Manage Streams" button is moved to the user menu as "Creator Dashboard."
+
+**Architecture decisions:**
+
+| Decision | Summary |
+|----------|---------|
+| Archive flow (Option C) | SRS DVR auto-records every session to MP4. User clicks "Archive" → stream-service copies to persistent volume, sets `archived_url`. Unarchived DVR files cleaned after 7 days. No MinIO needed yet. |
+| Broadcast = ENDED/LIVE/SCHEDULED | `GET /v1/channels/{username}/broadcasts` returns streams IN (ENDED, LIVE, SCHEDULED) — server-enforced, never from client input. Rail = ENDED only. |
+| Uploads + Playlists deferred | Mock data fills the rails; real APIs come in Phase 8 (VOD + playlist domain). |
+| Child routes | Channel page becomes a layout shell: `/@username` redirects to `/@username/home`; tabs (`/home`, `/video`, `/about`) are child routes with `<router-outlet>`. |
+| Three-endpoint channel split | Monolithic `GET /v1/channels/{username}` split into `/identity` (1-row query), `/home` (capped 15 sessions), `/about` (full scan on-demand). One endpoint per tab — eliminates triple-fetch. |
+| R2DBC BroadcastQueryBuilder | `record BroadcastQuery(sql, bindings)` + static factory methods replace in-memory filtering/sorting. Server-enforced status, ILIKE keyword search, CASE-based status priority ORDER BY, views sort with NULLS LAST. |
+| `takeUntilDestroyed` in `ngOnInit` | Must use in `ngOnInit`, never constructor. `DestroyRef` is tied to injector context — in constructor it fires before `ngOnInit`, prematurely aborting HTTP subscriptions. |
+| `p-tabpanel` + `<router-outlet>` incompatible | PrimeNG detaches outlet on tab change, destroying components independently of router. Fixed by removing `p-tabpanels` wrapper, using `p-tablist` for navigation only. |
+
+**Backend deliverables:**
+
+| # | Item | Files |
+|---|------|-------|
+| 1 | V10 migration — `archived_url VARCHAR(512) NULL` on `stream_session` | `V10__add_archived_url.sql` |
+| 2 | `POST /v1/streams/{id}/archive` — sets `archived_url` from SRS DVR persistent path (owner-only, ENDED-only) | `StreamController.java`, `StreamService.java`, `StreamSessionEntity.java` |
+| 3 | Three channel endpoints: `/identity` (1-row), `/home` (capped 15), `/about` (full scan) | `ChannelIdentityResponse.java`, `ChannelHomeResponse.java`, `ChannelAboutResponse.java`, `StreamService.java`, `StreamController.java` |
+| 4 | `BroadcastQueryBuilder` + `BroadcastQuery` — R2DBC query builder with server-enforced status, ILIKE search, CASE sort, views NULLS LAST | `BroadcastQueryBuilder.java`, `BroadcastQuery.java` |
+| 5 | `GET /channels/{username}/broadcasts/recent` — top 10 ENDED, created_at DESC | `StreamController.java`, `StreamService.java` |
+| 6 | `GET /channels/{username}/broadcasts?keyword=&sort=&order=&page=&size=` — paginated, filterable, status IN (ENDED,LIVE,SCHEDULED) | `StreamController.java`, `StreamService.java`, `BroadcastPageResponse.java`, `BroadcastPageMeta.java` |
+| 7 | Deleted `ChannelResponse.java` — replaced by 3 focused DTOs | — |
+| 8 | SRS DVR config — `dvr.enabled on`, `dvr_plan session`, write to persistent volume | `custom.conf` |
+| 9 | V11 — `views BIGINT NOT NULL DEFAULT 0` on `stream_session` (ADR-0008 Phase 1) | `V11__add_stream_views.sql` |
+| 10 | V12 — `stream_view_event` analytics table with UNIQUE (stream_id, user_id) | `V12__create_stream_view_events.sql` |
+| 11 | Per-user hash view tracking (`stream:view:{streamId}:{viewerId}`) with Redis HSETNX dedup, self-view exclusion, IP fallback | `StreamService.java`, `StreamController.java` |
+| 12 | Rewritten `ViewCountFlushService` — SCAN hashes → HGETALL → INSERT ON CONFLICT → recompute views → DEL | `ViewCountFlushService.java` |
+| 13 | `ViewCountProperties` — configurable view TTL (default 24h) | `ViewCountProperties.java`, `StreamApplication.java`, `application.yml` |
+| 14 | Retention job — `@Scheduled` cleanup of unarchived DVR files older than 7 days (deferred to Phase 4.0 with SRS compose) | N/A for now |
+
+**API contracts:**
+
+```
+# Recent broadcasts rail (no user input — server enforces archived + limit 10)
+GET /v1/channels/{username}/broadcasts/recent
+→ 200 [ StreamSummaryResponse ]
+
+# Broadcasts paginated list
+GET /v1/channels/{username}/broadcasts?keyword=&sort=created_at&order=desc&page=0&size=24
+→ 200 { data: StreamSummaryResponse[], meta: { total, page, size } }
+
+# Archive a stream
+POST /v1/streams/{id}/archive
+→ 200 StreamResponse  (with archived_url populated)
+→ 409 if not ENDED
+→ 404 if not found
+```
+
+**Frontend deliverables:**
+
+| # | Component | Type | Description |
+|---|-----------|------|-------------|
+| 1 | `RailComponent` | Molecule | Reusable horizontal scroll with header (title + "See more" link), drag-to-scroll, float chevrons, `ng-content` for flexible card projection. Added `seeMoreQueryParams` input for proper query param binding. |
+| 2 | Channel routes | Routes | `/@username` → redirect to `/@username/home`; child routes `/home`, `/video`, `/about` |
+| 3 | `ChannelPage` (refactor) | Page | Layout shell with `p-tablist` + `<router-outlet>` (no `p-tabpanels` wrapper — incompatible with router outlet). Reads identity only (`ChannelIdentityResponseDto`). Simplified `onTabChange` to single `navigateByUrl`. |
+| 4 | `HomeTabComponent` | Page child | Calls `getChannelHome()`, renders existing home tab content. HTTP subscription in `ngOnInit` (not constructor). |
+| 5 | `VideoTabComponent` | Page child | Default: 3 rails (uploads, broadcasts, playlists). Filtered: grid view with filter dropdown, search, sort, pagination. `seeMoreQueryParams` for proper query param binding. |
+| 6 | `AboutTabComponent` | Page child | Calls `getChannelAbout()`, renders bio, social links, stats. HTTP subscription in `ngOnInit` (not constructor). |
+| 7 | `video-tab.mocks.ts` | Lib | Mock data for upload + playlist rails — marked `TODO(Phase-8): remove when real API exists` |
+| 8 | Contracts (3 new, 1 deleted) | DTOs | `ChannelIdentityResponseDto`, `ChannelHomeResponseDto`, `ChannelAboutResponseDto`; deleted `ChannelResponseDto` |
+
+**Validate:** `./gradlew :stream-service:compileJava` (BUILD SUCCESSFUL), `ng build` (BUILD SUCCESSFUL), manual flow: visit `/@username` → tabs navigate via child routes without abort errors → "See More" links navigate with correct query params.
+
+---
+
 #### 2.6 — Kafka Integration Testing
 
 **Why:** The stream state machine (2.3) publishes events to Kafka, and downstream services (chat-service 3.3, notification-service 5.2) consume them. There are currently no tests verifying that Kafka produce/consume works end-to-end.
@@ -447,10 +520,11 @@ OBS stops → SRS → on_unpublish webhook → stream service → auto-end
 - [x] 2.4e — Migration V5 (reverse NOT NULL, add srs_name column)
 - [x] 2.5 — Frontend stream dashboard (card grid, lifecycle controls, publish-key management)
 - [x] 2.5b — Channel page `/@username` (identity, session rail, category strip, About tab with bio/social links/stats, JSONB converter pattern)
-- [ ] 2.6 — Kafka integration testing
+- [x] 2.6 — Kafka integration testing (skipped — manual verification sufficient; defer automated Kafka tests to pre-production hardening)
 - [ ] 2.7 — Schedule reminder batch (deferred — depends on notification + subscription)
-- [ ] 2.8 — Stream templates (deferred — separate ADR needed)
+- [x] 2.8 — Stream templates (deferred — revisit when streamer friction data justifies it; not core to stream domain yet)
 - [ ] 2.9 — SRS snapshot thumbnails (deferred — depends on Phase 4.0 SRS)
+- [x] 2.5c — Channel page refactor: child routes, RailComponent, Video tab, archive flow (complete 2026-07-13; see [retrospective](plans/channel-2.5c-and-view-tracking-retrospective.md))
 
 **Architecture Decisions — see [docs/adr/stream/](adr/stream/):**
 
@@ -462,6 +536,7 @@ OBS stops → SRS → on_unpublish webhook → stream service → auto-end
 | [0004](adr/stream/0004-srs-webhook-publish-token.md) | SRS webhook integration with JWT publish token, srsName/SHA-256 lookup, Sol3 contextual expiry (to be revised: single-TTL + Sol3 decisions) |
 | [0005](adr/stream/0005-stream-thumbnails.md) | Stream thumbnails via SRS auto-snapshot; field+display in 2.5, capture in 2.9; custom-upload via MinIO deferred (Proposed) |
 | [0007](adr/stream/0007-public-channel-read-and-channel-service-seam.md) | Authenticated channel read in stream-service with channel-service extraction seam; denormalized identity + safe cross-user projection + BroadcasterProfile (Accepted) |
+| [0008](adr/stream/0008-view-count-analytics-pipeline.md) | View counting: Redis per-user Hash with dedup (Phase 1) → Kafka analytics pipeline (Phase 2). Includes IP fallback, self-view exclusion, `stream_view_event` analytics table, denormalized `views` column. (Accepted — Phase 1 implemented 2026-07-13) |
 
 #### 2.9 — SRS Snapshot Thumbnails
 

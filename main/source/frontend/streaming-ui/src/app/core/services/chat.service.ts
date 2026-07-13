@@ -49,4 +49,22 @@ export class ChatService {
       { params: { before: cursor, limit: limit.toString() } },
     );
   }
+
+  /**
+   * Find distinct author usernames for @mention autocomplete.
+   * Returns anyone who has ever chatted in this room, filtered by prefix query.
+   * @param roomKey the room's external key
+   * @param query   prefix filter (case-insensitive); empty returns top results
+   * @param limit   max results (default 10)
+   */
+  public getParticipants(
+    roomKey: string,
+    query: string = '',
+    limit: number = 10,
+  ): Observable<string[]> {
+    return this.http.get<string[]>(
+      `${this.basePath}/${roomKey}/participants`,
+      { params: { q: query, limit: limit.toString() } },
+    );
+  }
 }

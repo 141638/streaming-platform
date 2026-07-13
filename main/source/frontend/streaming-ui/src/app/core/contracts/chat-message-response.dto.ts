@@ -13,6 +13,8 @@ export interface ChatMessageResponseDto {
   readonly giftAmount: number | null;
   readonly giftCurrency: string | null;
   readonly createdAt: string;
+  /** @mentions extracted by the backend from the message body. */
+  readonly mentions: string[];
 }
 
 export enum MessageType {

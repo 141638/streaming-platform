@@ -80,7 +80,8 @@ public abstract class AbstractRedisIntegrationTest {
                 MessageType.NORMAL.wireValue(),
                 (BigDecimal) null,
                 null,
-                createdAt);
+                createdAt,
+                java.util.Collections.emptyList());
     }
 
     protected static OffsetDateTime utc(long epochMillisOffset) {

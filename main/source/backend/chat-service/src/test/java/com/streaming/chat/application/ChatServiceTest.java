@@ -246,6 +246,7 @@ class ChatServiceTest extends AbstractCacheIntegrationTest {
     private static MessageResponse message(String roomKey, String body) {
         return new MessageResponse(
                 UUID.randomUUID(), roomKey, SUB, USERNAME, null, body,
-                "NORMAL", null, null, OffsetDateTime.now(ZoneOffset.UTC));
+                "NORMAL", null, null, OffsetDateTime.now(ZoneOffset.UTC),
+                java.util.Collections.emptyList());
     }
 }

@@ -1,7 +1,9 @@
 # Implementation Plan
 
 **Last updated:** 2026-07-13
-**Current phase:** 4 — Viewer Experience (planned) / 6 — Production Hardening (in progress, partial)
+**Current phase:** 6 — Production Hardening (active: Kafka outbox pattern) → then 4 — Viewer Experience
+**Active blueprint:** [outbox-and-phase4-blueprint.md](plans/outbox-and-phase4-blueprint.md) — Path C hybrid sequencing
+**Next session:** Start with Task A1 (outbox schema migration)
 
 ## End Goal
 
@@ -990,7 +992,7 @@ ADR-0003 §Deferred).
 
 ## Phase 6 — Production Hardening ○
 
-**Status:** In Progress — Redis infrastructure hardened, structured logging deployed, refresh tokens migrated to Redis. Remaining items are planned but not started.
+**Status:** In Progress — Redis infrastructure hardened, structured logging deployed, refresh tokens migrated to Redis. **Active: Kafka outbox pattern** — the #1 production gap (see [gap analysis](REDIS-KAFKA-PRODUCTION-GAP.md), [blueprint](plans/outbox-and-phase4-blueprint.md)). Remaining items are planned but not started.
 
 **Goal:** The platform is safe, scalable, and maintainable for production use.
 

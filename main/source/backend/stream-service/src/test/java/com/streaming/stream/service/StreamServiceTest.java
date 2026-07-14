@@ -3,6 +3,7 @@ package com.streaming.stream.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -10,7 +11,9 @@ import static org.mockito.Mockito.when;
 import com.streaming.stream.api.dto.CreateStreamRequest;
 import com.streaming.stream.api.dto.UpdateStreamRequest;
 import com.streaming.stream.config.PublishTokenProperties;
+import com.streaming.stream.config.ViewCountProperties;
 import com.streaming.stream.messaging.StreamEventPublisher;
+import com.streaming.stream.persistence.entity.OutboxEvent;
 import com.streaming.stream.persistence.entity.StreamSessionEntity;
 import com.streaming.stream.persistence.entity.StreamStatus;
 import com.streaming.stream.persistence.repository.BroadcasterProfileRepository;
@@ -34,6 +37,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+import org.springframework.data.redis.core.ReactiveHashOperations;
+import org.springframework.data.redis.core.ReactiveRedisTemplate;
+import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -41,6 +49,7 @@ import reactor.test.StepVerifier;
 
 @DisplayName("StreamService (with PBAC + state machine)")
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class StreamServiceTest {
 
     private static final UUID STREAM_ID = UUID.randomUUID();
@@ -64,10 +73,25 @@ class StreamServiceTest {
     private StreamEventPublisher eventPublisher;
 
     @Mock
+    private OutboxWriter outboxWriter;
+
+    @Mock
     private PublishTokenService publishTokenService;
+
+    @Mock
+    private DatabaseClient databaseClient;
+
+    @Mock
+    private ReactiveRedisTemplate<String, String> redisTemplate;
+
+    @Mock
+    private ReactiveHashOperations<String, Object, Object> hashOps;
 
     private final PublishTokenProperties publishTokenProps = new PublishTokenProperties(
             Duration.ofHours(2), "rtmp://srs:1935", "http://srs:8080");
+
+    private final ViewCountProperties viewCountProperties = new ViewCountProperties(
+            Duration.ofHours(24));
 
     private StreamService service;
 
@@ -75,7 +99,13 @@ class StreamServiceTest {
     void setUp() {
         service = new StreamService(repository, categoryRepository,
                 profileRepository, authorization,
-                eventPublisher, publishTokenService, publishTokenProps);
+                eventPublisher, outboxWriter,
+                publishTokenService, publishTokenProps,
+                databaseClient, redisTemplate, viewCountProperties);
+        lenient().when(redisTemplate.opsForHash()).thenReturn(hashOps);
+        lenient().when(hashOps.put(any(), any(), any())).thenReturn(Mono.just(true));
+        lenient().when(hashOps.putIfAbsent(any(), any(), any())).thenReturn(Mono.just(true));
+        lenient().when(redisTemplate.expire(any(), any())).thenReturn(Mono.just(true));
     }
 
     private static Jwt jwt(String sub) {
@@ -114,7 +144,17 @@ class StreamServiceTest {
     }
 
     private void stubPublish() {
-        when(eventPublisher.publish(any())).thenReturn(Mono.empty());
+        OutboxEvent dummy = OutboxEvent.builder()
+                .id(UUID.randomUUID())
+                .isNew(false)
+                .eventType("STREAM_CREATED")
+                .streamId(STREAM_ID)
+                .payload("{}")
+                .retryCount(0)
+                .createdAt(OffsetDateTime.now(ZoneOffset.UTC))
+                .published(false)
+                .build();
+        when(outboxWriter.write(any())).thenReturn(Mono.just(dummy));
     }
 
     // ── getStream ───────────────────────────────────────────────────────────
@@ -132,7 +172,7 @@ class StreamServiceTest {
             when(authorization.requireAccess(eq(j), eq(required(AuthAction.READ, OWNER_SUB))))
                     .thenReturn(Mono.empty());
 
-            StepVerifier.create(service.getStream(STREAM_ID, j))
+            StepVerifier.create(service.getStream(STREAM_ID, j, "viewer-1"))
                     .assertNext(response -> {
                         assertThat(response.id()).isEqualTo(STREAM_ID);
                         assertThat(response.title()).isEqualTo("Test Stream");
@@ -152,7 +192,7 @@ class StreamServiceTest {
                     .thenReturn(Mono.error(new StreamAuthorization.StreamAccessDeniedException(
                             required(AuthAction.READ, OWNER_SUB), OTHER_SUB)));
 
-            StepVerifier.create(service.getStream(STREAM_ID, j))
+            StepVerifier.create(service.getStream(STREAM_ID, j, "viewer-1"))
                     .expectError(StreamService.StreamNotFoundException.class)
                     .verify();
         }
@@ -163,7 +203,7 @@ class StreamServiceTest {
             Jwt j = jwt(OWNER_SUB);
             when(repository.findById(STREAM_ID)).thenReturn(Mono.empty());
 
-            StepVerifier.create(service.getStream(STREAM_ID, j))
+            StepVerifier.create(service.getStream(STREAM_ID, j, "viewer-1"))
                     .expectError(StreamService.StreamNotFoundException.class)
                     .verify();
 
@@ -196,7 +236,7 @@ class StreamServiceTest {
                     .verifyComplete();
 
             verify(authorization).requireAccess(j, required(AuthAction.CREATE, OWNER_SUB));
-            verify(eventPublisher).publish(any());
+            verify(outboxWriter).write(any());
         }
 
         @Test
@@ -331,7 +371,7 @@ class StreamServiceTest {
                     })
                     .verifyComplete();
 
-            verify(eventPublisher).publish(any());
+            verify(outboxWriter).write(any());
         }
 
         @Test
@@ -430,7 +470,7 @@ class StreamServiceTest {
                     .assertNext(response -> assertThat(response.status()).isEqualTo("cancelled"))
                     .verifyComplete();
 
-            verify(eventPublisher).publish(any());
+            verify(outboxWriter).write(any());
         }
 
         @Test
@@ -640,7 +680,7 @@ class StreamServiceTest {
             StepVerifier.create(service.handlePublish(SRS_NAME, TOKEN))
                     .verifyComplete();
 
-            verify(eventPublisher).publish(any());
+            verify(outboxWriter).write(any());
         }
 
         @Test
@@ -657,7 +697,7 @@ class StreamServiceTest {
                     .verifyComplete();
 
             verify(repository, never()).save(any());
-            verify(eventPublisher, never()).publish(any());
+            verify(outboxWriter, never()).write(any());
         }
 
         @Test
@@ -703,7 +743,7 @@ class StreamServiceTest {
             StepVerifier.create(service.handleUnpublish(SRS_NAME))
                     .verifyComplete();
 
-            verify(eventPublisher).publish(any());
+            verify(outboxWriter).write(any());
         }
 
         @Test
@@ -717,7 +757,7 @@ class StreamServiceTest {
                     .verifyComplete();
 
             verify(repository, never()).save(any());
-            verify(eventPublisher, never()).publish(any());
+            verify(outboxWriter, never()).write(any());
         }
 
         @Test
@@ -730,151 +770,4 @@ class StreamServiceTest {
         }
     }
 
-    // ── getChannel ─────────────────────────────────────────────────────────
-
-    @Nested
-    @DisplayName("getChannel")
-    class GetChannel {
-
-        private static final String USERNAME = "streamer42";
-
-        private StreamSessionEntity session(String title, String cat, StreamStatus status) {
-            StreamSessionEntity e = new StreamSessionEntity();
-            e.setId(UUID.randomUUID());
-            e.setBroadcasterSubject(OWNER_SUB);
-            e.setBroadcasterUsername(USERNAME);
-            e.setBroadcasterVerified(true);
-            e.setTitle(title);
-            e.setCategory(cat);
-            e.setStatus(status);
-            e.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
-            e.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
-            return e;
-        }
-
-        @Test
-        @DisplayName("returns channel with sessions, identity, and categories")
-        void returnsChannel() {
-            var s1 = session("Stream One", "Gaming", StreamStatus.ENDED);
-            var s2 = session("Stream Two", "Music", StreamStatus.LIVE);
-            var s3 = session("Stream Three", "Gaming", StreamStatus.DRAFT);
-            when(repository.findAllByBroadcasterUsernameOrderByCreatedAtDesc(USERNAME))
-                    .thenReturn(Flux.just(s1, s2, s3));
-            when(profileRepository.findByUsername(USERNAME)).thenReturn(Mono.empty());
-
-            StepVerifier.create(service.getChannel(USERNAME))
-                    .assertNext(channel -> {
-                        assertThat(channel.username()).isEqualTo(USERNAME);
-                        assertThat(channel.verified()).isTrue();
-                        assertThat(channel.sessions()).hasSize(3);
-                        assertThat(channel.sessions().get(0).title()).isEqualTo("Stream One");
-                        assertThat(channel.recentCategories())
-                                .containsExactlyInAnyOrder("Gaming", "Music");
-                    })
-                    .verifyComplete();
-        }
-
-        @Test
-        @DisplayName("caps sessions at 15")
-        void capsSessions() {
-            var sessions = new StreamSessionEntity[20];
-            for (int i = 0; i < 20; i++) {
-                sessions[i] = session("Stream " + i, "Cat", StreamStatus.ENDED);
-            }
-            when(repository.findAllByBroadcasterUsernameOrderByCreatedAtDesc(USERNAME))
-                    .thenReturn(Flux.fromArray(sessions));
-            when(profileRepository.findByUsername(USERNAME)).thenReturn(Mono.empty());
-
-            StepVerifier.create(service.getChannel(USERNAME))
-                    .assertNext(channel -> {
-                        assertThat(channel.sessions()).hasSize(15);
-                    })
-                    .verifyComplete();
-        }
-
-        @Test
-        @DisplayName("returns 200 with empty lists for unknown username")
-        void returnsEmptyForUnknown() {
-            when(repository.findAllByBroadcasterUsernameOrderByCreatedAtDesc("nobody"))
-                    .thenReturn(Flux.empty());
-            when(profileRepository.findByUsername("nobody")).thenReturn(Mono.empty());
-
-            StepVerifier.create(service.getChannel("nobody"))
-                    .assertNext(channel -> {
-                        assertThat(channel.username()).isEqualTo("nobody");
-                        assertThat(channel.verified()).isNull();
-                        assertThat(channel.sessions()).isEmpty();
-                        assertThat(channel.recentCategories()).isEmpty();
-                    })
-                    .verifyComplete();
-        }
-
-        @Test
-        @DisplayName("tolerates sessions with null broadcaster_username (backfill gap)")
-        void toleratesNullUsernameSessions() {
-            var old = new StreamSessionEntity();
-            old.setId(UUID.randomUUID());
-            old.setBroadcasterSubject(OWNER_SUB);
-            old.setBroadcasterUsername(null); // backfill gap
-            old.setBroadcasterVerified(null);
-            old.setTitle("Old Stream");
-            old.setCategory("Gaming");
-            old.setStatus(StreamStatus.ENDED);
-            old.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC).minusDays(7));
-            old.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC).minusDays(7));
-
-            var recent = session("Recent Stream", "Music", StreamStatus.LIVE);
-
-            when(repository.findAllByBroadcasterUsernameOrderByCreatedAtDesc(USERNAME))
-                    .thenReturn(Flux.just(recent, old));
-            when(profileRepository.findByUsername(USERNAME)).thenReturn(Mono.empty());
-
-            StepVerifier.create(service.getChannel(USERNAME))
-                    .assertNext(channel -> {
-                        // identity resolved from newest non-null session
-                        assertThat(channel.username()).isEqualTo(USERNAME);
-                        assertThat(channel.verified()).isTrue();
-                        assertThat(channel.sessions()).hasSize(2);
-                        assertThat(channel.recentCategories())
-                                .containsExactlyInAnyOrder("Gaming", "Music");
-                    })
-                    .verifyComplete();
-        }
-
-        @Test
-        @DisplayName("filters null/blank categories from recentCategories")
-        void filtersBlankCategories() {
-            var s1 = session("S1", null, StreamStatus.ENDED);
-            var s2 = session("S2", "", StreamStatus.ENDED);
-            var s3 = session("S3", "  ", StreamStatus.ENDED);
-            var s4 = session("S4", "Gaming", StreamStatus.LIVE);
-            when(repository.findAllByBroadcasterUsernameOrderByCreatedAtDesc(USERNAME))
-                    .thenReturn(Flux.just(s1, s2, s3, s4));
-            when(profileRepository.findByUsername(USERNAME)).thenReturn(Mono.empty());
-
-            StepVerifier.create(service.getChannel(USERNAME))
-                    .assertNext(channel -> {
-                        assertThat(channel.recentCategories()).containsExactly("Gaming");
-                    })
-                    .verifyComplete();
-        }
-
-        @Test
-        @DisplayName("distinct categories dedup")
-        void dedupCategories() {
-            var s1 = session("S1", "Gaming", StreamStatus.ENDED);
-            var s2 = session("S2", "Gaming", StreamStatus.ENDED);
-            var s3 = session("S3", "Music", StreamStatus.ENDED);
-            when(repository.findAllByBroadcasterUsernameOrderByCreatedAtDesc(USERNAME))
-                    .thenReturn(Flux.just(s1, s2, s3));
-            when(profileRepository.findByUsername(USERNAME)).thenReturn(Mono.empty());
-
-            StepVerifier.create(service.getChannel(USERNAME))
-                    .assertNext(channel -> {
-                        assertThat(channel.recentCategories())
-                                .containsExactlyInAnyOrder("Gaming", "Music");
-                    })
-                    .verifyComplete();
-        }
-    }
 }

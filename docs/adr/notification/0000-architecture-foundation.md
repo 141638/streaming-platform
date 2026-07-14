@@ -152,7 +152,7 @@ authoritative phase checklist.
 | REST API | 5.1 | ✅ **Done (2026-07-15)** — `GET /v1/notifications` (cursor-paginated, JWT-scoped), `GET /v1/notifications/unread-count`, `POST /v1/notifications/{id}/read` |
 | Consume → persist wiring | 5.2 | ✅ **Done (2026-07-15)** — `StreamControlListener` wired to `NotificationService.createFromStreamEvent()`; STREAM_STARTED/STREAM_ENDED persist, others are debug no-ops |
 | Subscription management | 5.1b | `channel_subscription` CRUD, `NotificationDispatcher` interface, outbox management — deferred to next session |
-| SSE delivery | 5.2b | `GET /v1/notifications/stream` (`text/event-stream`, fetch-based Bearer), `SseConnectionRegistry` (per-user sink map) |
+| SSE delivery | 5.2b | ✅ **Done (2026-07-15)** — `GET /v1/notifications/stream` (`text/event-stream`, JWT-scoped, 30s heartbeat), `SseConnectionRegistry` (in-memory, multi-tab per user via `CopyOnWriteArraySet<Sinks.Many>`), `NotificationService` wired to push via SSE, gateway per-route `response-timeout: -1`, frontend `@microsoft/fetch-event-source` connection + bell unread badge |
 | Chat moderation consumer | Wave 2 | `ModerationListener` for `chat.moderation` topic — BANNED/UNBANNED → persist → SSE push |
 | Email adapter | 5.3 | SMTP integration via Spring Mail, templated emails, outbox-driven dispatch |
 | Follower fan-out | 5.2b | Subscription lookup on stream events → notify all followers (currently only notifies the broadcaster) |

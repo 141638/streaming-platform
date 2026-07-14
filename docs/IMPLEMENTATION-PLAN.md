@@ -1,9 +1,9 @@
 # Implementation Plan
 
 **Last updated:** 2026-07-15
-**Current phase:** 5 — Notifications (foundation ✅) + 6 — Production Hardening (outbox ✅) + 4 — Viewer Experience (browse/watch/HLS ✅; presence deferred)
-**Active blueprint:** [notification-foundation-5.1-retrospective.md](plans/notification-foundation-5.1-retrospective.md) — notification core shipped
-**Next session:** Subscription CRUD + SSE delivery (5.1 remainder + 5.2)
+**Current phase:** 5 — Notifications (foundation ✅, SSE ✅) + 6 — Production Hardening (outbox ✅) + 4 — Viewer Experience (browse/watch/HLS ✅; presence deferred)
+**Active blueprint:** [notification-foundation-5.1-retrospective.md](plans/notification-foundation-5.1-retrospective.md) — notification core shipped; SSE delivery shipped
+**Next session:** Subscription CRUD + follower fan-out (5.1b + 5.2b remainder)
 
 ## End Goal
 
@@ -1034,7 +1034,7 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 | 5.1a | ✅ **Notification core (domain + persistence + REST)** — `Notification` entity with V2 migration, `NotificationCategory` enum with R2DBC converters, `ReactiveNotificationRepository` (cursor pagination, unread count, ownership-scoped), `NotificationService` (createFromStreamEvent, getNotifications, markAsRead, getUnreadCount), REST API (`GET /v1/notifications`, `GET /v1/notifications/unread-count`, `POST /v1/notifications/{id}/read`), error handling (`NotificationApiError`, `NotificationExceptionHandler`). See [retrospective](plans/notification-foundation-5.1-retrospective.md). 15 files — 13 created, 2 modified. | — |
 | 5.1b | **Subscription + outbox + dispatcher** — `channel_subscription` CRUD (V1 table already exists), outbox management (poller/producer), `NotificationDispatcher` interface | 5.1a |
 | 5.2a | ✅ **StreamControlListener → NotificationService wiring** — Replaced 5 stub handlers with `notificationService.createFromStreamEvent()` calls. STREAM_STARTED/STREAM_ENDED persist notifications; STREAM_CREATED/SCHEDULED/CANCELLED are debug-level no-ops. Injected `NotificationService` into `StreamControlListener`. | 2.3, 5.1a |
-| 5.2b | **Follower fan-out + SSE delivery** — subscription lookup on stream events → notify all followers; `SseConnectionRegistry` + `GET /v1/notifications/stream` | 5.1b, 5.2a |
+| 5.2b | **Follower fan-out + SSE delivery** — ~~subscription lookup on stream events → notify all followers~~ (deferred); ✅ `SseConnectionRegistry` (in-memory, multi-tab `CopyOnWriteArraySet<Sinks.Many>`), ✅ `GET /v1/notifications/stream` (`text/event-stream`, JWT-scoped, 30s heartbeat), ✅ `NotificationService` wired to push via SSE after persist, ✅ gateway per-route `response-timeout: -1`, ✅ frontend DTO reconciliation + REST wiring + SSE `fetch-event-source` connection + bell unread badge | 5.1b, 5.2a |
 | 5.3 | **Email adapter** — SMTP integration via Spring Mail, templated emails (Thymeleaf or plain text) | 5.1 |
 | 5.4 | **Frontend: Notification settings** — manage subscriptions, toggle email/push per channel, notification preferences | 5.1 |
 
@@ -1045,7 +1045,8 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 - [x] 5.1a — Notification core: domain + persistence + REST API (2026-07-15, uncommitted)
 - [ ] 5.1b — Subscription CRUD + outbox + dispatcher interface
 - [x] 5.2a — StreamControlListener → NotificationService wiring (2026-07-15, uncommitted)
-- [ ] 5.2b — Follower fan-out + SSE delivery
+- [x] 5.2b — SSE delivery (2026-07-15, uncommitted): `SseConnectionRegistry` + SSE controller + gateway timeout + frontend wiring
+- [ ] 5.2b — Follower fan-out (subscription lookup on stream events)
 - [ ] 5.3 — Email adapter
 - [ ] 5.4 — Frontend notification settings
 

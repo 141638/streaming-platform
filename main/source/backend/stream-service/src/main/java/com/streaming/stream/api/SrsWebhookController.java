@@ -41,7 +41,7 @@ public class SrsWebhookController {
      * 200 = accept, any other status = reject.
      */
     @PostMapping(path = "/on_publish", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<Void>> onPublish(@RequestBody SrsWebhookPayload body) {
+    public Mono<ResponseEntity<Integer>> onPublish(@RequestBody SrsWebhookPayload body) {
         String token = body.extractToken();
         if (token == null) {
             log.warn("on_publish: missing token in param: {}", body.param());
@@ -49,7 +49,7 @@ public class SrsWebhookController {
         }
 
         return streamService.handlePublish(body.stream(), token)
-                .thenReturn(ResponseEntity.ok().<Void>build())
+                .thenReturn(ResponseEntity.ok(0))
                 .onErrorResume(InvalidPublishTokenException.class, e -> {
                     log.warn("on_publish rejected: {}", e.getMessage());
                     return Mono.just(ResponseEntity.status(403).build());
@@ -62,8 +62,8 @@ public class SrsWebhookController {
 
     /** Called by SRS when an RTMP connection ends. */
     @PostMapping(path = "/on_unpublish", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<Void>> onUnpublish(@RequestBody SrsWebhookPayload body) {
+    public Mono<ResponseEntity<Integer>> onUnpublish(@RequestBody SrsWebhookPayload body) {
         return streamService.handleUnpublish(body.stream())
-                .thenReturn(ResponseEntity.ok().<Void>build());
+                .thenReturn(ResponseEntity.ok(0));
     }
 }

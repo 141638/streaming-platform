@@ -1,5 +1,6 @@
 package com.streaming.notification.api.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.streaming.notification.domain.Notification;
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -14,7 +15,7 @@ public record NotificationResponse(
         String title,
         String body,
         String metadata,
-        boolean isRead,
+        @JsonProperty("read") boolean isRead,
         OffsetDateTime createdAt
 ) {
     /**

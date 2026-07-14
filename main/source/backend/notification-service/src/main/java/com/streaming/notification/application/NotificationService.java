@@ -1,8 +1,10 @@
 package com.streaming.notification.application;
 
 import com.streaming.common.messaging.StreamEvent;
+import com.streaming.notification.api.dto.NotificationResponse;
 import com.streaming.notification.domain.Notification;
 import com.streaming.notification.domain.NotificationCategory;
+import com.streaming.notification.infrastructure.SseConnectionRegistry;
 import com.streaming.notification.infrastructure.persistence.ReactiveNotificationRepository;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -35,6 +37,7 @@ public class NotificationService {
     private static final int DEFAULT_LIMIT = 20;
 
     private final ReactiveNotificationRepository notificationRepository;
+    private final SseConnectionRegistry sseConnectionRegistry;
 
     // ── Create ──────────────────────────────────────────────────────────
 
@@ -62,9 +65,13 @@ public class NotificationService {
                         "{\"streamId\":\"" + event.streamId() + "\"}",
                         now);
                 yield notificationRepository.save(n)
-                        .doOnSuccess(saved -> log.info(
-                                "Notification persisted: id={} category={} recipient={}",
-                                saved.getId(), saved.getCategory(), saved.getRecipientSubject()))
+                        .doOnSuccess(saved -> {
+                            log.info(
+                                    "Notification persisted: id={} category={} recipient={}",
+                                    saved.getId(), saved.getCategory(), saved.getRecipientSubject());
+                            sseConnectionRegistry.push(
+                                    saved.getRecipientSubject(), NotificationResponse.from(saved));
+                        })
                         .then();
             }
             case "STREAM_ENDED" -> {
@@ -77,9 +84,13 @@ public class NotificationService {
                         "{\"streamId\":\"" + event.streamId() + "\"}",
                         now);
                 yield notificationRepository.save(n)
-                        .doOnSuccess(saved -> log.info(
-                                "Notification persisted: id={} category={} recipient={}",
-                                saved.getId(), saved.getCategory(), saved.getRecipientSubject()))
+                        .doOnSuccess(saved -> {
+                            log.info(
+                                    "Notification persisted: id={} category={} recipient={}",
+                                    saved.getId(), saved.getCategory(), saved.getRecipientSubject());
+                            sseConnectionRegistry.push(
+                                    saved.getRecipientSubject(), NotificationResponse.from(saved));
+                        })
                         .then();
             }
             case "STREAM_CREATED" -> {

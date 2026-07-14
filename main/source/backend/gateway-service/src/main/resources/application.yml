@@ -50,6 +50,13 @@ spring:
           uri: lb://chat-service
           predicates:
             - Path=/api/chat/**
+        - id: notification-service-sse
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/notifications/v1/notifications/stream
+          metadata:
+            response-timeout: -1
+            connect-timeout: 5000
         - id: notification-service
           uri: lb://notification-service
           predicates:

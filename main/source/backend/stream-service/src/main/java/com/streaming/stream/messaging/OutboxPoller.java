@@ -91,7 +91,7 @@ public class OutboxPoller {
         return Mono.fromFuture(
                         kafkaTemplate.send(topic,
                                 event.getStreamId().toString(),
-                                event.getPayload()))
+                                event.getPayload().asString()))
                 .timeout(Duration.ofSeconds(publishTimeoutSeconds))
                 .subscribeOn(Schedulers.boundedElastic())
                 .then(outboxRepository.delete(event)

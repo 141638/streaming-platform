@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.streaming.common.messaging.StreamEvent;
 import com.streaming.stream.persistence.entity.OutboxEvent;
 import com.streaming.stream.persistence.repository.OutboxEventRepository;
+import io.r2dbc.postgresql.codec.Json;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
@@ -58,7 +59,7 @@ public class OutboxWriter {
                 .isNew(true)
                 .eventType(event.eventType())
                 .streamId(UUID.fromString(event.streamId()))
-                .payload(payload)
+                .payload(Json.of(payload))
                 .retryCount(0)
                 .createdAt(OffsetDateTime.now(ZoneOffset.UTC))
                 .published(false)

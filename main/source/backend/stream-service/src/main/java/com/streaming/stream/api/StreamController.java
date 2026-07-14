@@ -10,10 +10,12 @@ import com.streaming.stream.api.dto.ChannelIdentityResponse;
 import com.streaming.stream.api.dto.CreateStreamRequest;
 import com.streaming.stream.api.dto.PublishKeyResponse;
 
+import com.streaming.stream.api.dto.LiveStreamPageResponse;
 import com.streaming.stream.api.dto.StreamResponse;
 import com.streaming.stream.api.dto.StreamSummaryResponse;
 import com.streaming.stream.api.dto.UpdateProfileRequest;
 import com.streaming.stream.api.dto.UpdateStreamRequest;
+import com.streaming.stream.api.dto.WatchResponse;
 import com.streaming.stream.service.StreamService;
 import jakarta.validation.Valid;
 import java.net.InetSocketAddress;
@@ -77,6 +79,15 @@ public class StreamController {
         return Mono.just(ResponseEntity.ok(streamService.listMyStreams(sub)));
     }
 
+    @GetMapping("/streams/live")
+    public Mono<ResponseEntity<LiveStreamPageResponse>> listLive(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "24") int limit) {
+        return streamService.getLiveStreams(keyword, cursor, limit)
+                .map(ResponseEntity::ok);
+    }
+
     @GetMapping("/streams/{id}")
     public Mono<ResponseEntity<StreamResponse>> get(
             @AuthenticationPrincipal Jwt jwt,
@@ -84,6 +95,30 @@ public class StreamController {
             ServerWebExchange exchange) {
         String viewerId = resolveViewerId(jwt, exchange);
         return streamService.getStream(id, jwt, viewerId).map(ResponseEntity::ok);
+    }
+
+    @GetMapping("/streams/{id}/watch")
+    public Mono<ResponseEntity<WatchResponse>> watch(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID id) {
+        return streamService.getWatchData(id).map(ResponseEntity::ok);
+    }
+
+    // ── Viewer presence ─────────────────────────────────────────────────────
+
+    @PostMapping("/streams/{id}/heartbeat")
+    public Mono<ResponseEntity<Void>> heartbeat(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID id) {
+        return streamService.sendHeartbeat(id, jwt)
+                .then(Mono.just(ResponseEntity.noContent().build()));
+    }
+
+    @GetMapping("/streams/{id}/viewers")
+    public Mono<ResponseEntity<java.util.Map<String, Long>>> viewers(
+            @PathVariable UUID id) {
+        return streamService.getViewerCount(id)
+                .map(count -> ResponseEntity.ok(java.util.Map.of("count", count)));
     }
 
     /**
@@ -158,7 +193,7 @@ public class StreamController {
     // ── Lifecycle ───────────────────────────────────────────────────────────
 
     @PostMapping("/streams/{id}/start")
-    public Mono<ResponseEntity<StreamResponse>> start(
+    public Mono<ResponseEntity<PublishKeyResponse>> start(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID id) {
         return streamService.startStream(id, jwt).map(ResponseEntity::ok);

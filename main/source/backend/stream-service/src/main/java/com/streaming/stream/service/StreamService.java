@@ -9,12 +9,14 @@ import com.streaming.stream.api.dto.ChannelHomeResponse;
 import com.streaming.stream.api.dto.ChannelIdentityResponse;
 import com.streaming.stream.api.dto.ChannelStats;
 import com.streaming.stream.api.dto.CreateStreamRequest;
+import com.streaming.stream.api.dto.LiveStreamPageResponse;
 import com.streaming.stream.api.dto.PublishKeyResponse;
 import com.streaming.stream.api.dto.SocialLink;
 import com.streaming.stream.api.dto.StreamResponse;
 import com.streaming.stream.api.dto.StreamSummaryResponse;
 import com.streaming.stream.api.dto.UpdateProfileRequest;
 import com.streaming.stream.api.dto.UpdateStreamRequest;
+import com.streaming.stream.api.dto.WatchResponse;
 import com.streaming.stream.config.PublishTokenProperties;
 import com.streaming.stream.config.ViewCountProperties;
 import com.streaming.common.messaging.StreamEvent;
@@ -29,6 +31,7 @@ import com.streaming.stream.persistence.repository.StreamCategoryRepository;
 import com.streaming.stream.persistence.repository.StreamSessionRepository;
 import com.streaming.stream.security.AuthAction;
 import com.streaming.stream.security.AuthResourceDomain;
+import java.time.Duration;
 import com.streaming.stream.security.AuthResourceKind;
 import com.streaming.stream.security.JwtAttr;
 import com.streaming.stream.security.RequiredAuthority;
@@ -162,6 +165,112 @@ public class StreamService {
                 .map(StreamSummaryResponse::from);
     }
 
+    private static final int LIVE_STREAMS_DEFAULT_LIMIT = 24;
+
+    /** Intermediate holder that pairs a summary with its cursor value. */
+    private record LiveStreamRow(StreamSummaryResponse summary, String cursorValue) {}
+
+    /**
+     * Returns cursor-paginated live streams with optional keyword search.
+     *
+     * <p>Cursor is the ISO-8601 {@code started_at} of the last item from the
+     * previous page. The response fetches one extra row to determine
+     * {@code hasMore}; that extra row is stripped before returning.
+     *
+     * @param keyword optional search filter (matches title or broadcaster username)
+     * @param cursor  ISO-8601 timestamp of the last item from the previous page,
+     *                or {@code null} for the first page
+     * @param limit   page size (clamped to 1–50, default 24)
+     */
+    public Mono<LiveStreamPageResponse> getLiveStreams(
+            String keyword, String cursor, int limit) {
+
+        int effectiveLimit = Math.clamp(
+                limit > 0 ? limit : LIVE_STREAMS_DEFAULT_LIMIT, 1, 50);
+        int fetchSize = effectiveLimit + 1; // fetch one extra to determine hasMore
+
+        StringBuilder sql = new StringBuilder("""
+                SELECT * FROM stream.stream_session
+                WHERE status = 'live'
+                """);
+
+        if (keyword != null && !keyword.isBlank()) {
+            sql.append(" AND (title ILIKE :keyword OR broadcaster_username ILIKE :keyword)");
+        }
+        if (cursor != null && !cursor.isBlank()) {
+            sql.append(" AND started_at < :cursor::timestamptz");
+        }
+        sql.append(" ORDER BY started_at DESC LIMIT :limit");
+
+        var spec = databaseClient.sql(sql.toString())
+                .bind("limit", fetchSize);
+
+        if (keyword != null && !keyword.isBlank()) {
+            spec = spec.bind("keyword", "%" + keyword + "%");
+        }
+        if (cursor != null && !cursor.isBlank()) {
+            spec = spec.bind("cursor", cursor);
+        }
+
+        return spec.map((row, meta) -> {
+                    UUID id = row.get("id", UUID.class);
+                    String title = row.get("title", String.class);
+                    String statusWire = row.get("status", String.class);
+                    String cat = row.get("category", String.class);
+                    UUID catId = row.get("category_id", UUID.class);
+                    String[] tagArray = row.get("tags", String[].class);
+                    List<String> tags = tagArray != null
+                            ? List.copyOf(Arrays.asList(tagArray)) : List.of();
+                    String thumbnailUrl = row.get("thumbnail_url", String.class);
+                    Long views = row.get("views", Long.class);
+                    OffsetDateTime createdAt = row.get("created_at", OffsetDateTime.class);
+                    OffsetDateTime scheduledAt = row.get("scheduled_at", OffsetDateTime.class);
+                    String broadcasterUsername = row.get("broadcaster_username", String.class);
+                    OffsetDateTime startedAt = row.get("started_at", OffsetDateTime.class);
+
+                    var summary = new StreamSummaryResponse(id, title, statusWire, cat,
+                            catId, tags, thumbnailUrl, views, createdAt,
+                            scheduledAt, broadcasterUsername);
+                    return new LiveStreamRow(summary,
+                            startedAt != null ? startedAt.toString() : null);
+                })
+                .all()
+                .collectList()
+                .map(rows -> {
+                    boolean hasMore = rows.size() > effectiveLimit;
+                    if (hasMore) {
+                        rows = rows.subList(0, effectiveLimit);
+                    }
+                    List<StreamSummaryResponse> items = rows.stream()
+                            .map(LiveStreamRow::summary)
+                            .toList();
+                    String nextCursor = hasMore && !rows.isEmpty()
+                            ? rows.get(rows.size() - 1).cursorValue()
+                            : null;
+                    return LiveStreamPageResponse.of(items, nextCursor, hasMore);
+                });
+    }
+
+    /**
+     * Returns watch page data for any authenticated viewer.
+     * Only LIVE streams are watchable — other statuses return 409.
+     */
+    public Mono<WatchResponse> getWatchData(UUID id) {
+        return repository.findById(id)
+                .switchIfEmpty(Mono.error(new StreamNotFoundException(id)))
+                .flatMap(entity -> {
+                    if (entity.getStatus() != StreamStatus.LIVE) {
+                        return Mono.error(new StreamNotLiveException(id));
+                    }
+                    String playUrl = String.format("%s/live/%s.m3u8",
+                            publishTokenProps.srsHlsHost(), entity.getSrsName());
+                    return Mono.just(new WatchResponse(
+                            playUrl,
+                            id.toString(),
+                            StreamSummaryResponse.from(entity)));
+                });
+    }
+
     public Mono<StreamResponse> getStream(UUID id, Jwt jwt, String viewerId) {
         return repository.findById(id)
                 .switchIfEmpty(Mono.error(new StreamNotFoundException(id)))
@@ -172,10 +281,12 @@ public class StreamService {
                         .onErrorMap(StreamAuthorization.StreamAccessDeniedException.class,
                                 e -> new StreamNotFoundException(id))
                         .thenReturn(entity))
-                .doOnSuccess(entity -> {
+                .flatMap(entity -> {
                     if (!viewerId.equals(entity.getBroadcasterSubject())) {
-                        trackViewEvent(entity.getId(), viewerId).subscribe();
+                        return trackViewEvent(entity.getId(), viewerId)
+                                .thenReturn(entity);
                     }
+                    return Mono.just(entity);
                 })
                 .map(StreamResponse::from);
     }
@@ -358,10 +469,14 @@ public class StreamService {
     // ── Lifecycle transitions ───────────────────────────────────────────────
 
     /**
-     * Transition a stream to LIVE. Enforces the one-live-stream-per-broadcaster
-     * rule before allowing the transition.
+     * Prepare a DRAFT stream for broadcasting: issue a publish key for OBS
+     * and keep the stream in DRAFT. The actual DRAFT→LIVE transition happens
+     * when SRS fires the {@code on_publish} webhook (see {@link #handlePublish}).
+     *
+     * <p>Enforces the one-live-stream-per-broadcaster rule as an early check;
+     * the webhook is the authoritative gate.
      */
-    public Mono<StreamResponse> startStream(UUID id, Jwt jwt) {
+    public Mono<PublishKeyResponse> startStream(UUID id, Jwt jwt) {
         return repository.findById(id)
                 .switchIfEmpty(Mono.error(new StreamNotFoundException(id)))
                 .flatMap(entity -> authorization
@@ -369,25 +484,35 @@ public class StreamService {
                                 AuthResourceDomain.STREAM, AuthResourceKind.SESSION,
                                 AuthAction.LIFECYCLE, entity.getBroadcasterSubject()))
                         .thenReturn(entity))
-                .flatMap(entity ->
-                        repository.existsByBroadcasterSubjectAndStatus(
-                                        entity.getBroadcasterSubject(), StreamStatus.LIVE)
-                                .flatMap(hasLive -> {
-                                    if (Boolean.TRUE.equals(hasLive)) {
-                                        return Mono.error(new StreamAlreadyLiveException(
-                                                entity.getBroadcasterSubject()));
-                                    }
-                                    entity.goLive();
-                                    return repository.save(entity);
-                                })
-                )
-                .flatMap(saved ->
-                        outboxWriter.write(StreamEvent.started(saved.getId(),
-                                saved.getBroadcasterSubject()))
-                                .doOnSuccess(oe -> log.info(
-                                        "Stream started: id={}", saved.getId()))
-                                .thenReturn(saved))
-                .map(StreamResponse::from)
+                .flatMap(entity -> {
+                    if (entity.getStatus() != StreamStatus.DRAFT) {
+                        return Mono.error(new IllegalStateException(
+                                "Only DRAFT streams can be started. Current: "
+                                + entity.getStatus().wireValue()));
+                    }
+                    if (entity.getSrsName() == null) {
+                        return Mono.error(new IllegalStateException(
+                                "Stream has no publish name — recreate the stream."));
+                    }
+                    return repository.existsByBroadcasterSubjectAndStatus(
+                                    entity.getBroadcasterSubject(), StreamStatus.LIVE)
+                            .flatMap(hasLive -> {
+                                if (Boolean.TRUE.equals(hasLive)) {
+                                    return Mono.error(new StreamAlreadyLiveException(
+                                            entity.getBroadcasterSubject()));
+                                }
+                                // Issue a fresh short-lived token for OBS
+                                OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+                                String token = publishTokenService.issueToken(
+                                        id, entity.getSrsName(), entity.getBroadcasterSubject());
+                                entity.setUpdatedAt(now);
+                                return repository.save(entity)
+                                        .map(saved -> buildPublishKeyResponse(
+                                                saved, entity.getSrsName(), token, now));
+                            });
+                })
+                .doOnSuccess(resp -> log.info(
+                        "Stream prepared for broadcast: id={}", id))
                 .onErrorMap(OptimisticLockingFailureException.class,
                         ex -> new StreamConflictException(
                                 "Stream was modified by another operation. Reload and try again."));
@@ -592,6 +717,10 @@ public class StreamService {
     public Mono<Void> handleUnpublish(String srsName) {
         String hash = HashUtils.sha256Hex(srsName);
         return repository.findByStreamKeyHash(hash)
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.info("on_unpublish for unknown stream (idempotent no-op)");
+                    return Mono.empty();
+                }))
                 .flatMap(entity -> {
                     if (entity.getStatus() != StreamStatus.LIVE) {
                         log.info("on_unpublish for non-LIVE stream: id={} status={}",
@@ -637,7 +766,7 @@ public class StreamService {
                 .switchIfEmpty(Mono.error(new StreamNotFoundException(id)))
                 .flatMap(entity -> authorization
                         .requireAccess(jwt, new RequiredAuthority(
-                                AuthResourceDomain.STREAM, AuthResourceKind.ARCHIVE,
+                                AuthResourceDomain.STREAM, AuthResourceKind.SESSION,
                                 AuthAction.LIFECYCLE, entity.getBroadcasterSubject()))
                         .thenReturn(entity))
                 .flatMap(entity -> {
@@ -773,6 +902,40 @@ public class StreamService {
                         tuple.getT2(), tuple.getT1(), page, size));
     }
 
+    // ── Viewer presence ────────────────────────────────────────────────────
+
+    private static final String PRESENCE_KEY_PREFIX = "stream:presence:";
+    private static final Duration PRESENCE_TTL = Duration.ofSeconds(30);
+
+    /**
+     * Records a viewer heartbeat for a stream.
+     * Self-view (broadcaster watching their own stream) is silently ignored.
+     */
+    public Mono<Void> sendHeartbeat(UUID streamId, Jwt jwt) {
+        String viewerSubject = jwt.getSubject();
+        return repository.findById(streamId)
+                .switchIfEmpty(Mono.error(new StreamNotFoundException(streamId)))
+                .flatMap(entity -> {
+                    if (viewerSubject.equals(entity.getBroadcasterSubject())) {
+                        return Mono.empty(); // self-view excluded
+                    }
+                    String key = PRESENCE_KEY_PREFIX + streamId + ":" + viewerSubject;
+                    return redisTemplate.opsForValue()
+                            .set(key, "1", PRESENCE_TTL)
+                            .then();
+                });
+    }
+
+    /**
+     * Returns the count of active viewers for a stream.
+     */
+    public Mono<Long> getViewerCount(UUID streamId) {
+        String pattern = PRESENCE_KEY_PREFIX + streamId + ":*";
+        var options = org.springframework.data.redis.core.ScanOptions
+                .scanOptions().match(pattern).build();
+        return redisTemplate.scan(options).count();
+    }
+
     // ── Private helpers ─────────────────────────────────────────────────────
 
     private StreamSessionEntity buildEntity(UUID id, String sub,
@@ -891,6 +1054,12 @@ public class StreamService {
     public static class StreamNotFoundException extends RuntimeException {
         public StreamNotFoundException(UUID id) {
             super("Stream not found: id=" + id);
+        }
+    }
+
+    public static class StreamNotLiveException extends RuntimeException {
+        public StreamNotLiveException(UUID id) {
+            super("Stream is not live: id=" + id);
         }
     }
 

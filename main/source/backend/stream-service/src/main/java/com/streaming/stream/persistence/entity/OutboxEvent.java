@@ -1,5 +1,6 @@
 package com.streaming.stream.persistence.entity;
 
+import io.r2dbc.postgresql.codec.Json;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 import lombok.AllArgsConstructor;
@@ -45,8 +46,8 @@ public class OutboxEvent implements Persistable<UUID> {
     @Column("stream_id")
     private UUID streamId;
 
-    /** Serialized {@code StreamEvent} JSON. */
-    private String payload;
+    /** Serialized {@code StreamEvent} JSON, stored natively as {@code jsonb}. */
+    private Json payload;
 
     @Column("retry_count")
     private int retryCount;

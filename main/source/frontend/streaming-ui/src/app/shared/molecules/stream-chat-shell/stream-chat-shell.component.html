@@ -1,35 +1,38 @@
-<div class="stream-chat-shell flex flex-column h-full surface-card border-round border-1 surface-border">
-  <!-- Header -->
-  <div
-    class="flex align-items-center justify-content-between px-3 py-2 border-bottom-1 surface-border"
-  >
-    <span class="font-semibold text-sm">
-      <i class="pi pi-comments mr-2"></i>Stream Chat
-    </span>
-    <span class="text-xs text-color-secondary">Preview</span>
-  </div>
-
-  <!-- Message area (empty state) -->
-  <div
-    class="flex-auto flex flex-column align-items-center justify-content-center gap-2 p-4 text-center overflow-auto"
-  >
-    <span class="pi pi-comment text-3xl text-color-secondary"></span>
-    <span class="text-sm text-color-secondary">{{ emptyMessage() }}</span>
-  </div>
-
-  <!-- Disabled composer -->
-  <div class="p-2 border-top-1 surface-border">
-    <div class="flex gap-2">
-      <input
-        pInputText
-        class="w-full text-sm"
-        placeholder="Send a message"
-        disabled
-      />
-      <p-button icon="pi pi-send" severity="secondary" [disabled]="true" />
+@if (roomKey(); as key) {
+  <!-- Wired: real chat panel -->
+  <app-chat-panel [roomKey]="key" />
+} @else {
+  <!-- Placeholder: no room key yet -->
+  <div class="stream-chat-shell flex flex-column h-full surface-card border-round border-1 surface-border">
+    <div
+      class="flex align-items-center justify-content-between px-3 py-2 border-bottom-1 surface-border"
+    >
+      <span class="font-semibold text-sm">
+        <i class="pi pi-comments mr-2"></i>Stream Chat
+      </span>
+      <span class="text-xs text-color-secondary">Preview</span>
     </div>
-    <small class="block mt-1 text-color-secondary">
-      Chat is read-only in this preview.
-    </small>
+
+    <div
+      class="flex-auto flex flex-column align-items-center justify-content-center gap-2 p-4 text-center overflow-auto"
+    >
+      <span class="pi pi-comment text-3xl text-color-secondary"></span>
+      <span class="text-sm text-color-secondary">{{ emptyMessage() }}</span>
+    </div>
+
+    <div class="p-2 border-top-1 surface-border">
+      <div class="flex gap-2">
+        <input
+          pInputText
+          class="w-full text-sm"
+          placeholder="Send a message"
+          disabled
+        />
+        <p-button icon="pi pi-send" severity="secondary" [disabled]="true" />
+      </div>
+      <small class="block mt-1 text-color-secondary">
+        Chat is read-only in this preview.
+      </small>
+    </div>
   </div>
-</div>
+}

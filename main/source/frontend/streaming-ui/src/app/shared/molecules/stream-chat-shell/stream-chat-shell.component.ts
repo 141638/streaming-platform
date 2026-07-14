@@ -6,22 +6,26 @@ import {
 } from '@angular/core';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
+import { ChatPanelComponent } from '../../organisms/chat-panel/chat-panel.component';
 
 /**
- * Presentational chat shell — layout only. No service, no WebSocket, no polling.
- * The live chat wiring (see {@link ChatPanelComponent}) needs a room key that
- * streams do not yet expose; this shell reserves the space and UX until then.
+ * Presentational chat wrapper. When a {@code roomKey} is provided, delegates
+ * to the full {@link ChatPanelComponent}. Otherwise shows a placeholder.
  */
 @Component({
   selector: 'app-stream-chat-shell',
   standalone: true,
-  imports: [ButtonModule, InputTextModule],
+  imports: [ButtonModule, InputTextModule, ChatPanelComponent],
   templateUrl: './stream-chat-shell.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class StreamChatShellComponent {
-  /** When true, the stream is live so chat is "coming" rather than "offline". */
+  /** When true, the stream is live. */
   public readonly live = input<boolean>(false);
+  /** Chat room key — when set, the real chat panel renders. */
+  public readonly roomKey = input<string | null>(null);
+
+  protected readonly isConnected = computed(() => !!this.roomKey());
 
   protected readonly emptyMessage = computed(() =>
     this.live()

@@ -90,17 +90,17 @@ Every phase that depends on a Docker-based service follows this pattern:
 
 ## Infrastructure Status
 
-As of 2026-07-08, the root `compose.yaml` (Phase 1.11) has **not been created**. The following third-party services are used across phases:
+As of 2026-07-14, the root `compose.yaml` **has been created** (Phase B1). The following third-party services are used across phases:
 
 | Service | Phase | Compose Defined? | Env File? | Health Check? | Volume? |
 |---------|-------|------------------|-----------|---------------|---------|
-| PostgreSQL | 1–6 | ❌ | ✅ `main/env/postgres.env` | ❌ | ❌ |
-| Kafka | 2–5 | ✅ `main/docker/kafka/` | ✅ `main/env/kafka.env` | ❌ | ✅ (broker data) |
-| Redis | 3 | ✅ `main/docker/redis/` | ✅ `main/env/redis.env` | ✅ `redis-cli ping` | ❌ (disposable per ADR-0002) |
-| SRS | 4 | ❌ | ❌ (in `spring.env.template`) | ❌ | ❌ |
-| Discovery (Eureka) | 1–6 | ✅ `main/docker/discovery/` | ✅ `main/env/discovery.env` | ✅ `curl /actuator/health` | ❌ |
+| PostgreSQL | 1–6 | ✅ `compose.yaml` | ✅ `main/env/postgres.env` | ✅ `pg_isready` | ✅ `postgres_data` |
+| Kafka | 2–5 | ✅ `compose.yaml` | ✅ `main/env/kafka.env` | ✅ `kafka-topics --list` | ✅ `kafka_data` |
+| Redis | 3 | ✅ `compose.yaml` | ✅ `main/env/redis.env` | ✅ `redis-cli ping` | ✅ `redis_data` |
+| SRS | 4 | ✅ `compose.yaml` | ✅ `main/env/srs.env` | ✅ `curl /api/v1/versions` | ✅ `srs_dvr_data`, `srs_hls_data` |
+| Discovery (Eureka) | 1–6 | ✅ `compose.yaml` | ✅ `main/env/discovery.env` | ✅ `curl /actuator/health` | ❌ |
 
-Each phase below now includes an **infrastructure setup** item (`.0`) that must be completed before the phase is considered done. These items collectively drive the creation of the root `compose.yaml`.
+All services run on `streaming_network` (bridge). Optional dev tools (RedisInsight, Kafka UI) are behind the `dev` profile: `docker compose --profile dev up -d`.
 
 ---
 

@@ -8,6 +8,9 @@ argument-hint: "<what to generate or suggest>"
 Lightweight mode for when you don't need the full engineering pipeline.
 Generate, suggest, prototype — no mandatory tests, no gates, no formal review.
 
+**Before you begin**, record telemetry:
+`node .claude/scripts/telemetry-track.mjs --command perform`
+
 ## When to Use
 
 - "Generate a Dockerfile for this service"

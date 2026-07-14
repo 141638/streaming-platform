@@ -7,6 +7,9 @@ argument-hint: "<library or framework> <question>"
 
 Fetch current, accurate documentation for libraries and frameworks instead of relying on training data.
 
+**Before you begin**, record telemetry:
+`node .claude/scripts/telemetry-track.mjs --command docs`
+
 ## When to Use
 
 - "How do I configure Spring Security OAuth2 resource server?"

@@ -6,6 +6,9 @@ description: Detect the project build system and incrementally fix build/type er
 
 Incrementally fix build and type errors with minimal, safe changes.
 
+**Before you begin**, record telemetry:
+`node .claude/scripts/telemetry-track.mjs --command build-fix`
+
 ## Step 1: Detect Build System
 
 Identify the project's build tool and run the build:

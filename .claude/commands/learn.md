@@ -6,6 +6,9 @@ description: Extract reusable patterns from the current session and save them as
 
 Analyze the current session and extract any patterns worth saving as skills.
 
+**Before you begin**, record telemetry:
+`node .claude/scripts/telemetry-track.mjs --command learn`
+
 ## Trigger
 
 Run `/learn` at any point during a session when you've solved a non-trivial problem.

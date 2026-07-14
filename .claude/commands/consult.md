@@ -8,6 +8,9 @@ argument-hint: "<question or issue to investigate>"
 Act as a senior engineering partner. Analyze, debug, advise — but don't write code
 unless explicitly asked.
 
+**Before you begin**, record telemetry:
+`node .claude/scripts/telemetry-track.mjs --command consult`
+
 ## When to Use
 
 - "Why is this query slow?" — Query plan analysis

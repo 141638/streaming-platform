@@ -8,6 +8,9 @@ argument-hint: "[--mode=full|quick|step] [--tdd] [--review] <task description>"
 
 The primary workhorse. Three modes to match how you want to work.
 
+**Before you begin**, record telemetry:
+`node .claude/scripts/telemetry-track.mjs --command implement`
+
 ## Mode Selection
 
 | Flag | Mode | When |

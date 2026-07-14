@@ -7,6 +7,9 @@ argument-hint: "[pr-number | pr-url | blank for local review]"
 
 Comprehensive review of code changes. Local diff or GitHub PR.
 
+**Before you begin**, record telemetry:
+`node .claude/scripts/telemetry-track.mjs --command review`
+
 ## Local Review Mode (default)
 
 Review uncommitted changes:

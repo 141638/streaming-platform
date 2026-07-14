@@ -7,6 +7,9 @@ argument-hint: "[feature-name] — optional, defaults to the current session's f
 
 **TOOL ROUTING:** When this command is invoked, you MUST call `Skill({skill: "session-retro"})`. This loads the full five-phase workflow. Do NOT attempt to run the retro inline without loading the skill.
 
+**Before routing**, record telemetry:
+`node .claude/scripts/telemetry-track.mjs --command retro`
+
 ## When to Use
 
 - End of a multi-commit feature-building session

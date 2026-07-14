@@ -7,6 +7,9 @@ argument-hint: "[feature description]"
 
 Create a step-by-step implementation blueprint before writing any code.
 
+**Before you begin**, record telemetry:
+`node .claude/scripts/telemetry-track.mjs --command blueprint`
+
 ## When to Use
 
 - Starting a new feature

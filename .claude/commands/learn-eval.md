@@ -6,6 +6,9 @@ description: "Extract reusable patterns from the session, self-evaluate quality 
 
 Extends `/learn` with a quality gate, save-location decision, and knowledge-placement awareness before writing any skill file.
 
+**Before you begin**, record telemetry:
+`node .claude/scripts/telemetry-track.mjs --command learn-eval`
+
 ## What to Extract
 
 Look for:

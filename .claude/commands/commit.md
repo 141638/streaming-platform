@@ -7,6 +7,9 @@ argument-hint: "[--push] — optionally push after committing"
 
 **TOOL ROUTING:** When this command is invoked, you MUST call `Skill({skill: "feature-commit"})`. This loads the full grouping algorithm and scope conventions. Do NOT attempt to commit inline without loading the skill.
 
+**Before routing**, record telemetry:
+`node .claude/scripts/telemetry-track.mjs --command commit`
+
 ## When to Use
 
 - After implementing a feature across multiple files

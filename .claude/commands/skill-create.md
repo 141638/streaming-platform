@@ -8,6 +8,9 @@ allowed_tools: ["Bash", "Read", "Write", "Grep", "Glob"]
 
 Create or update Claude Code skills, agents, and commands. Supports two modes:
 
+**Before you begin**, record telemetry:
+`node .claude/scripts/telemetry-track.mjs --command skill-create`
+
 1. **Manual authoring** (primary) — the user describes a workflow; you write the SKILL.md, agent `.md`, and command `.md` files
 2. **Git analysis** (secondary) — parse git history to detect coding patterns and generate SKILL.md files
 

@@ -1,89 +1,208 @@
+import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { NotificationDto } from '../contracts/notification.dto';
+import {
+  BehaviorSubject,
+  map,
+  Observable,
+  tap,
+} from 'rxjs';
+import {
+  mapNotificationResponse,
+  NotificationDto,
+  NotificationResponseDto,
+  UnreadCountResponseDto,
+} from '../contracts/notification.dto';
+import { AuthService } from './auth.service';
 import { ToastService } from './toast.service';
+import {
+  EventSourceMessage,
+  fetchEventSource,
+} from '@microsoft/fetch-event-source';
 
 /**
- * Central notification hub — receives notifications (today: mock; later: SSE)
- * and routes them to the appropriate display surface (toast, bell badge, …).
- *
- * ## Wave 2 (ADR-0007)
- * When the notification-service backend + Kafka infrastructure are ready:
- *   - SSE handshake via {@code @microsoft/fetch-event-source} (D1)
- *   - {@code subscribe(): Observable<NotificationDto[]>} — live stream
- *   - Bell unread-count signal fed from the same stream
- *   - All entry points call {@link pushNotification}, so toast behaviour
- *     stays identical regardless of source.
- *
- * Do NOT wire SSE until the two hard prerequisites in ADR-0007 are met.
+ * Central notification hub — REST fetching, SSE subscription, and routing
+ * to the toast surface + bell badge.
  */
 @Injectable({ providedIn: 'root' })
 export class NotificationService {
+  private readonly http = inject(HttpClient);
   private readonly toastService = inject(ToastService);
+  private readonly authService = inject(AuthService);
+
+  private readonly basePath = '/api/notifications/v1';
+
+  /** Controller to abort the active SSE connection. */
+  private sseAbortController: AbortController | null = null;
+
+  /** Reactive unread count for the bell badge. */
+  private readonly unreadCountSubject = new BehaviorSubject<number>(0);
+  public readonly unreadCount$ = this.unreadCountSubject.asObservable();
+
+  // -- REST ----------------------------------------------------------------
+
+  /**
+   * Fetch the current user's notifications, newest first.
+   *
+   * @param cursor ISO‑8601 timestamp of the oldest notification currently
+   *               displayed, or {@code undefined} for the first page.
+   * @param limit  max results (default 20)
+   */
+  public getNotifications(
+    cursor?: string,
+    limit: number = 20,
+  ): Observable<NotificationDto[]> {
+    let url = `${this.basePath}/notifications?limit=${limit}`;
+    if (cursor) {
+      url += `&cursor=${encodeURIComponent(cursor)}`;
+    }
+    return this.http
+      .get<NotificationResponseDto[]>(url)
+      .pipe(map((list) => list.map(mapNotificationResponse)));
+  }
+
+  /** Fetch the unread count and update the local subject. */
+  public refreshUnreadCount(): Observable<number> {
+    return this.http
+      .get<UnreadCountResponseDto>(`${this.basePath}/notifications/unread-count`)
+      .pipe(
+        tap((dto) => this.unreadCountSubject.next(dto.count)),
+        map((dto) => dto.count),
+      );
+  }
+
+  /** Mark a notification as read on the server. */
+  public markAsRead(id: string): Observable<NotificationResponseDto> {
+    return this.http.post<NotificationResponseDto>(
+      `${this.basePath}/notifications/${encodeURIComponent(id)}/read`,
+      null,
+    );
+  }
+
+  // -- push routing --------------------------------------------------------
 
   /** Push a notification to the toast surface. Idempotent — safe for replay. */
   public pushNotification(notification: NotificationDto): void {
     this.toastService.showNotification(notification);
   }
 
+  // -- SSE -----------------------------------------------------------------
+
+  /**
+   * Open an SSE connection to {@code GET /v1/notifications/stream}.
+   *
+   * Uses {@code @microsoft/fetch-event-source} for Bearer-token auth and
+   * auto-reconnect with jitter.  Incoming {@code notification} events are
+   * mapped through {@link mapNotificationResponse} and pushed to the toast
+   * surface.  The unread count is refreshed after each event.
+   *
+   * Safe to call when already connected — the previous connection is aborted
+   * before opening a new one.
+   */
+  public connect(): void {
+    this.disconnect();
+
+    const token = this.authService.accessToken();
+    if (!token) {
+      return;
+    }
+
+    this.sseAbortController = new AbortController();
+
+    fetchEventSource(`${this.basePath}/notifications/stream`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: this.sseAbortController.signal,
+      onopen: async (response) => {
+        if (!response.ok) {
+          const status = response.status;
+          if (status === 401 || status === 403) {
+            // Token expired mid-stream — throw to stop reconnection.
+            // The auth effect in AppComponent will reconnect after refresh.
+            throw new Error(`SSE auth failed: ${status}`);
+          }
+        }
+      },
+      onmessage: (msg: EventSourceMessage) => {
+        if (msg.event === 'notification') {
+          try {
+            const dto: NotificationResponseDto = JSON.parse(msg.data);
+            this.pushNotification(mapNotificationResponse(dto));
+            this.refreshUnreadCount().subscribe();
+          } catch (e) {
+            console.warn('Malformed SSE notification event, skipping', e);
+          }
+        }
+      },
+      onerror: (err) => {
+        // Auth errors are fatal — stop retrying; the AppComponent effect
+        // will reconnect after token refresh.
+        if (err instanceof Error && err.message.startsWith('SSE auth failed')) {
+          throw err;
+        }
+        // Transient errors (network blip, server restart): return void to
+        // use the default retry backoff with jitter.
+      },
+      openWhenHidden: true,
+    });
+  }
+
+  /** Close the active SSE connection, if any. */
+  public disconnect(): void {
+    if (this.sseAbortController) {
+      this.sseAbortController.abort();
+      this.sseAbortController = null;
+    }
+  }
+
+  // -- dev helpers ---------------------------------------------------------
+
   /**
    * Pop a canned notification through the real toast pipeline so we can
-   * visually verify the card molecule + toast host + sound without SSE.
+   * visually verify the card + toast + sound without SSE.
    * Click the bell icon to exercise this path.
    */
   public testMock(): void {
     this.pushNotification({
       id: crypto.randomUUID(),
-      category: 'moderation',
-      severity: 'warn',
+      category: 'CHAT_MODERATION',
+      action: 'chat.banned',
       title: 'You have been temporarily banned',
       message: 'Reason: spamming in chat. Your ban expires in 24 hours.',
-      timestamp: new Date().toISOString(),
+      metadata: null,
       read: false,
-      action: { type: 'none' },
-      sender: {
-        username: 'moderator_alice',
-        avatarUrl: 'https://api.dicebear.com/9.x/thumbs/svg?seed=moderator_alice',
-        isSystem: false,
-      },
+      createdAt: new Date().toISOString(),
+      severity: 'warn',
+      clickAction: { type: 'none' },
     });
 
-    // Fire a second variant after a short gap so both cards are visible at once.
     setTimeout(() => {
       this.pushNotification({
         id: crypto.randomUUID(),
-        category: 'stream',
-        severity: 'info',
-        title: 'Stream starting soon',
-        message:
-          'Your followed channel "RandomUser1" goes live in 15 minutes.',
-        timestamp: new Date().toISOString(),
+        category: 'STREAM_LIVE',
+        action: 'stream.started',
+        title: 'Your stream is now live',
+        message: 'Your stream is now broadcasting.',
+        metadata: JSON.stringify({ streamId: crypto.randomUUID() }),
         read: false,
-        action: { type: 'navigate', route: '/@randomuser1' },
-        sender: {
-          username: 'randomuser1',
-          avatarUrl: 'https://api.dicebear.com/9.x/thumbs/svg?seed=randomuser1',
-          isSystem: false,
-        },
+        createdAt: new Date().toISOString(),
+        severity: 'success',
+        clickAction: { type: 'none' },
       });
     }, 800);
 
-    // Fire a system notification third — no sender → bottts avatar.
     setTimeout(() => {
       this.pushNotification({
         id: crypto.randomUUID(),
-        category: 'system',
-        severity: 'info',
+        category: 'SYSTEM',
+        action: 'system.info',
         title: 'Account verified',
         message:
           'Your email address has been verified. You now have full access to all features.',
-        timestamp: new Date(Date.now() - 86_400_000 * 2).toISOString(), // 2 days ago
+        metadata: null,
         read: false,
+        createdAt: new Date(Date.now() - 86_400_000 * 2).toISOString(),
+        severity: 'info',
+        clickAction: { type: 'none' },
       });
     }, 1600);
   }
-
-  // Wave 2 — SSE
-  // public subscribe(): Observable<NotificationDto[]> {
-  //   …
-  // }
 }

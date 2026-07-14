@@ -19,7 +19,7 @@ export class NotificationCardComponent {
 
   /** Whether the card as a whole behaves as a click target. */
   public readonly isClickable = computed<boolean>(() => {
-    const a = this.notification().action;
+    const a = this.notification().clickAction;
     return !!a && a.type !== 'none';
   });
 
@@ -42,16 +42,16 @@ export class NotificationCardComponent {
 
   /** Relative display label e.g. "now", "2h ago", "3d ago". */
   public readonly relativeTime = computed<string>(() => {
-    return formatRelativeTime(this.notification().timestamp, Date.now());
+    return formatRelativeTime(this.notification().createdAt, Date.now());
   });
 
-  /** Full ISO timestamp shown on hover — "2026-07-12 14:32:05". */
+  /** Full ISO timestamp shown on hover. */
   public readonly fullTimestamp = computed<string>(() => {
     try {
-      const d = new Date(this.notification().timestamp);
+      const d = new Date(this.notification().createdAt);
       return d.toLocaleString();
     } catch {
-      return this.notification().timestamp;
+      return this.notification().createdAt;
     }
   });
 }

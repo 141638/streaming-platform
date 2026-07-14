@@ -1,13 +1,21 @@
 <!--
   Notification bell in the shell header.
-  Wave 1 (now):  click → testMock() → toast pipeline.
-  Wave 2 (later): click → toggle popup menu with notification history.
+  Wave 5.2: shows unread badge from REST endpoint, click triggers mock toasts.
+  Future: click → toggle popup menu with notification history.
 -->
 <button
   pButton
   type="button"
-  class="p-button-rounded p-button-text"
+  class="p-button-rounded p-button-text p-overlay-badge"
   icon="pi pi-bell"
   (click)="onBellClick()"
   aria-label="Notifications"
-></button>
+>
+  @if (unreadCount() > 0) {
+    <p-badge
+      [value]="unreadCount() > 99 ? '99+' : unreadCount()"
+      severity="danger"
+      size="small"
+    />
+  }
+</button>

@@ -43,7 +43,7 @@ export class NotificationToastComponent implements OnInit {
 
   /** Called when a clickable notification card is clicked. Navigate + dismiss. */
   public onCardClick(dto: ToastDto): void {
-    const route = dto.data?.action?.route;
+    const route = dto.data?.clickAction?.route;
     if (route) {
       this.router.navigateByUrl(route);
     }

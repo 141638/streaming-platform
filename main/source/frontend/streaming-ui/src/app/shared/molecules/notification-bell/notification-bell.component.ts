@@ -1,23 +1,29 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  Signal,
+} from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { BadgeModule } from 'primeng/badge';
 import { ButtonModule } from 'primeng/button';
 import { NotificationService } from '../../../core/services/notification.service';
 
 @Component({
   selector: 'app-notification-bell',
   standalone: true,
-  imports: [ButtonModule],
+  imports: [ButtonModule, BadgeModule],
   templateUrl: './notification-bell.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class NotificationBellComponent {
   private readonly notificationService = inject(NotificationService);
 
-  /**
-   * Trigger the mock notification pipeline so we can visually verify the
-   * toast + card molecule + sound end-to-end without SSE.
-   *
-   * Wave 2: replace with a menu toggle when the bell has real data.
-   */
+  protected readonly unreadCount: Signal<number> = toSignal(
+    this.notificationService.unreadCount$,
+    { initialValue: 0 },
+  );
+
   public onBellClick(): void {
     this.notificationService.testMock();
   }

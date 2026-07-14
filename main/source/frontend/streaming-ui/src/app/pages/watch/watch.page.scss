@@ -1,0 +1,35 @@
+:host {
+  display: block;
+  height: 100%;
+}
+
+.watch-layout {
+  min-height: 100%;
+}
+
+.watch-chassis {
+  min-height: 360px;
+
+  video {
+    max-height: calc(100vh - 64px - 2rem); // account for toolbar + padding
+    object-fit: contain;
+  }
+}
+
+.watch-info-bar {
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75));
+
+  h1 {
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  }
+}
+
+.watch-chat-col {
+  max-height: calc(100vh - 64px);
+  overflow: hidden;
+}
+
+.watch-loading,
+.watch-error {
+  min-height: 60vh;
+}

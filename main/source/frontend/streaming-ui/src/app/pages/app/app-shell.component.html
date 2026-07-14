@@ -2,12 +2,22 @@
   <p-toolbar
     styleClass="flex-initial border-noround shadow-1 surface-card app-shell-toolbar"
   >
-    <div
-      class="p-toolbar-group-start flex align-items-center gap-3 cursor-pointer"
-      (click)="navigateHome()"
-    >
-      <span class="pi pi-play-circle text-xl app-shell-brand-icon"></span>
-      <span class="text-lg font-semibold">Streaming Platform</span>
+    <div class="p-toolbar-group-start flex align-items-center gap-3">
+      <div
+        class="flex align-items-center gap-3 cursor-pointer"
+        (click)="navigateHome()"
+      >
+        <span class="pi pi-play-circle text-xl app-shell-brand-icon"></span>
+        <span class="text-lg font-semibold">Streaming Platform</span>
+      </div>
+      <button
+        pButton
+        type="button"
+        icon="pi pi-compass"
+        label="Browse"
+        class="p-button-text"
+        [routerLink]="'/browse'"
+      ></button>
     </div>
     <div class="p-toolbar-group-end flex align-items-center gap-2">
       @if (authService.isStreamer()) {

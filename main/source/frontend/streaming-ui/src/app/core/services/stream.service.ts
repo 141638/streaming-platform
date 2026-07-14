@@ -10,12 +10,44 @@ import { CreateStreamRequestDto } from '../contracts/create-stream-request.dto';
 import { PublishKeyResponseDto } from '../contracts/publish-key-response.dto';
 import { SocialLinkDto } from '../contracts/social-link.dto';
 import { StreamResponseDto } from '../contracts/stream-response.dto';
+import { LiveStreamPageResponseDto } from '../contracts/live-stream-page-response.dto';
 import { StreamSummaryResponseDto } from '../contracts/stream-summary-response.dto';
+import { WatchResponseDto } from '../contracts/watch-response.dto';
 
 @Injectable({ providedIn: 'root' })
 export class StreamService {
   private readonly http = inject(HttpClient);
   private readonly base = '/api/streams/v1';
+
+  // ── Discovery ──────────────────────────────────────────────────────────
+
+  /**
+   * Returns cursor-paginated live streams with optional keyword search.
+   * Use {@code cursor} from a previous page to fetch the next page.
+   */
+  public getLiveStreams(params?: {
+    keyword?: string;
+    cursor?: string;
+    limit?: number;
+  }): Observable<LiveStreamPageResponseDto> {
+    const q = new URLSearchParams();
+    if (params?.keyword) q.set('keyword', params.keyword);
+    if (params?.cursor) q.set('cursor', params.cursor);
+    if (params?.limit) q.set('limit', String(params.limit));
+    const qs = q.toString();
+    return this.http.get<LiveStreamPageResponseDto>(
+      `${this.base}/streams/live${qs ? '?' + qs : ''}`,
+    );
+  }
+
+  // ── Watch ──────────────────────────────────────────────────────────────
+
+  /** Returns playback URL, room key, and stream metadata for the watch page. */
+  public getWatchData(id: string): Observable<WatchResponseDto> {
+    return this.http.get<WatchResponseDto>(
+      `${this.base}/streams/${id}/watch`,
+    );
+  }
 
   // ── Categories ──────────────────────────────────────────────────────────
 
@@ -41,8 +73,10 @@ export class StreamService {
 
   // ── Lifecycle ───────────────────────────────────────────────────────────
 
-  public startStream(id: string): Observable<StreamResponseDto> {
-    return this.http.post<StreamResponseDto>(
+  /** DRAFT → returns publish key for OBS. The actual LIVE transition
+   *  happens via the SRS on_publish webhook. */
+  public startStream(id: string): Observable<PublishKeyResponseDto> {
+    return this.http.post<PublishKeyResponseDto>(
       `${this.base}/streams/${id}/start`,
       null,
     );
@@ -63,8 +97,8 @@ export class StreamService {
   }
 
   /** SCHEDULED → DRAFT with a fresh publish key (see stream ADR-0001/0004). */
-  public goLive(id: string): Observable<StreamResponseDto> {
-    return this.http.post<StreamResponseDto>(
+  public goLive(id: string): Observable<PublishKeyResponseDto> {
+    return this.http.post<PublishKeyResponseDto>(
       `${this.base}/streams/${id}/go-live`,
       null,
     );
@@ -128,6 +162,23 @@ export class StreamService {
       bio,
       socialLinks,
     });
+  }
+
+  // ── Viewer presence ─────────────────────────────────────────────────────
+
+  /** Send a heartbeat to register this viewer as present. */
+  public sendHeartbeat(id: string): Observable<void> {
+    return this.http.post<void>(
+      `${this.base}/streams/${id}/heartbeat`,
+      null,
+    );
+  }
+
+  /** Get the current viewer count for a stream. */
+  public getViewerCount(id: string): Observable<{ count: number }> {
+    return this.http.get<{ count: number }>(
+      `${this.base}/streams/${id}/viewers`,
+    );
   }
 
   // ── Archive ──────────────────────────────────────────────────────────────

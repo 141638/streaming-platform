@@ -6,6 +6,7 @@ export interface StreamSummaryResponseDto {
   readonly categoryId: string | null;
   readonly tags: readonly string[];
   readonly thumbnailUrl: string | null;
+  readonly views: number;
   readonly createdAt: string;
   readonly scheduledAt: string | null;
   readonly broadcasterUsername: string | null;

@@ -57,8 +57,18 @@ export const routes: Routes = [
     children: [
       {
         path: 'home',
+        redirectTo: '/browse',
+        pathMatch: 'full',
+      },
+      {
+        path: 'browse',
         loadComponent: () =>
-          import('./pages/home/home.page').then((m) => m.HomePage),
+          import('./pages/browse/browse.page').then((m) => m.BrowsePage),
+      },
+      {
+        path: 'watch/:id',
+        loadComponent: () =>
+          import('./pages/watch/watch.page').then((m) => m.WatchPage),
       },
       {
         path: 'streams/create',
@@ -115,7 +125,7 @@ export const routes: Routes = [
           },
         ],
       },
-      { path: '', redirectTo: 'home', pathMatch: 'full' },
+      { path: '', redirectTo: 'browse', pathMatch: 'full' },
     ],
   },
 ];

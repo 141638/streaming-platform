@@ -94,6 +94,6 @@ export class AppShellComponent {
   ];
 
   public navigateHome(): void {
-    this.router.navigateByUrl('/home');
+    this.router.navigateByUrl('/browse');
   }
 }

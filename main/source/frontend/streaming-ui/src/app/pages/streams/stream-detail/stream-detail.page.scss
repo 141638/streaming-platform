@@ -2,3 +2,8 @@
   height: 38vh;
   min-height: 320px;
 }
+
+.cancel-confirm-bar {
+  background: color-mix(in oklch, var(--red-900) 20%, var(--color-surface-1));
+  border: 1px solid var(--red-700);
+}

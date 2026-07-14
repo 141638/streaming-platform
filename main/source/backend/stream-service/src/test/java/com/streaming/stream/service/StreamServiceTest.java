@@ -149,7 +149,7 @@ class StreamServiceTest {
                 .isNew(false)
                 .eventType("STREAM_CREATED")
                 .streamId(STREAM_ID)
-                .payload("{}")
+                .payload(io.r2dbc.postgresql.codec.Json.of("{}"))
                 .retryCount(0)
                 .createdAt(OffsetDateTime.now(ZoneOffset.UTC))
                 .published(false)
@@ -352,26 +352,33 @@ class StreamServiceTest {
     class StartStream {
 
         @Test
-        @DisplayName("transitions to LIVE and sets startedAt")
-        void transitionsToLive() {
-            stubPublish();
+        @DisplayName("returns publish key and keeps stream in DRAFT")
+        void returnsPublishKey() {
             Jwt j = jwt(OWNER_SUB);
             StreamSessionEntity e = entity(STREAM_ID, OWNER_SUB, StreamStatus.DRAFT);
+            e.setSrsName("abc123def456");
             when(repository.findById(STREAM_ID)).thenReturn(Mono.just(e));
             when(authorization.requireAccess(eq(j), eq(required(AuthAction.LIFECYCLE, OWNER_SUB))))
                     .thenReturn(Mono.empty());
             when(repository.existsByBroadcasterSubjectAndStatus(OWNER_SUB, StreamStatus.LIVE))
                     .thenReturn(Mono.just(false));
+            when(publishTokenService.issueToken(eq(STREAM_ID), eq("abc123def456"), eq(OWNER_SUB)))
+                    .thenReturn("jwt-token-xyz");
             when(repository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
 
             StepVerifier.create(service.startStream(STREAM_ID, j))
                     .assertNext(response -> {
-                        assertThat(response.status()).isEqualTo("live");
-                        assertThat(response.startedAt()).isNotNull();
+                        assertThat(response.streamId()).isEqualTo(STREAM_ID);
+                        assertThat(response.srsName()).isEqualTo("abc123def456");
+                        assertThat(response.token()).isEqualTo("jwt-token-xyz");
+                        assertThat(response.rtmpUrl()).contains("abc123def456");
+                        assertThat(response.playUrl()).contains("abc123def456");
+                        assertThat(response.expiresAt()).isNotNull();
                     })
                     .verifyComplete();
 
-            verify(outboxWriter).write(any());
+            // The stream should NOT be transitioned to LIVE — the webhook does that
+            verify(repository).save(any());
         }
 
         @Test
@@ -379,6 +386,7 @@ class StreamServiceTest {
         void rejectsWhenAlreadyLive() {
             Jwt j = jwt(OWNER_SUB);
             StreamSessionEntity e = entity(STREAM_ID, OWNER_SUB, StreamStatus.DRAFT);
+            e.setSrsName("abc123def456");
             when(repository.findById(STREAM_ID)).thenReturn(Mono.just(e));
             when(authorization.requireAccess(eq(j), eq(required(AuthAction.LIFECYCLE, OWNER_SUB))))
                     .thenReturn(Mono.empty());
@@ -393,15 +401,13 @@ class StreamServiceTest {
         }
 
         @Test
-        @DisplayName("rejects invalid transition (ENDED → LIVE)")
-        void rejectsInvalidTransition() {
+        @DisplayName("rejects non-DRAFT status")
+        void rejectsNonDraft() {
             Jwt j = jwt(OWNER_SUB);
             StreamSessionEntity e = entity(STREAM_ID, OWNER_SUB, StreamStatus.ENDED);
             when(repository.findById(STREAM_ID)).thenReturn(Mono.just(e));
             when(authorization.requireAccess(eq(j), eq(required(AuthAction.LIFECYCLE, OWNER_SUB))))
                     .thenReturn(Mono.empty());
-            when(repository.existsByBroadcasterSubjectAndStatus(OWNER_SUB, StreamStatus.LIVE))
-                    .thenReturn(Mono.just(false));
 
             StepVerifier.create(service.startStream(STREAM_ID, j))
                     .expectError(IllegalStateException.class)

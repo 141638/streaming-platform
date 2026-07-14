@@ -2,6 +2,7 @@ package com.streaming.notification.messaging;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.streaming.common.messaging.StreamEvent;
+import com.streaming.notification.application.NotificationService;
 import java.io.IOException;
 import java.time.Duration;
 import org.slf4j.Logger;
@@ -19,7 +20,7 @@ import reactor.core.publisher.Mono;
  * <ol>
  *   <li>Deserialized from JSON to {@link StreamEvent}</li>
  *   <li>Deduplicated via Redis {@code SETNX} on {@code eventId} (24h TTL)</li>
- *   <li>Routed by {@code eventType} to the appropriate handler</li>
+ *   <li>Routed by {@code eventType} to {@link NotificationService} for persistence</li>
  * </ol>
  *
  * <p>Duplicate delivery is possible (Kafka at-least-once, producer retries).
@@ -36,14 +37,17 @@ public class StreamControlListener {
 
     private final ObjectMapper objectMapper;
     private final ReactiveRedisTemplate<String, String> redisTemplate;
+    private final NotificationService notificationService;
 
     @Value("${STREAM_CONTROL_TOPIC:stream.control}")
     private String topic;
 
     public StreamControlListener(ObjectMapper objectMapper,
-                                 ReactiveRedisTemplate<String, String> redisTemplate) {
+                                 ReactiveRedisTemplate<String, String> redisTemplate,
+                                 NotificationService notificationService) {
         this.objectMapper = objectMapper;
         this.redisTemplate = redisTemplate;
+        this.notificationService = notificationService;
     }
 
     @KafkaListener(
@@ -101,34 +105,51 @@ public class StreamControlListener {
         };
     }
 
-    // ── Event handlers (stubs — Phase 5 notification dispatch) ────────────
+    // ── Event handlers ─────────────────────────────────────────────────
 
+    /**
+     * STREAM_STARTED → persist a STREAM_LIVE notification for the broadcaster.
+     * In the future, this will also fan out to followers via subscription lookup.
+     */
     private Mono<Void> onStreamStarted(StreamEvent event) {
         log.info("STREAM_STARTED: streamId={} broadcaster={}",
                 event.streamId(), event.broadcasterSubject());
-        // TODO Phase 5: enqueue "Streamer went live" notification
-        return Mono.empty();
+        return notificationService.createFromStreamEvent(event);
     }
 
+    /**
+     * STREAM_ENDED → persist a STREAM_ENDED notification for the broadcaster.
+     */
     private Mono<Void> onStreamEnded(StreamEvent event) {
         log.info("STREAM_ENDED: streamId={} broadcaster={}",
                 event.streamId(), event.broadcasterSubject());
-        // TODO Phase 5: enqueue "VOD available" notification
-        return Mono.empty();
+        return notificationService.createFromStreamEvent(event);
     }
 
+    /**
+     * STREAM_CREATED — informational only. No user-facing notification is
+     * generated; the event is logged for audit purposes.
+     */
     private Mono<Void> onStreamCreated(StreamEvent event) {
         log.debug("STREAM_CREATED: streamId={}", event.streamId());
-        return Mono.empty();
+        return notificationService.createFromStreamEvent(event);
     }
 
+    /**
+     * STREAM_SCHEDULED — informational only. Schedule reminders are deferred
+     * to a future phase with a batch job.
+     */
     private Mono<Void> onStreamScheduled(StreamEvent event) {
         log.debug("STREAM_SCHEDULED: streamId={}", event.streamId());
-        return Mono.empty();
+        return notificationService.createFromStreamEvent(event);
     }
 
+    /**
+     * STREAM_CANCELLED — informational only. No user-facing notification is
+     * generated; the event is logged for audit purposes.
+     */
     private Mono<Void> onStreamCancelled(StreamEvent event) {
         log.debug("STREAM_CANCELLED: streamId={}", event.streamId());
-        return Mono.empty();
+        return notificationService.createFromStreamEvent(event);
     }
 }

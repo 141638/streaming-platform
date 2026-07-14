@@ -1,0 +1,226 @@
+# Root Docker Compose — starts all platform infrastructure.
+#
+# Quick start:
+#   1. Copy main/env/*.env.template → main/env/*.env (fill secrets)
+#   2. docker compose --env-file main/env/postgres.env up -d
+#   3. docker compose ps   # all services healthy
+#
+# Individual services can be started in isolation:
+#   docker compose -f main/docker/srs/docker-compose.yml up -d srs
+
+services:
+  # ── PostgreSQL 16 ───────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: streaming-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PUBLISH_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-streaming}
+      POSTGRES_USER: ${POSTGRES_USER:-streaming}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-streaming}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-streaming} -d ${POSTGRES_DB:-streaming}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - streaming_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Redis 7.2 ──────────────────────────────────────────────────────────
+  redis:
+    image: redis:7.2.4-alpine
+    container_name: streaming-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --requirepass "${REDIS_PASSWORD:-r3d1s-d3v-p4ss-2024}"
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+    environment:
+      REDISCLI_AUTH: "${REDIS_PASSWORD:-r3d1s-d3v-p4ss-2024}"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    volumes:
+      - redis_data:/data
+    networks:
+      - streaming_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Redis Insight (optional dev tool) ──────────────────────────────────
+  redisinsight:
+    image: redis/redisinsight:2.44.0
+    container_name: streaming-redisinsight
+    restart: unless-stopped
+    profiles: ["dev"]
+    ports:
+      - "${REDISINSIGHT_PORT:-5540}:5540"
+    environment:
+      - RI_APP_MODE=true
+    volumes:
+      - redisinsight_data:/db
+    networks:
+      - streaming_network
+    depends_on:
+      redis:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Kafka KRaft (single-broker, dev) ───────────────────────────────────
+  kafka:
+    image: apache/kafka:4.1.2
+    container_name: streaming-kafka
+    restart: unless-stopped
+    ports:
+      - "${KAFKA_EXTERNAL_PORT:-9094}:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@streaming-kafka:9093
+      CLUSTER_ID: 'abcdefgh12345678'
+      KAFKA_INTER_BROKER_LISTENER_NAME: BROKER
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: BROKER://streaming-kafka:9099,CONTROLLER://streaming-kafka:9093,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: BROKER://streaming-kafka:9099,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,BROKER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: true
+      KAFKA_NUM_PARTITIONS: 3
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - streaming_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Kafka UI (optional dev tool) ───────────────────────────────────────
+  kafka-ui:
+    image: provectuslabs/kafka-ui
+    container_name: streaming-kafka-ui
+    restart: unless-stopped
+    profiles: ["dev"]
+    ports:
+      - "${KAFKA_UI_PORT:-9999}:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=local
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=streaming-kafka:9099
+    networks:
+      - streaming_network
+    depends_on:
+      kafka:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── SRS Media Server ───────────────────────────────────────────────────
+  srs:
+    image: ${SRS_IMAGE:-ossrs/srs:5}
+    container_name: streaming-srs
+    restart: unless-stopped
+    ports:
+      # RTMP ingest — OBS pushes to rtmp://localhost:1935/live/{srsName}?token={jwt}
+      - "${SRS_RTMP_PORT:-1935}:1935"
+      # HTTP API — health checks, metrics, control plane
+      - "${SRS_API_PORT:-1985}:1985"
+      # HLS output — players pull http://localhost:8085/live/{srsName}.m3u8
+      - "${SRS_HTTP_PORT:-8085}:8080"
+    volumes:
+      - ./main/docker/srs/conf/custom.conf:/usr/local/srs/conf/custom.conf:ro
+      - srs_dvr_data:/data/dvr
+      - srs_hls_data:/usr/local/srs/objs/nginx/html
+    command: ["/usr/local/srs/objs/srs", "-c", "/usr/local/srs/conf/custom.conf"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:1985/api/v1/versions || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - streaming_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Eureka Discovery ───────────────────────────────────────────────────
+  discovery:
+    build:
+      context: ./main/source/backend
+      dockerfile: ./main/docker/discovery/Dockerfile
+    image: streaming-discovery:latest
+    container_name: streaming-discovery
+    restart: unless-stopped
+    ports:
+      - "${DISCOVERY_PUBLISH_PORT:-8761}:8761"
+    env_file:
+      - main/env/discovery.env
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8761/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - streaming_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  streaming_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  redisinsight_data:
+    driver: local
+  kafka_data:
+    driver: local
+  srs_dvr_data:
+    driver: local
+  srs_hls_data:
+    driver: local

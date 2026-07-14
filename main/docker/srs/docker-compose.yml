@@ -1,0 +1,45 @@
+services:
+  srs:
+    # ossrs/srs:5 — lighter than :6, stable for POC.
+    # Upgrade to :6 in Phase 6+ when low-latency HLS is prioritized.
+    image: ${SRS_IMAGE:-ossrs/srs:5}
+    container_name: streaming-srs
+    restart: unless-stopped
+    ports:
+      # RTMP ingest — streamers push to rtmp://localhost:1935/live/{srsName}?token={jwt}
+      - "${SRS_RTMP_PORT:-1935}:1935"
+      # HTTP API — health checks, metrics, control plane queries
+      - "${SRS_API_PORT:-1985}:1985"
+      # HLS output — players pull http://localhost:8085/live/{srsName}.m3u8
+      - "${SRS_HTTP_PORT:-8085}:8080"
+    volumes:
+      # Custom SRS config (webhooks, HLS, DVR)
+      - ./conf/custom.conf:/usr/local/srs/conf/custom.conf:ro
+      # DVR recordings persist across container restarts
+      - srs_dvr_data:/data/dvr
+      # HLS segments — served by SRS embedded HTTP server
+      - srs_hls_data:/usr/local/srs/objs/nginx/html
+    command: ["/usr/local/srs/objs/srs", "-c", "/usr/local/srs/conf/custom.conf"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:1985/api/v1/versions || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - streaming_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  streaming_network:
+    driver: bridge
+
+volumes:
+  srs_dvr_data:
+    driver: local
+  srs_hls_data:
+    driver: local

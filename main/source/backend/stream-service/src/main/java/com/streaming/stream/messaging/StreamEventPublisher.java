@@ -2,6 +2,7 @@ package com.streaming.stream.messaging;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.streaming.common.messaging.StreamEvent;
 import java.time.Duration;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;

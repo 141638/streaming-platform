@@ -1,4 +1,4 @@
-package com.streaming.stream.messaging;
+package com.streaming.common.messaging;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;

@@ -1,6 +1,6 @@
 {
   "agents.Explore": {
-    "count": 8,
+    "count": 10,
     "firstSeen": "2026-07-12",
     "lastSeen": "2026-07-14"
   },
@@ -20,7 +20,7 @@
     "lastSeen": "2026-07-13"
   },
   "commands.blueprint": {
-    "count": 2,
+    "count": 3,
     "firstSeen": "2026-07-14",
     "lastSeen": "2026-07-14"
   },
@@ -36,6 +36,11 @@
   },
   "commands.commit": {
     "count": 2,
+    "firstSeen": "2026-07-14",
+    "lastSeen": "2026-07-14"
+  },
+  "commands.implement": {
+    "count": 1,
     "firstSeen": "2026-07-14",
     "lastSeen": "2026-07-14"
   }

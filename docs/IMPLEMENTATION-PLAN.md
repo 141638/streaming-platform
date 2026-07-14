@@ -1,9 +1,9 @@
 # Implementation Plan
 
 **Last updated:** 2026-07-14
-**Current phase:** 6 — Production Hardening (active: Kafka outbox pattern) → then 4 — Viewer Experience
-**Active blueprint:** [outbox-and-phase4-blueprint.md](plans/outbox-and-phase4-blueprint.md) — Path C hybrid sequencing
-**Next session:** Start with Task A1 (outbox schema migration)
+**Current phase:** 6 — Production Hardening (outbox ✅) + 4 — Viewer Experience (browse/watch/HLS ✅) → then 5 — Notifications
+**Active blueprint:** [outbox-and-phase4-blueprint.md](plans/outbox-and-phase4-blueprint.md) — Path C, Phase A (outbox) done, Phase B (viewer) mostly done
+**Next session:** Notification-service ADR-0000 + foundation build (Phase 5)
 
 ## End Goal
 
@@ -539,6 +539,7 @@ POST /v1/streams/{id}/archive
 | [0005](adr/stream/0005-stream-thumbnails.md) | Stream thumbnails via SRS auto-snapshot; field+display in 2.5, capture in 2.9; custom-upload via MinIO deferred (Proposed) |
 | [0007](adr/stream/0007-public-channel-read-and-channel-service-seam.md) | Authenticated channel read in stream-service with channel-service extraction seam; denormalized identity + safe cross-user projection + BroadcasterProfile (Accepted) |
 | [0008](adr/stream/0008-view-count-analytics-pipeline.md) | View counting: Redis per-user Hash with dedup (Phase 1) → Kafka analytics pipeline (Phase 2). Includes IP fallback, self-view exclusion, `stream_view_event` analytics table, denormalized `views` column. (Accepted — Phase 1 implemented 2026-07-13) |
+| [0009](adr/stream/0009-outbox-pattern.md) | Outbox pattern: transactional outbox table with `FOR UPDATE SKIP LOCKED` poller, at-least-once delivery replacing fire-and-forget. Notification consumer: Redis SETNX dedup + DLQ. (Accepted — implemented 2026-07-14, commits `2409fc1`–`142f32b`) |
 
 #### 2.9 — SRS Snapshot Thumbnails
 
@@ -966,7 +967,7 @@ ADR-0003 §Deferred).
 
 ## Phase 4 — Viewer Experience ○
 
-**Status:** Planned
+**Status:** In Progress — browse page, watch page, HLS player, SRS compose, and chat panel integration shipped. Remaining: viewer presence (4.4).
 
 **Goal:** A viewer can discover live streams, watch them, and interact via chat.
 
@@ -1002,25 +1003,34 @@ ADR-0003 §Deferred).
 
 ### Phase 4 Checklist
 
-- [ ] 4.0 — Infrastructure: SRS Docker Compose service + health check + RTMP/HLS verification
-- [ ] 4.1 — Browse/discovery page
-- [ ] 4.2 — Stream viewing page (player + chat)
-- [ ] 4.3 — Playback URL generation
-- [ ] 4.4 — Viewer presence
+- [x] 4.0 — Infrastructure: SRS Docker Compose service + health check + RTMP/HLS verification (root `compose.yaml` with all infra services, `57c55b7`)
+- [x] 4.1 — Browse/discovery page (cursor pagination, category filter, `e9ded9d`)
+- [x] 4.2 — Stream viewing page (HLS player via hls.js + embedded chat panel, `5f7c1b3`, `734f466`)
+- [x] 4.3 — Playback URL generation (HLS `.m3u8` URL in `PublishKeyResponse`, wired in watch page)
+- [ ] 4.4 — Viewer presence (Redis `SETEX` heartbeat + viewer count in UI)
 
 ---
 
 ## Phase 5 — Notifications ○
 
-**Status:** Planned — notification service has only `/v1/ping`, `StreamControlListener` only logs
+**Status:** In Progress — notification-service has Kafka consumer with Redis SETNX dedup + DLQ (3-retry backoff), `StreamControlListener` routes 5 event types (handlers still stubs). Frontend toast infrastructure prebuilt (5.0). ADR-0000 written (2026-07-14). Next: foundation build (persist → REST → SSE).
 
-**Goal:** Users get notified about followed streamers going live, chat mentions, etc.
+**Goal:** Users get notified about followed streamers going live, chat mentions, moderation actions, etc. The notification service is the platform's general notification hub — moderation push is its first client, not its only shape.
+
+### Architecture Decisions
+
+Notification ADR — see [docs/adr/notification/](adr/notification/):
+
+| ADR | Decision |
+|-----|----------|
+| [0000](adr/notification/0000-architecture-foundation.md) | Layered reactive (`api/` → `application/` → `domain/` → `infrastructure/`) matching stream/chat conventions. Two inbound channels (Kafka consumers per topic), two outbound channels (REST + SSE). General hub pattern — moderation is first client, not only shape. |
 
 ### Work Items
 
 | # | Item | Depends on |
 |---|------|-----------|
 | 5.0 | ✅ **Frontend: Toast + notification card prebuild** — `ToastService`, `NotificationService` scaffold, `NotificationCard` molecule (reusable toast + bell card), `UserProfilePicture` atom, `NotificationToast` host (bottom-right with sound), `NotificationBell` header button. DTO aligned with notification-service plan (category + action-based). Mock-triggerable via bell click. See [retrospective](plans/notification-toast-infrastructure-retrospective.md). | — |
+| 5.0b | ✅ **Kafka consumer infrastructure** — Redis SETNX dedup (24h TTL) + DLQ with 3-retry backoff, routes 5 event types (`STREAM_STARTED`, `STREAM_ENDED`, `STREAM_CREATED`, `STREAM_SCHEDULED`, `STREAM_CANCELLED`). `StreamEvent` relocated to `com.streaming.common.messaging` for cross-service reuse. Handlers are stubs (log only). Commit range: `142f32b`, `496c162`. | 2.3 |
 | 5.1 | **Notification service core** — subscription CRUD (`channel_subscription` table), outbox management, `NotificationDispatcher` interface | — |
 | 5.2 | **Kafka consumer → dispatch** — `StreamControlListener` wired to dispatch logic (stream.started → notify followers, stream.ended → notify) | 2.3, 5.1 |
 | 5.3 | **Email adapter** — SMTP integration via Spring Mail, templated emails (Thymeleaf or plain text) | 5.1 |
@@ -1029,8 +1039,9 @@ ADR-0003 §Deferred).
 ### Phase 5 Checklist
 
 - [x] 5.0 — Frontend toast + notification card + bell prebuild (uncommitted, on `feat/chat-moderation-ux`)
+- [x] 5.0b — Kafka consumer infrastructure: Redis SETNX dedup + DLQ + event routing (`142f32b`, `496c162`)
 - [ ] 5.1 — Subscription CRUD + outbox + dispatcher interface
-- [ ] 5.2 — Kafka → dispatch wiring
+- [ ] 5.2 — Kafka → dispatch wiring (wire stub handlers in `StreamControlListener` to persist notifications)
 - [ ] 5.3 — Email adapter
 - [ ] 5.4 — Frontend notification settings
 
@@ -1038,7 +1049,7 @@ ADR-0003 §Deferred).
 
 ## Phase 6 — Production Hardening ○
 
-**Status:** In Progress — Redis infrastructure hardened, structured logging deployed, refresh tokens migrated to Redis. **Active: Kafka outbox pattern** — the #1 production gap (see [gap analysis](REDIS-KAFKA-PRODUCTION-GAP.md), [blueprint](plans/outbox-and-phase4-blueprint.md)). Remaining items are planned but not started.
+**Status:** In Progress — Redis infrastructure hardened, structured logging deployed, refresh tokens migrated to Redis. **Kafka outbox pattern ✅** — transactional outbox with `FOR UPDATE SKIP LOCKED` poller shipped (`2409fc1`, `81ec12a`). Notification consumer idempotency (Redis SETNX + DLQ) shipped (`142f32b`). Remaining items are planned but not started.
 
 **Goal:** The platform is safe, scalable, and maintainable for production use.
 
@@ -1048,6 +1059,7 @@ ADR-0003 §Deferred).
 |---|------|-----------|
 | 6.0a | ✅ **Redis infrastructure hardening** — pinned image (7.2.4-alpine), AOF+RDB persistence, password auth, memory limits (256MB allkeys-lru), RedisInsight (2.44.0), json-file log rotation, restart policy | — |
 | 6.0b | ✅ **Refresh token → Redis migration** — replaced JPA pessimistic-lock rotation with atomic Lua script; deleted RefreshTokenEntity/Repository/MaintenanceService; auth-service now uses Redis as primary store for ephemeral credentials. See [ADR auth/0001](adr/auth/0001-redis-refresh-token-storage.md) | 6.0a |
+| 6.0c | ✅ **Kafka outbox pattern** — transactional outbox (`outbox` table in same TX as entity change), `OutboxPoller` with `FOR UPDATE SKIP LOCKED` and fixed-delay scheduling, at-least-once delivery replacing fire-and-forget. See [ADR stream/0009](adr/stream/0009-outbox-pattern.md). Notification consumer: Redis SETNX dedup (24h TTL) + DLQ with 3-retry backoff. Commit range: `2409fc1`–`142f32b`. | 2.3 |
 | 6.1 | **Idempotency keys** — gateway filter + Redis dedup + frontend `IdempotencyService` → enable POST retry in auth interceptor | — |
 | 6.2 | **Shared `pbac-common` library** — extract duplicated `JwtProperties` + `ReactiveJwtDecoder` + `EntitlementMatcher` from stream/chat/notification into a shared Gradle module | 2.2 |
 | 6.3 | **Rate limiting** — gateway-level rate limits per endpoint, Redis-backed token bucket. See [ADR common/0002](adr/common/0002-redis-ephemeral-data-store.md) for design | 6.0a |
@@ -1059,6 +1071,7 @@ ADR-0003 §Deferred).
 
 - [x] 6.0a — Redis infrastructure hardening
 - [x] 6.0b — Refresh token → Redis migration
+- [x] 6.0c — Kafka outbox pattern (stream-service) + consumer idempotency + DLQ (notification-service)
 - [ ] 6.1 — Idempotency keys
 - [ ] 6.2 — Shared `pbac-common` library
 - [ ] 6.3 — Rate limiting

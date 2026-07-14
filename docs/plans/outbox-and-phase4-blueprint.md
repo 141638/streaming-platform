@@ -1,8 +1,8 @@
 # Outbox Pattern + Phase 4 Viewer Experience — Implementation Blueprint
 
 **Date:** 2026-07-13
-**Status:** Ready — not yet started
-**Parent:** [REDIS-KAFKA-PRODUCTION-GAP.md](../REDIS-KAFKA-PRODUCTION-GAP.md) (gap K1), [IMPLEMENTATION-PLAN.md](../IMPLEMENTATION-PLAN.md) (Phase 4)
+**Status:** Phase A (outbox) ✅ done · Phase B (viewer) mostly done · Phase C (quick wins) not started
+**Parent:** [REDIS-KAFKA-PRODUCTION-GAP.md](../REDIS-KAFKA-PRODUCTION-GAP.md) (gap K1), [IMPLEMENTATION-PLAN.md](../IMPLEMENTATION-PLAN.md) (Phase 4, updated 2026-07-14)
 
 ## Summary
 
@@ -236,3 +236,35 @@ After both phases are complete, this end-to-end flow should work:
 ---
 
 *Ready for implementation. Start with Task A1 when the next session begins.*
+
+---
+
+## Implementation Log (2026-07-14)
+
+### Phase A: Outbox Pattern ✅
+
+| Task | Commit | Notes |
+|------|--------|-------|
+| A1 — Outbox schema | `2409fc1` | `V13__create_outbox.sql`, `OutboxEvent`, `OutboxEventRepository` |
+| A2 — Outbox writer | `81ec12a` | `OutboxWriter`, replaced `.subscribe()` in `StreamService` |
+| A3 — Outbox poller | `81ec12a` | `OutboxPoller` with `FOR UPDATE SKIP LOCKED` |
+| A4 — Consumer idempotency | `142f32b` | Redis SETNX dedup (24h TTL) + DLQ with 3-retry backoff in notification-service |
+| A5 — DLQ | `142f32b` | `KafkaConsumerConfig` with `DeadLetterPublishingRecoverer`, `stream.control.dlq` |
+| A6 — Documentation | `c37cd1d` | ADR-0009 outbox pattern written |
+
+**Deviations from plan:**
+- `OutboxEvent` placed in `persistence/entity/` (not `domain/`) — follows stream-service convention
+- `StreamEvent` relocated to `com.streaming.common.messaging` shared package (`496c162`) — reused by notification consumer
+- Consumer idempotency uses `ReactiveRedisTemplate` with `blockOptional()` (not pure reactive) — pragmatic for `@KafkaListener`
+
+### Phase B: Viewer Experience (4.0–4.2) ✅ (4.4 remaining)
+
+| Task | Commit | Notes |
+|------|--------|-------|
+| B1 — SRS infrastructure | `57c55b7` | Root `compose.yaml` with all infra services |
+| B2 — Browse/discovery | `e9ded9d` | Cursor-paginated live streams, category filter |
+| B3 — Watch page + HLS | `5f7c1b3` | hls.js player, embedded `ChatPanelComponent` |
+| Chat panel wiring | `734f466` | `[roomKey]` input binding on watch page |
+| B4 — Viewer presence | — | **Not yet implemented** |
+
+### Phase C: Quick Wins — not started

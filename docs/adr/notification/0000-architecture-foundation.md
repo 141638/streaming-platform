@@ -148,13 +148,14 @@ authoritative phase checklist.
 
 | Item | Phase | Description |
 |------|-------|-------------|
-| Notification domain + persistence | 5.1 | `Notification` entity, `ReactiveNotificationRepository`, V2 migration — the core data model |
-| REST API | 5.1 | `GET /v1/notifications` (paginated, JWT-scoped), `GET /v1/notifications/unread-count`, `POST /v1/notifications/{id}/read` |
-| Consume → persist wiring | 5.2 | Replace `StreamControlListener` stub handlers with `NotificationService.createNotification()` calls |
-| SSE delivery | 5.2 | `GET /v1/notifications/stream` (`text/event-stream`, fetch-based Bearer), `SseConnectionRegistry` (per-user sink map) |
+| Notification domain + persistence | 5.1 | ✅ **Done (2026-07-15)** — `Notification` entity, `ReactiveNotificationRepository`, V2 migration, `NotificationCategory` enum with R2DBC converters |
+| REST API | 5.1 | ✅ **Done (2026-07-15)** — `GET /v1/notifications` (cursor-paginated, JWT-scoped), `GET /v1/notifications/unread-count`, `POST /v1/notifications/{id}/read` |
+| Consume → persist wiring | 5.2 | ✅ **Done (2026-07-15)** — `StreamControlListener` wired to `NotificationService.createFromStreamEvent()`; STREAM_STARTED/STREAM_ENDED persist, others are debug no-ops |
+| Subscription management | 5.1b | `channel_subscription` CRUD, `NotificationDispatcher` interface, outbox management — deferred to next session |
+| SSE delivery | 5.2b | `GET /v1/notifications/stream` (`text/event-stream`, fetch-based Bearer), `SseConnectionRegistry` (per-user sink map) |
 | Chat moderation consumer | Wave 2 | `ModerationListener` for `chat.moderation` topic — BANNED/UNBANNED → persist → SSE push |
 | Email adapter | 5.3 | SMTP integration via Spring Mail, templated emails, outbox-driven dispatch |
-| Subscription management | 5.1/5.4 | CRUD on `channel_subscription`, toggle email/push per channel, notification preferences UI |
+| Follower fan-out | 5.2b | Subscription lookup on stream events → notify all followers (currently only notifies the broadcaster) |
 | Multi-instance SSE fanout | 6.x | Redis Pub/Sub for cross-instance connection registry when service scales past 1 instance |
 
 ## References

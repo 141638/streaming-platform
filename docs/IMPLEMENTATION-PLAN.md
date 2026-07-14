@@ -1,9 +1,9 @@
 # Implementation Plan
 
-**Last updated:** 2026-07-14
-**Current phase:** 6 — Production Hardening (outbox ✅) + 4 — Viewer Experience (browse/watch/HLS ✅) → then 5 — Notifications
-**Active blueprint:** [outbox-and-phase4-blueprint.md](plans/outbox-and-phase4-blueprint.md) — Path C, Phase A (outbox) done, Phase B (viewer) mostly done
-**Next session:** Notification-service ADR-0000 + foundation build (Phase 5)
+**Last updated:** 2026-07-15
+**Current phase:** 5 — Notifications (foundation ✅) + 6 — Production Hardening (outbox ✅) + 4 — Viewer Experience (browse/watch/HLS ✅; presence deferred)
+**Active blueprint:** [notification-foundation-5.1-retrospective.md](plans/notification-foundation-5.1-retrospective.md) — notification core shipped
+**Next session:** Subscription CRUD + SSE delivery (5.1 remainder + 5.2)
 
 ## End Goal
 
@@ -1031,8 +1031,10 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 |---|------|-----------|
 | 5.0 | ✅ **Frontend: Toast + notification card prebuild** — `ToastService`, `NotificationService` scaffold, `NotificationCard` molecule (reusable toast + bell card), `UserProfilePicture` atom, `NotificationToast` host (bottom-right with sound), `NotificationBell` header button. DTO aligned with notification-service plan (category + action-based). Mock-triggerable via bell click. See [retrospective](plans/notification-toast-infrastructure-retrospective.md). | — |
 | 5.0b | ✅ **Kafka consumer infrastructure** — Redis SETNX dedup (24h TTL) + DLQ with 3-retry backoff, routes 5 event types (`STREAM_STARTED`, `STREAM_ENDED`, `STREAM_CREATED`, `STREAM_SCHEDULED`, `STREAM_CANCELLED`). `StreamEvent` relocated to `com.streaming.common.messaging` for cross-service reuse. Handlers are stubs (log only). Commit range: `142f32b`, `496c162`. | 2.3 |
-| 5.1 | **Notification service core** — subscription CRUD (`channel_subscription` table), outbox management, `NotificationDispatcher` interface | — |
-| 5.2 | **Kafka consumer → dispatch** — `StreamControlListener` wired to dispatch logic (stream.started → notify followers, stream.ended → notify) | 2.3, 5.1 |
+| 5.1a | ✅ **Notification core (domain + persistence + REST)** — `Notification` entity with V2 migration, `NotificationCategory` enum with R2DBC converters, `ReactiveNotificationRepository` (cursor pagination, unread count, ownership-scoped), `NotificationService` (createFromStreamEvent, getNotifications, markAsRead, getUnreadCount), REST API (`GET /v1/notifications`, `GET /v1/notifications/unread-count`, `POST /v1/notifications/{id}/read`), error handling (`NotificationApiError`, `NotificationExceptionHandler`). See [retrospective](plans/notification-foundation-5.1-retrospective.md). 15 files — 13 created, 2 modified. | — |
+| 5.1b | **Subscription + outbox + dispatcher** — `channel_subscription` CRUD (V1 table already exists), outbox management (poller/producer), `NotificationDispatcher` interface | 5.1a |
+| 5.2a | ✅ **StreamControlListener → NotificationService wiring** — Replaced 5 stub handlers with `notificationService.createFromStreamEvent()` calls. STREAM_STARTED/STREAM_ENDED persist notifications; STREAM_CREATED/SCHEDULED/CANCELLED are debug-level no-ops. Injected `NotificationService` into `StreamControlListener`. | 2.3, 5.1a |
+| 5.2b | **Follower fan-out + SSE delivery** — subscription lookup on stream events → notify all followers; `SseConnectionRegistry` + `GET /v1/notifications/stream` | 5.1b, 5.2a |
 | 5.3 | **Email adapter** — SMTP integration via Spring Mail, templated emails (Thymeleaf or plain text) | 5.1 |
 | 5.4 | **Frontend: Notification settings** — manage subscriptions, toggle email/push per channel, notification preferences | 5.1 |
 
@@ -1040,8 +1042,10 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 
 - [x] 5.0 — Frontend toast + notification card + bell prebuild (uncommitted, on `feat/chat-moderation-ux`)
 - [x] 5.0b — Kafka consumer infrastructure: Redis SETNX dedup + DLQ + event routing (`142f32b`, `496c162`)
-- [ ] 5.1 — Subscription CRUD + outbox + dispatcher interface
-- [ ] 5.2 — Kafka → dispatch wiring (wire stub handlers in `StreamControlListener` to persist notifications)
+- [x] 5.1a — Notification core: domain + persistence + REST API (2026-07-15, uncommitted)
+- [ ] 5.1b — Subscription CRUD + outbox + dispatcher interface
+- [x] 5.2a — StreamControlListener → NotificationService wiring (2026-07-15, uncommitted)
+- [ ] 5.2b — Follower fan-out + SSE delivery
 - [ ] 5.3 — Email adapter
 - [ ] 5.4 — Frontend notification settings
 

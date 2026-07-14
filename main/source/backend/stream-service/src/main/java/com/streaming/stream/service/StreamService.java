@@ -17,8 +17,9 @@ import com.streaming.stream.api.dto.UpdateProfileRequest;
 import com.streaming.stream.api.dto.UpdateStreamRequest;
 import com.streaming.stream.config.PublishTokenProperties;
 import com.streaming.stream.config.ViewCountProperties;
-import com.streaming.stream.messaging.StreamEvent;
+import com.streaming.common.messaging.StreamEvent;
 import com.streaming.stream.messaging.StreamEventPublisher;
+import org.springframework.transaction.annotation.Transactional;
 import com.streaming.stream.persistence.entity.BroadcasterProfileEntity;
 import com.streaming.stream.persistence.entity.StreamSessionEntity;
 import com.streaming.stream.persistence.entity.StreamStatus;
@@ -65,6 +66,7 @@ public class StreamService {
     private final BroadcasterProfileRepository profileRepository;
     private final StreamAuthorization authorization;
     private final StreamEventPublisher eventPublisher;
+    private final OutboxWriter outboxWriter;
     private final PublishTokenService publishTokenService;
     private final PublishTokenProperties publishTokenProps;
     private final DatabaseClient databaseClient;
@@ -76,6 +78,7 @@ public class StreamService {
                          BroadcasterProfileRepository profileRepository,
                          StreamAuthorization authorization,
                          StreamEventPublisher eventPublisher,
+                         OutboxWriter outboxWriter,
                          PublishTokenService publishTokenService,
                          PublishTokenProperties publishTokenProps,
                          DatabaseClient databaseClient,
@@ -86,6 +89,7 @@ public class StreamService {
         this.profileRepository = profileRepository;
         this.authorization = authorization;
         this.eventPublisher = eventPublisher;
+        this.outboxWriter = outboxWriter;
         this.publishTokenService = publishTokenService;
         this.publishTokenProps = publishTokenProps;
         this.databaseClient = databaseClient;
@@ -138,13 +142,15 @@ public class StreamService {
                     }
                     return repository.save(entity);
                 }))
-                .doOnSuccess(saved -> {
+                .flatMap(saved -> {
                     StreamEvent event = request.scheduledAt() != null
                             ? StreamEvent.scheduled(saved.getId(), sub)
                             : StreamEvent.created(saved.getId(), sub);
-                    eventPublisher.publish(event).subscribe();
-                    log.info("Stream created: id={} status={} subject={}",
-                            saved.getId(), saved.getStatus().wireValue(), sub);
+                    return outboxWriter.write(event)
+                            .doOnSuccess(oe -> log.info(
+                                    "Stream created: id={} status={} subject={}",
+                                    saved.getId(), saved.getStatus().wireValue(), sub))
+                            .thenReturn(saved);
                 })
                 .map(StreamResponse::from);
     }
@@ -375,11 +381,12 @@ public class StreamService {
                                     return repository.save(entity);
                                 })
                 )
-                .doOnSuccess(saved -> {
-                    eventPublisher.publish(StreamEvent.started(saved.getId(),
-                            saved.getBroadcasterSubject())).subscribe();
-                    log.info("Stream started: id={}", saved.getId());
-                })
+                .flatMap(saved ->
+                        outboxWriter.write(StreamEvent.started(saved.getId(),
+                                saved.getBroadcasterSubject()))
+                                .doOnSuccess(oe -> log.info(
+                                        "Stream started: id={}", saved.getId()))
+                                .thenReturn(saved))
                 .map(StreamResponse::from)
                 .onErrorMap(OptimisticLockingFailureException.class,
                         ex -> new StreamConflictException(
@@ -414,11 +421,13 @@ public class StreamService {
                     entity.cancel();
                     return repository.save(entity);
                 })
-                .doOnSuccess(saved -> {
-                    eventPublisher.publish(StreamEvent.cancelled(saved.getId(),
-                            saved.getBroadcasterSubject())).subscribe();
-                    log.info("Stream cancelled via delete: id={}", saved.getId());
-                })
+                .flatMap(saved ->
+                        outboxWriter.write(StreamEvent.cancelled(saved.getId(),
+                                saved.getBroadcasterSubject()))
+                                .doOnSuccess(oe -> log.info(
+                                        "Stream cancelled via delete: id={}",
+                                        saved.getId()))
+                                .thenReturn(saved))
                 .then();
     }
 
@@ -559,15 +568,15 @@ public class StreamService {
                                                 }
                                                 entity.goLive();
                                                 return repository.save(entity)
-                                                        .doOnSuccess(saved -> {
-                                                            eventPublisher.publish(
-                                                                            StreamEvent.started(
-                                                                                    saved.getId(),
-                                                                                    saved.getBroadcasterSubject()))
-                                                                    .subscribe();
-                                                            log.info("Stream started via webhook: id={}",
-                                                                    saved.getId());
-                                                        });
+                                                        .flatMap(saved ->
+                                                                outboxWriter.write(
+                                                                        StreamEvent.started(
+                                                                                saved.getId(),
+                                                                                saved.getBroadcasterSubject()))
+                                                                        .doOnSuccess(oe -> log.info(
+                                                                                "Stream started via webhook: id={}",
+                                                                                saved.getId()))
+                                                                        .thenReturn(saved));
                                             });
                                 }
                                 // LIVE → reconnect, no state change
@@ -591,14 +600,14 @@ public class StreamService {
                     }
                     entity.end();
                     return repository.save(entity)
-                            .doOnSuccess(saved -> {
-                                eventPublisher.publish(
-                                                StreamEvent.ended(saved.getId(),
-                                                        saved.getBroadcasterSubject()))
-                                        .subscribe();
-                                log.info("Stream ended via webhook: id={}",
-                                        saved.getId());
-                            });
+                            .flatMap(saved ->
+                                    outboxWriter.write(
+                                            StreamEvent.ended(saved.getId(),
+                                                    saved.getBroadcasterSubject()))
+                                            .doOnSuccess(oe -> log.info(
+                                                    "Stream ended via webhook: id={}",
+                                                    saved.getId()))
+                                            .thenReturn(saved));
                 })
                 .onErrorResume(e -> {
                     log.warn("on_unpublish lookup failed (idempotent no-op): {}",
@@ -843,10 +852,12 @@ public class StreamService {
                     transition.accept(entity);
                     return repository.save(entity);
                 })
-                .doOnSuccess(saved -> {
-                    eventPublisher.publish(eventFactory.apply(saved)).subscribe();
-                    log.info("Stream {}: id={}", actionLabel, saved.getId());
-                })
+                .flatMap(saved ->
+                        outboxWriter.write(eventFactory.apply(saved))
+                                .doOnSuccess(oe -> log.info(
+                                        "Stream {}: id={}", actionLabel,
+                                        saved.getId()))
+                                .thenReturn(saved))
                 .map(StreamResponse::from)
                 .onErrorMap(OptimisticLockingFailureException.class,
                         ex -> new StreamConflictException(

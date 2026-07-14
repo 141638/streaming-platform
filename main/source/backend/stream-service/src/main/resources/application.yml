@@ -70,6 +70,11 @@ streaming:
   srs:
     webhook:
       secret: ${SRS_WEBHOOK_SECRET:change-me}
+  outbox:
+    poll-interval-ms: 5000
+    batch-size: 50
+    max-retries: 3
+    publish-timeout-seconds: 5
   view-count:
     flush-interval-ms: 300000
     view-ttl: ${STREAM_VIEW_TTL:24h}

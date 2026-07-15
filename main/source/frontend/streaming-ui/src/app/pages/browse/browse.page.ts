@@ -27,6 +27,7 @@ import {
 import { StreamSummaryResponseDto } from '../../core/contracts/stream-summary-response.dto';
 import { StreamService } from '../../core/services/stream.service';
 import { StreamStatusBadgeComponent } from '../../shared/molecules/stream-status-badge/stream-status-badge.component';
+import { RailComponent } from '../../shared/molecules/rail/rail.component';
 import { formatCount } from '../../shared/lib/format-count.util';
 
 @Component({
@@ -43,6 +44,7 @@ import { formatCount } from '../../shared/lib/format-count.util';
     ProgressSpinnerModule,
     SkeletonModule,
     StreamStatusBadgeComponent,
+    RailComponent,
   ],
   templateUrl: './browse.page.html',
   styleUrl: './browse.page.scss',
@@ -55,35 +57,47 @@ export class BrowsePage implements OnInit {
   protected readonly placeholder = 'img/stream-placeholder.svg';
   protected readonly formatCount = formatCount;
 
-  protected readonly streams = signal<StreamSummaryResponseDto[]>([]);
-  protected readonly categoryNames = signal<string[]>([]);
-  protected readonly loading = signal(true);
-  protected readonly loadingMore = signal(false);
-  protected readonly errorMessage = signal<string | undefined>(undefined);
+  // ── Live Now rail ─────────────────────────────────────────────────────
 
-  protected readonly searchQuery = signal('');
+  protected readonly liveStreams = signal<StreamSummaryResponseDto[]>([]);
+  protected readonly liveCursor = signal<string | null>(null);
+  protected readonly liveLoading = signal(true);
+  protected readonly liveHasMore = signal(false);
+
+  // ── Recently Ended rail ───────────────────────────────────────────────
+
+  protected readonly endedStreams = signal<StreamSummaryResponseDto[]>([]);
+  protected readonly endedLoading = signal(true);
+
+  // ── Categories ────────────────────────────────────────────────────────
+
+  protected readonly categoryNames = signal<string[]>([]);
   protected readonly selectedCategory = signal<string | null>(null);
 
-  private readonly searchSubject = new Subject<string>();
-  private cursor: string | null = null;
-  protected readonly hasMore = signal(false);
+  // ── Search ────────────────────────────────────────────────────────────
 
-  protected readonly filteredStreams = computed(() => {
+  protected readonly searchQuery = signal('');
+  protected readonly errorMessage = signal<string | undefined>(undefined);
+
+  private readonly searchSubject = new Subject<string>();
+  protected readonly loadingMore = signal(false);
+
+  protected readonly filteredLiveStreams = computed(() => {
     const cat = this.selectedCategory();
-    if (!cat) return this.streams();
-    return this.streams().filter((s) => s.category === cat);
+    if (!cat) return this.liveStreams();
+    return this.liveStreams().filter((s) => s.category === cat);
   });
 
   public ngOnInit(): void {
-    // Debounced search: 300ms delay, distinct until changed
+    // Debounced search for live streams
     this.searchSubject
       .pipe(
         debounceTime(300),
         distinctUntilChanged(),
         tap(() => {
-          this.cursor = null;
-          this.streams.set([]);
-          this.loading.set(true);
+          this.liveCursor.set(null);
+          this.liveStreams.set([]);
+          this.liveLoading.set(true);
         }),
         switchMap((q) =>
           this.streamService.getLiveStreams({
@@ -94,15 +108,16 @@ export class BrowsePage implements OnInit {
         takeUntilDestroyed(this.destroyRef),
       )
       .subscribe({
-        next: (page) => this.applyPage(page),
+        next: (page) => this.applyLivePage(page),
         error: () => {
           this.errorMessage.set('Failed to load streams. Please try again.');
-          this.loading.set(false);
+          this.liveLoading.set(false);
         },
       });
 
     // Initial load
-    this.load();
+    this.loadLive();
+    this.loadRecentlyEnded();
   }
 
   protected onSearchChange(query: string): void {
@@ -112,24 +127,25 @@ export class BrowsePage implements OnInit {
   }
 
   public reload(): void {
-    this.cursor = null;
-    this.streams.set([]);
-    this.load();
+    this.liveCursor.set(null);
+    this.liveStreams.set([]);
+    this.loadLive();
+    this.loadRecentlyEnded();
   }
 
-  protected loadMore(): void {
-    if (!this.hasMore() || this.loadingMore()) return;
+  protected loadMoreLive(): void {
+    if (!this.liveHasMore() || this.loadingMore()) return;
     this.loadingMore.set(true);
     this.streamService
       .getLiveStreams({
         keyword: this.searchQuery() || undefined,
-        cursor: this.cursor ?? undefined,
+        cursor: this.liveCursor() ?? undefined,
         limit: 24,
       })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (page) => {
-          this.appendPage(page);
+          this.appendLivePage(page);
           this.loadingMore.set(false);
         },
         error: () => this.loadingMore.set(false),
@@ -148,43 +164,59 @@ export class BrowsePage implements OnInit {
     this.searchSubject.next('');
   }
 
-  private load(): void {
-    this.loading.set(true);
+  // ── Private helpers ───────────────────────────────────────────────────
+
+  private loadLive(): void {
+    this.liveLoading.set(true);
     this.errorMessage.set(undefined);
 
     this.streamService
       .getLiveStreams({ limit: 24 })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (page) => this.applyPage(page),
+        next: (page) => this.applyLivePage(page),
         error: () => {
           this.errorMessage.set('Failed to load streams. Please try again.');
-          this.loading.set(false);
+          this.liveLoading.set(false);
         },
       });
   }
 
-  private applyPage(page: {
+  private loadRecentlyEnded(): void {
+    this.endedLoading.set(true);
+    this.streamService
+      .getRecentlyEndedStreams({ hours: 24, limit: 20 })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (data) => {
+          this.endedStreams.set(data);
+          this.endedLoading.set(false);
+        },
+        error: () => this.endedLoading.set(false),
+      });
+  }
+
+  private applyLivePage(page: {
     streams: readonly StreamSummaryResponseDto[];
     nextCursor: string | null;
     hasMore: boolean;
   }): void {
-    this.streams.set([...page.streams]);
-    this.cursor = page.nextCursor;
-    this.hasMore.set(page.hasMore);
-    this.loading.set(false);
+    this.liveStreams.set([...page.streams]);
+    this.liveCursor.set(page.nextCursor);
+    this.liveHasMore.set(page.hasMore);
+    this.liveLoading.set(false);
     this.deriveCategories(page.streams);
   }
 
-  private appendPage(page: {
+  private appendLivePage(page: {
     streams: readonly StreamSummaryResponseDto[];
     nextCursor: string | null;
     hasMore: boolean;
   }): void {
-    this.streams.update((prev) => [...prev, ...page.streams]);
-    this.cursor = page.nextCursor;
-    this.hasMore.set(page.hasMore);
-    this.deriveCategories(this.streams());
+    this.liveStreams.update((prev) => [...prev, ...page.streams]);
+    this.liveCursor.set(page.nextCursor);
+    this.liveHasMore.set(page.hasMore);
+    this.deriveCategories(this.liveStreams());
   }
 
   private deriveCategories(

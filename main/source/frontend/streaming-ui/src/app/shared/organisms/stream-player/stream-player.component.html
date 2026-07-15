@@ -1,4 +1,4 @@
-<div class="stream-player relative w-full h-full overflow-hidden border-round bg-black">
+<div class="stream-player relative w-full h-full overflow-hidden border-round bg-black flex justify-content-center">
   <!-- Video element for HLS playback (LIVE with playUrl) -->
   @if (isLive() && playUrl()) {
     <video
@@ -14,7 +14,7 @@
   } @else {
     <!-- Static poster for non-live / no playUrl -->
     <img
-      class="w-full h-full stream-player-poster"
+      class="h-full stream-player-poster"
       [src]="poster()"
       [alt]="stream().title"
       width="1280"

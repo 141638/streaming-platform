@@ -1,4 +1,12 @@
-.stream-dashboard-stage {
-  height: 38vh;
-  min-height: 320px;
+.stream-dashboard-stage-player {
+  min-height: 0;
+}
+
+.stream-dashboard-footer {
+  background: linear-gradient(
+    to top,
+    var(--color-surface-0, #0a0a0f) 0%,
+    rgb(0 0 0 / 60%) 100%
+  );
+  border-top: 1px solid var(--surface-border, rgb(255 255 255 / 8%));
 }

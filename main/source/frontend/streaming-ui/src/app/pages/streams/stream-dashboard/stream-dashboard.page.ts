@@ -7,17 +7,15 @@ import {
   signal,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Router } from '@angular/router';
 import { DatePipe } from '@angular/common';
 import { MessageModule } from 'primeng/message';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
-import { TabsModule } from 'primeng/tabs';
 import { StreamSummaryResponseDto } from '../../../core/contracts/stream-summary-response.dto';
 import { StreamService } from '../../../core/services/stream.service';
 import { StreamStageComponent } from '../../../shared/organisms/stream-stage/stream-stage.component';
 import { StreamStatusBadgeComponent } from '../../../shared/molecules/stream-status-badge/stream-status-badge.component';
 import { StreamListComponent } from '../stream-list/stream-list.component';
-
-type DashboardTab = 'home' | 'about' | 'vod';
 
 @Component({
   selector: 'app-stream-dashboard',
@@ -26,7 +24,6 @@ type DashboardTab = 'home' | 'about' | 'vod';
     DatePipe,
     MessageModule,
     ProgressSpinnerModule,
-    TabsModule,
     StreamStageComponent,
     StreamStatusBadgeComponent,
     StreamListComponent,
@@ -38,11 +35,11 @@ type DashboardTab = 'home' | 'about' | 'vod';
 export class StreamDashboardPage {
   private readonly streamService = inject(StreamService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly router = inject(Router);
 
   protected readonly streams = signal<StreamSummaryResponseDto[]>([]);
   protected readonly loading = signal(true);
   protected readonly errorMessage = signal<string | undefined>(undefined);
-  protected readonly selectedTab = signal<DashboardTab>('home');
 
   /** The stream shown on the stage: the live one, else the most recent. */
   protected readonly currentStream = computed<
@@ -66,8 +63,9 @@ export class StreamDashboardPage {
     this.load();
   }
 
-  public onTabChange(value: string): void {
-    this.selectedTab.set(value as DashboardTab);
+  /** Navigate to the stream detail page for management. */
+  protected navigateToStreamDetail(streamId: string): void {
+    this.router.navigate(['/channel', streamId]);
   }
 
   /** Loads the current user's streams; kept private so callers use the ctor. */

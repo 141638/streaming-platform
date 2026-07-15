@@ -96,9 +96,20 @@ export class StreamCreatePage {
       })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: () => {
+        next: (response) => {
           this.loading.set(false);
-          this.router.navigateByUrl('/home');
+          // Immediately issue a publish key so the user has a ready-to-copy stream key
+          this.streamService.issuePublishKey(response.id).subscribe({
+            next: (key) => {
+              this.router.navigate(['/channel', response.id], {
+                state: { publishKey: key },
+              });
+            },
+            error: () => {
+              // Fallback: navigate without key — user can generate manually
+              this.router.navigate(['/channel', response.id]);
+            },
+          });
         },
         error: () => {
           this.loading.set(false);

@@ -1,6 +1,6 @@
 # Implementation Plan
 
-**Last updated:** 2026-07-15
+**Last updated:** 2026-07-16 (dedup key scoping review)
 **Current phase:** 5 — Notifications (foundation ✅, SSE ✅) + 6 — Production Hardening (outbox ✅) + 4 — Viewer Experience (browse/watch/HLS ✅; presence deferred) + 2 — Stream Lifecycle (2.9 thumbnails ✅)
 **Active blueprint:** Phase 2 checklist — all items ✅ (2.7 schedule reminders deferred)
 
@@ -1027,6 +1027,9 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 | ADR | Decision |
 |-----|----------|
 | [0000](adr/notification/0000-architecture-foundation.md) | Layered reactive (`api/` → `application/` → `domain/` → `infrastructure/`) matching stream/chat conventions. Two inbound channels (Kafka consumers per topic), two outbound channels (REST + SSE). General hub pattern — moderation is first client, not only shape. |
+| [0001](adr/notification/0001-subscription-model-and-notification-boundary.md) | **Proposed.** Table split: `notification_preference` (delivery) + `subscription` (polymorphic follow targets). Notification projection boundary — service stores "who wants notifications about X," not Follow vs Subscribe tiers. |
+| [0002](adr/notification/0002-notification-delivery-architecture.md) | **Proposed.** Concrete `NotificationDispatcher` facade (persist → SSE → outbox). Outbox-driven email + fan-out (designed now, inline for MVP). DB constraint for subscription idempotency. |
+| [common/0003](adr/common/0003-cross-service-event-dedup-key-scoping.md) | **Proposed.** Cross-service event dedup key scoping — `dedup:{topic}:{consumerGroupId}:{eventId}`. Current notification-service `StreamControlListener` uses unscoped key (safe today, refactoring tracked). |
 
 ### Work Items
 
@@ -1035,10 +1038,10 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 | 5.0 | ✅ **Frontend: Toast + notification card prebuild** — `ToastService`, `NotificationService` scaffold, `NotificationCard` molecule (reusable toast + bell card), `UserProfilePicture` atom, `NotificationToast` host (bottom-right with sound), `NotificationBell` header button. DTO aligned with notification-service plan (category + action-based). Mock-triggerable via bell click. See [retrospective](plans/notification-toast-infrastructure-retrospective.md). | — |
 | 5.0b | ✅ **Kafka consumer infrastructure** — Redis SETNX dedup (24h TTL) + DLQ with 3-retry backoff, routes 5 event types (`STREAM_STARTED`, `STREAM_ENDED`, `STREAM_CREATED`, `STREAM_SCHEDULED`, `STREAM_CANCELLED`). `StreamEvent` relocated to `com.streaming.common.messaging` for cross-service reuse. Handlers are stubs (log only). Commit range: `142f32b`, `496c162`. | 2.3 |
 | 5.1a | ✅ **Notification core (domain + persistence + REST)** — `Notification` entity with V2 migration, `NotificationCategory` enum with R2DBC converters, `ReactiveNotificationRepository` (cursor pagination, unread count, ownership-scoped), `NotificationService` (createFromStreamEvent, getNotifications, markAsRead, getUnreadCount), REST API (`GET /v1/notifications`, `GET /v1/notifications/unread-count`, `POST /v1/notifications/{id}/read`), error handling (`NotificationApiError`, `NotificationExceptionHandler`). See [retrospective](plans/notification-foundation-5.1-retrospective.md). 15 files — 13 created, 2 modified. | — |
-| 5.1b | **Subscription + outbox + dispatcher** — `channel_subscription` CRUD (V1 table already exists), outbox management (poller/producer), `NotificationDispatcher` interface | 5.1a |
+| 5.1b | **Subscription + preference + dispatcher + outbox + email** — Schema redesign: split `channel_subscription` → `notification_preference` (delivery preferences) + `subscription` (polymorphic follow targets: `target_type` + `target_id`). Concrete `NotificationDispatcher` facade (persist → SSE → outbox). Outbox-driven email via Spring Mail + `OutboxPoller` (mirrors stream-service `FOR UPDATE SKIP LOCKED`). Follow/Unfollow REST API with DB-constraint idempotency. Fan-out architecture designed (outbox-driven `FanOutJob`), inline for MVP. See [ADR-0001](adr/notification/0001-subscription-model-and-notification-boundary.md), [ADR-0002](adr/notification/0002-notification-delivery-architecture.md), [blueprint](plans/notification-5.1b-subscription-dispatcher-blueprint.md), [design retro](plans/notification-5.1b-design-session-retrospective.md). 27 files — 22 created, 5 modified. | 5.1a |
 | 5.2a | ✅ **StreamControlListener → NotificationService wiring** — Replaced 5 stub handlers with `notificationService.createFromStreamEvent()` calls. STREAM_STARTED/STREAM_ENDED persist notifications; STREAM_CREATED/SCHEDULED/CANCELLED are debug-level no-ops. Injected `NotificationService` into `StreamControlListener`. | 2.3, 5.1a |
 | 5.2b | **Follower fan-out + SSE delivery** — ~~subscription lookup on stream events → notify all followers~~ (deferred); ✅ `SseConnectionRegistry` (in-memory, multi-tab `CopyOnWriteArraySet<Sinks.Many>`), ✅ `GET /v1/notifications/stream` (`text/event-stream`, JWT-scoped, 30s heartbeat), ✅ `NotificationService` wired to push via SSE after persist, ✅ gateway per-route `response-timeout: -1`, ✅ frontend DTO reconciliation + REST wiring + SSE `fetch-event-source` connection + bell unread badge | 5.1b, 5.2a |
-| 5.3 | **Email adapter** — SMTP integration via Spring Mail, templated emails (Thymeleaf or plain text) | 5.1 |
+| 5.3 | **Email adapter** — (Merged into 5.1b — outbox-driven email via Spring Mail, dispatched by `OutboxPoller`) | 5.1b |
 | 5.4 | **Frontend: Notification settings** — manage subscriptions, toggle email/push per channel, notification preferences | 5.1 |
 
 ### Phase 5 Checklist
@@ -1046,11 +1049,12 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 - [x] 5.0 — Frontend toast + notification card + bell prebuild (uncommitted, on `feat/chat-moderation-ux`)
 - [x] 5.0b — Kafka consumer infrastructure: Redis SETNX dedup + DLQ + event routing (`142f32b`, `496c162`)
 - [x] 5.1a — Notification core: domain + persistence + REST API (2026-07-15, uncommitted)
-- [ ] 5.1b — Subscription CRUD + outbox + dispatcher interface
+- [ ] 5.1b — Subscription + preference CRUD + dispatcher + outbox + email adapter (designed 2026-07-16; see [ADR-0001](adr/notification/0001-subscription-model-and-notification-boundary.md), [ADR-0002](adr/notification/0002-notification-delivery-architecture.md), [blueprint](plans/notification-5.1b-subscription-dispatcher-blueprint.md), [design retro](plans/notification-5.1b-design-session-retrospective.md))
 - [x] 5.2a — StreamControlListener → NotificationService wiring (2026-07-15, uncommitted)
 - [x] 5.2b — SSE delivery (2026-07-15, uncommitted): `SseConnectionRegistry` + SSE controller + gateway timeout + frontend wiring
-- [ ] 5.2b — Follower fan-out (subscription lookup on stream events)
-- [ ] 5.3 — Email adapter
+- [ ] 5.2b — Dedup key scoping refactor — change `StreamControlListener` dedup key from unscoped `dedup:stream-event:{eventId}` to scoped `dedup:stream.control:{consumerGroupId}:{eventId}` per [ADR common/0003](adr/common/0003-cross-service-event-dedup-key-scoping.md). Safe today (only one service dedups), required before any other service adds Redis SETNX for `stream.control`.
+- [ ] 5.2b — Follower fan-out (designed in ADR-0002 §4; inline for MVP, outbox-driven at scale; deferred past 5.1b)
+- [ ] 5.3 — Email adapter (merged into 5.1b)
 - [ ] 5.4 — Frontend notification settings
 
 ---

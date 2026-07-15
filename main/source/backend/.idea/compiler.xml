@@ -10,6 +10,7 @@
         <module name="streaming-backend.auth-service.main" />
         <module name="streaming-backend.chat-service.main" />
         <module name="streaming-backend.stream-service.main" />
+        <module name="streaming-backend.notification-service.main" />
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel target="21" />

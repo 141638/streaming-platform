@@ -1,6 +1,6 @@
 ---
 name: dedup-strategy-event-vs-rest
-description: "Event-driven dedup (Kafka/SQS) → Redis SETNX on message ID. REST API dedup → DB unique constraint on business key. Don't cargo-cult one into the other."
+description: "Three idempotency patterns: event guard (SETNX on scoped key), TTL tracking (Hash with fields), REST guard (DB constraint). Don't cargo-cult one into the other."
 user-invocable: false
 origin: auto-extracted
 ---
@@ -97,11 +97,83 @@ When the platform has general REST idempotency (client-generated `Idempotency-Ke
 
 The DB constraint remains the ultimate safety net. Redis is the performance optimization.
 
+## Two Redis Patterns, One Label: SETNX ≠ Hash
+
+The codebase has two Redis patterns that both got called "dedup." They solve fundamentally different problems, and using the wrong one breaks things.
+
+### Event Idempotency Guard (SETNX)
+
+| Property | Detail |
+|----------|--------|
+| Redis structure | `String` + `SETNX` |
+| Key format | `dedup:{topic}:{consumerGroupId}:{eventId}` |
+| Value | Placeholder `"1"` — never read back |
+| Question | "Have I seen this eventId before?" |
+| Dedup is... | **The purpose** — prevents duplicate processing |
+| Read back | Never — existence test only |
+| Code location | `notification-service/.../StreamControlListener.java` |
+| ADR | [common/0003](../../../docs/adr/common/0003-cross-service-event-dedup-key-scoping.md), [notification/0000](../../../docs/adr/notification/0000-architecture-foundation.md), [stream/0009](../../../docs/adr/stream/0009-outbox-pattern.md) |
+
+```java
+// Event idempotency guard: SETNX, value is meaningless
+String dedupKey = "dedup:" + topic + ":" + consumerGroupId + ":" + event.eventId();
+redisTemplate.opsForValue()
+    .setIfAbsent(dedupKey, "1", Duration.ofHours(24))
+    .flatMap(acquired -> {
+        if (Boolean.TRUE.equals(acquired)) return handle(event);
+        return Mono.empty();  // duplicate, skip
+    });
+```
+
+### TTL-Based Tracking (Hash)
+
+| Property | Detail |
+|----------|--------|
+| Redis structure | `Hash` + `HSET` + `EXPIRE` |
+| Key format | `stream:view:{streamId}:{viewerId}` |
+| Value | Meaningful fields: `user_id`, `first_seen_at`, `last_seen_at` |
+| Question | "Has this viewer watched this stream in this TTL window?" |
+| Dedup is... | **A side effect** — a return viewer within TTL doesn't double-count |
+| Read back | Regularly — `HGETALL` to flush computed metrics to database |
+| Code location | `stream-service/.../StreamService.java` |
+| ADR | [stream/0008](../../../docs/adr/stream/0008-view-count-analytics-pipeline.md) |
+
+```java
+// TTL-based tracking: Hash with meaningful fields, read back for flush
+String viewKey = "stream:view:" + streamId + ":" + viewerId;
+redisTemplate.opsForHash()
+    .putAll(viewKey, Map.of(
+        "user_id", viewerId,
+        "first_seen_at", now.toString()
+    ))
+    .then(redisTemplate.expire(viewKey, Duration.ofHours(24)));
+```
+
+### The Confusion
+
+A developer sees both called "dedup" in code comments and ADRs. They reach for Hash when they need idempotency ("I'll store the eventId in a Hash field"), or SETNX when they need tracking ("I just need to know if the key exists"). Both are wrong:
+
+| Wrong choice | What breaks |
+|-------------|-------------|
+| Hash for event dedup | Wasted fields you never read; no atomic check-and-set — race condition between `EXISTS` and `HSET` where two threads both see "no key" and both process |
+| SETNX for tracking | Lost `first_seen_at`/`last_seen_at` state — the flush pipeline needs these fields to compute metrics; SETNX stores a meaningless `"1"` |
+
+### Decision Rule for Redis Patterns
+
+| You need to... | Use | Because |
+|----------------|-----|---------|
+| Prevent duplicate processing of an event | `String` + `SETNX` | Binary membership test, atomic, no state needed |
+| Track unique X within a time window with metadata | `Hash` + `HSET` + `EXPIRE` | Meaningful fields survive until flush, `HGETALL` reads them |
+| Prevent duplicate REST resource creation | DB unique constraint | No natural stable key; constraint is permanent and correct |
+
 ## When to Use
 
-- **Trigger:** You're implementing idempotency for a new endpoint, and you see Redis SETNX used elsewhere in the codebase.
-- **Decision rule:** If the source of truth has a natural stable identity key (event ID, message ID) → Redis SETNX is appropriate **with consumer-group-scoped keys**. If the identity must be derived from the request body or a client-generated key → DB unique constraint is correct.
-- **Symptom of wrong choice (REST→Redis):** Users report they can't re-follow a streamer they unfollowed 10 minutes ago. Or: duplicate subscription rows appear in the database despite the "dedup" check.
+- **Trigger 1:** You're implementing idempotency for a new endpoint, and you see Redis SETNX used elsewhere in the codebase.
+- **Trigger 2:** You need to track unique occurrences within a TTL window (views, rate limits per user, daily active users), and you see the view-tracking Hash pattern in `StreamService`.
+- **Decision rule:** If the source of truth has a natural stable identity key (event ID, message ID) → Redis `String` + `SETNX` with consumer-group-scoped keys. If you need to store and read back metadata about each unique occurrence (`first_seen_at`, `last_seen_at`, counts) → Redis `Hash` + `HSET`. If the identity must be derived from the request body or a client-generated key → DB unique constraint.
+- **Symptom of wrong choice (REST→Redis SETNX):** Users report they can't re-follow a streamer they unfollowed 10 minutes ago. Or: duplicate subscription rows appear in the database despite the "dedup" check.
+- **Symptom of wrong choice (Hash for event dedup):** Race condition — two consumer threads both see "key doesn't exist" via `EXISTS`, both call `HSET`, both process the event. Hash has no atomic `SETNX` equivalent.
+- **Symptom of wrong choice (SETNX for tracking):** The flush pipeline has no data to flush — every key has value `"1"` instead of `{user_id, first_seen_at, last_seen_at}`.
 - **Symptom of wrong choice (Events→no scoping):** Multiple services consuming the same topic silently interfere — one service's dedup key blocks another service from processing the same event.
 - **Not for:** Truly ephemeral operations (rate limiting, temporary locks) — Redis is correct for those regardless of event vs REST.
 

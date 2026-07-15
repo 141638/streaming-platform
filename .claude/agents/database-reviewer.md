@@ -1,6 +1,6 @@
 ---
 name: database-reviewer
-description: PostgreSQL database specialist for query optimization, schema design, security, and performance. Use PROACTIVELY when writing SQL, creating migrations, designing schemas, or troubleshooting database performance. Incorporates Supabase best practices.
+description: PostgreSQL database specialist for query optimization, schema design, security, and performance. Use PROACTIVELY when writing SQL, creating Flyway migrations, designing schemas, defining R2DBC entities, choosing column types, adding JSONB/array/enum columns, or troubleshooting database performance. Incorporates Supabase best practices.
 tools: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
 model: sonnet
 ---
@@ -52,6 +52,8 @@ psql -c "SELECT indexrelname, idx_scan, idx_tup_read FROM pg_stat_user_indexes O
 - **Follow the two-tier type preference** (see below)
 
 ### 2b. Type Selection — Two-Tier Preference (HIGH)
+
+**Steel rule:** See [`.claude/rules/common/database-design.md`](../../.claude/rules/common/database-design.md) for the full two-tier type preference and R2DBC converter verification requirements. This section summarizes the enforcement checklist.
 
 Prefer simple primitive types over complex/composite types. Every complex type adds framework friction, migration complexity, and query cost.
 

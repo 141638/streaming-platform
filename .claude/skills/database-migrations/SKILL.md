@@ -16,6 +16,8 @@ Safe, reversible database schema changes for production systems.
 - Planning zero-downtime schema changes
 - Setting up migration tooling for a new project
 
+> **Steel rule reference:** See [`.claude/rules/common/database-design.md`](../../.claude/rules/common/database-design.md) for the two-tier type preference and mandatory R2DBC converter verification. Every Tier 2 column type (JSONB, arrays, custom ENUM) MUST have a verified converter pair before merge.
+
 ## Core Principles
 
 1. **Every change is a migration** — never alter production databases manually
@@ -42,6 +44,14 @@ Before applying any migration:
 - [ ] Rollback plan documented
 
 ## PostgreSQL Patterns
+
+> ⚠️ **R2DBC CRITICAL: JSONB columns require converters.** This project uses Spring Data R2DBC — NOT Hibernate/JPA. The R2DBC driver inspects Java types to determine the PostgreSQL wire type. A `String` sends `character varying`, NOT `jsonb`. Writing a `String` to a `JSONB` column causes:
+> ```
+> ERROR: column "<name>" is of type jsonb but expression is of type character varying
+> ```
+> **Every `JSONB` column MUST have a `@WritingConverter` + `@ReadingConverter` pair returning `io.r2dbc.postgresql.codec.Json` (not `String`), registered in `R2dbcConfig`.**
+>
+> **Alternative:** If you don't need PostgreSQL-level JSON queries (`->`, `->>`, `@>`), use `TEXT` instead of `JSONB` — no converter needed. See [`docs/R2DBC-JSONB-CONVERTER-PATTERN.md`](../../../docs/R2DBC-JSONB-CONVERTER-PATTERN.md) for templates and common pitfalls.
 
 ### Adding a Column Safely
 

@@ -16,5 +16,7 @@ public record UpdateStreamRequest(
         @Size(max = 64) String category,
         UUID categoryId,
         List<@Size(max = 64) String> tags,
-        Integer maxViewers
+        Integer maxViewers,
+        Boolean autoArchiveChat,
+        Integer chatArchiveDelayMinutes
 ) {}

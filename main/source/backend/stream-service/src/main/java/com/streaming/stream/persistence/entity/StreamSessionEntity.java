@@ -119,6 +119,28 @@ public class StreamSessionEntity implements Persistable<UUID> {
     @Column("broadcaster_verified")
     private Boolean broadcasterVerified;
 
+    /**
+     * Whether to auto-archive the chat room when the stream ends.
+     * Default false. Configurable via UpdateStreamRequest.
+     */
+    @Column("auto_archive_chat")
+    private Boolean autoArchiveChat;
+
+    /**
+     * Delay in minutes after stream end before chat is archived.
+     * Only meaningful when {@code autoArchiveChat} is true.
+     * Default 30. Range 0–10080 (7 days).
+     */
+    @Column("chat_archive_delay_minutes")
+    private Integer chatArchiveDelayMinutes;
+
+    /**
+     * Timestamp when the chat room was archived. {@code NULL} until
+     * the archive is triggered (immediately or via scheduler).
+     */
+    @Column("chat_archived_at")
+    private OffsetDateTime chatArchivedAt;
+
     @Version
     @Column("version")
     private Long version;

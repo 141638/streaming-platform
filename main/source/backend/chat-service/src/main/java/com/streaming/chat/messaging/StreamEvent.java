@@ -13,7 +13,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 public record StreamEvent(
         @JsonProperty("eventType") String eventType,
         @JsonProperty("streamId") String streamId,
-        @JsonProperty("broadcasterSubject") String broadcasterSubject
+        @JsonProperty("broadcasterSubject") String broadcasterSubject,
+        @JsonProperty("autoArchiveChat") Boolean autoArchiveChat,
+        @JsonProperty("chatArchiveDelayMinutes") Integer chatArchiveDelayMinutes
 ) {
     public boolean isStreamCreated() {
         return "STREAM_CREATED".equals(eventType);
@@ -21,5 +23,9 @@ public record StreamEvent(
 
     public boolean isStreamEnded() {
         return "STREAM_ENDED".equals(eventType);
+    }
+
+    public boolean isChatArchiveTriggered() {
+        return "CHAT_ARCHIVE_TRIGGERED".equals(eventType);
     }
 }

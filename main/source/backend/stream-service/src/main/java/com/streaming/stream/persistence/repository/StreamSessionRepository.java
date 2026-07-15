@@ -16,6 +16,19 @@ public interface StreamSessionRepository extends ReactiveCrudRepository<StreamSe
 
     Mono<StreamSessionEntity> findByStreamKeyHash(String streamKeyHash);
 
+    /**
+     * Public-facing sessions for the channel home rail — only LIVE and ENDED.
+     * DRAFT, SCHEDULED, and CANCELLED are excluded (creator-only visibility).
+     */
+    @Query("""
+            SELECT * FROM stream.stream_session
+            WHERE broadcaster_username = :username
+              AND status IN ('live', 'ended')
+            ORDER BY created_at DESC
+            LIMIT :limit
+            """)
+    Flux<StreamSessionEntity> findPublicSessionsByUsername(String username, int limit);
+
     Flux<StreamSessionEntity> findAllByBroadcasterUsernameOrderByCreatedAtDesc(String broadcasterUsername);
 
     /**

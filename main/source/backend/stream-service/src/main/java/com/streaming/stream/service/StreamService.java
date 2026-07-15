@@ -16,19 +16,24 @@ import com.streaming.stream.api.dto.StreamResponse;
 import com.streaming.stream.api.dto.StreamSummaryResponse;
 import com.streaming.stream.api.dto.UpdateProfileRequest;
 import com.streaming.stream.api.dto.UpdateStreamRequest;
+import com.streaming.stream.api.dto.WatchHistoryResponse;
 import com.streaming.stream.api.dto.WatchResponse;
+import com.streaming.stream.api.dto.StreamSseEvent;
 import com.streaming.stream.config.PublishTokenProperties;
 import com.streaming.stream.config.ViewCountProperties;
+import com.streaming.stream.sse.SseConnectionRegistry;
 import com.streaming.common.messaging.StreamEvent;
 import com.streaming.stream.messaging.StreamEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 import com.streaming.stream.persistence.entity.BroadcasterProfileEntity;
 import com.streaming.stream.persistence.entity.StreamSessionEntity;
 import com.streaming.stream.persistence.entity.StreamStatus;
+import com.streaming.stream.persistence.entity.WatchHistoryEntity;
 import com.streaming.stream.persistence.query.BroadcastQueryBuilder;
 import com.streaming.stream.persistence.repository.BroadcasterProfileRepository;
 import com.streaming.stream.persistence.repository.StreamCategoryRepository;
 import com.streaming.stream.persistence.repository.StreamSessionRepository;
+import com.streaming.stream.persistence.repository.WatchHistoryRepository;
 import com.streaming.stream.security.AuthAction;
 import com.streaming.stream.security.AuthResourceDomain;
 import java.time.Duration;
@@ -67,6 +72,7 @@ public class StreamService {
     private final StreamSessionRepository repository;
     private final StreamCategoryRepository categoryRepository;
     private final BroadcasterProfileRepository profileRepository;
+    private final WatchHistoryRepository watchHistoryRepository;
     private final StreamAuthorization authorization;
     private final StreamEventPublisher eventPublisher;
     private final OutboxWriter outboxWriter;
@@ -75,10 +81,12 @@ public class StreamService {
     private final DatabaseClient databaseClient;
     private final ReactiveRedisTemplate<String, String> redisTemplate;
     private final ViewCountProperties viewCountProperties;
+    private final SseConnectionRegistry sseRegistry;
 
     public StreamService(StreamSessionRepository repository,
                          StreamCategoryRepository categoryRepository,
                          BroadcasterProfileRepository profileRepository,
+                         WatchHistoryRepository watchHistoryRepository,
                          StreamAuthorization authorization,
                          StreamEventPublisher eventPublisher,
                          OutboxWriter outboxWriter,
@@ -86,10 +94,12 @@ public class StreamService {
                          PublishTokenProperties publishTokenProps,
                          DatabaseClient databaseClient,
                          ReactiveRedisTemplate<String, String> redisTemplate,
-                         ViewCountProperties viewCountProperties) {
+                         ViewCountProperties viewCountProperties,
+                         SseConnectionRegistry sseRegistry) {
         this.repository = repository;
         this.categoryRepository = categoryRepository;
         this.profileRepository = profileRepository;
+        this.watchHistoryRepository = watchHistoryRepository;
         this.authorization = authorization;
         this.eventPublisher = eventPublisher;
         this.outboxWriter = outboxWriter;
@@ -98,6 +108,7 @@ public class StreamService {
         this.databaseClient = databaseClient;
         this.redisTemplate = redisTemplate;
         this.viewCountProperties = viewCountProperties;
+        this.sseRegistry = sseRegistry;
     }
 
     // ── Create ──────────────────────────────────────────────────────────────
@@ -181,9 +192,10 @@ public class StreamService {
      * @param cursor  ISO-8601 timestamp of the last item from the previous page,
      *                or {@code null} for the first page
      * @param limit   page size (clamped to 1–50, default 24)
+     * @param sort    sort order: "views" for most-viewed, otherwise default started_at DESC
      */
     public Mono<LiveStreamPageResponse> getLiveStreams(
-            String keyword, String cursor, int limit) {
+            String keyword, String cursor, int limit, String sort) {
 
         int effectiveLimit = Math.clamp(
                 limit > 0 ? limit : LIVE_STREAMS_DEFAULT_LIMIT, 1, 50);
@@ -200,7 +212,11 @@ public class StreamService {
         if (cursor != null && !cursor.isBlank()) {
             sql.append(" AND started_at < :cursor::timestamptz");
         }
-        sql.append(" ORDER BY started_at DESC LIMIT :limit");
+        if ("views".equals(sort)) {
+            sql.append(" ORDER BY views DESC LIMIT :limit");
+        } else {
+            sql.append(" ORDER BY started_at DESC LIMIT :limit");
+        }
 
         var spec = databaseClient.sql(sql.toString())
                 .bind("limit", fetchSize);
@@ -253,21 +269,27 @@ public class StreamService {
 
     /**
      * Returns watch page data for any authenticated viewer.
-     * Only LIVE streams are watchable — other statuses return 409.
+     * LIVE streams get a playUrl; non-LIVE streams get playUrl=null
+     * so the UI can render an archive/ended state instead of a 409 error.
      */
     public Mono<WatchResponse> getWatchData(UUID id) {
         return repository.findById(id)
                 .switchIfEmpty(Mono.error(new StreamNotFoundException(id)))
-                .flatMap(entity -> {
-                    if (entity.getStatus() != StreamStatus.LIVE) {
-                        return Mono.error(new StreamNotLiveException(id));
+                .map(entity -> {
+                    boolean isLive = entity.getStatus() == StreamStatus.LIVE;
+                    String playUrl = null;
+                    if (isLive && entity.getSrsName() != null) {
+                        playUrl = String.format("%s/live/%s.m3u8",
+                                publishTokenProps.srsHlsHost(), entity.getSrsName());
                     }
-                    String playUrl = String.format("%s/live/%s.m3u8",
-                            publishTokenProps.srsHlsHost(), entity.getSrsName());
-                    return Mono.just(new WatchResponse(
+                    boolean isChatArchived = entity.getChatArchivedAt() != null;
+                    return new WatchResponse(
                             playUrl,
                             id.toString(),
-                            StreamSummaryResponse.from(entity)));
+                            StreamSummaryResponse.from(entity),
+                            isLive,
+                            isChatArchived,
+                            entity.getThumbnailUrl());
                 });
     }
 
@@ -321,8 +343,7 @@ public class StreamService {
      * so this endpoint never performs a full table scan.
      */
     public Mono<ChannelHomeResponse> getChannelHome(String username) {
-        return repository.findAllByBroadcasterUsernameOrderByCreatedAtDesc(username)
-                .take(CHANNEL_HOME_SESSION_CAP)
+        return repository.findPublicSessionsByUsername(username, CHANNEL_HOME_SESSION_CAP)
                 .collectList()
                 .map(sessions -> {
                     List<StreamSummaryResponse> rail = sessions.stream()
@@ -521,7 +542,10 @@ public class StreamService {
     /** Transition a stream to ENDED. */
     public Mono<StreamResponse> endStream(UUID id, Jwt jwt) {
         return lifecycleTransition(id, jwt, StreamSessionEntity::end,
-                entity -> StreamEvent.ended(entity.getId(), entity.getBroadcasterSubject()),
+                entity -> StreamEvent.ended(entity.getId(), entity.getBroadcasterSubject(),
+                        Boolean.TRUE.equals(entity.getAutoArchiveChat()),
+                        entity.getChatArchiveDelayMinutes() != null
+                                ? entity.getChatArchiveDelayMinutes() : 0),
                 "ended");
     }
 
@@ -703,10 +727,19 @@ public class StreamService {
                                                                         StreamEvent.started(
                                                                                 saved.getId(),
                                                                                 saved.getBroadcasterSubject()))
-                                                                        .doOnSuccess(oe -> log.info(
-                                                                                "Stream started via webhook: id={} thumbnailUrl={}",
-                                                                                saved.getId(),
-                                                                                saved.getThumbnailUrl()))
+                                                                        .doOnSuccess(oe -> {
+                                                                            log.info(
+                                                                                    "Stream started via webhook: id={} thumbnailUrl={}",
+                                                                                    saved.getId(),
+                                                                                    saved.getThumbnailUrl());
+                                                                            sseRegistry.push(
+                                                                                    saved.getBroadcasterSubject(),
+                                                                                    new StreamSseEvent(
+                                                                                            "stream:started",
+                                                                                            saved.getId(),
+                                                                                            "LIVE",
+                                                                                            null));
+                                                                        })
                                                                         .thenReturn(saved));
                                             });
                                 }
@@ -734,14 +767,31 @@ public class StreamService {
                         return Mono.<StreamSessionEntity>just(entity);
                     }
                     entity.end();
+                    // If auto-archive chat with zero delay, mark archived immediately
+                    boolean autoArchive = Boolean.TRUE.equals(entity.getAutoArchiveChat());
+                    int delay = entity.getChatArchiveDelayMinutes() != null
+                            ? entity.getChatArchiveDelayMinutes() : 0;
+                    if (autoArchive && delay == 0) {
+                        entity.setChatArchivedAt(OffsetDateTime.now(ZoneOffset.UTC));
+                    }
                     return repository.save(entity)
                             .flatMap(saved ->
                                     outboxWriter.write(
                                             StreamEvent.ended(saved.getId(),
-                                                    saved.getBroadcasterSubject()))
-                                            .doOnSuccess(oe -> log.info(
-                                                    "Stream ended via webhook: id={}",
-                                                    saved.getId()))
+                                                    saved.getBroadcasterSubject(),
+                                                    autoArchive, delay))
+                                            .doOnSuccess(oe -> {
+                                                log.info(
+                                                        "Stream ended via webhook: id={} autoArchiveChat={} delay={}",
+                                                        saved.getId(), autoArchive, delay);
+                                                sseRegistry.pushToStreamViewers(
+                                                        saved.getId(),
+                                                        new StreamSseEvent(
+                                                                "stream:ended",
+                                                                saved.getId(),
+                                                                "ENDED",
+                                                                null));
+                                            })
                                             .thenReturn(saved));
                 })
                 .onErrorResume(e -> {
@@ -908,6 +958,30 @@ public class StreamService {
                         tuple.getT2(), tuple.getT1(), page, size));
     }
 
+    /**
+     * Return recently ended streams across all channels for the browse page
+     * multi-rail layout. Server-enforced: status=ENDED, ordered by ended_at DESC.
+     *
+     * @param hours lookback window in hours (clamped 1–168, i.e. up to 7 days)
+     * @param limit max results (clamped 1–50)
+     */
+    public Flux<StreamSummaryResponse> getRecentlyEndedStreams(int hours, int limit) {
+        int effectiveHours = Math.clamp(hours, 1, 168);
+        int effectiveLimit = Math.clamp(limit, 1, 50);
+        String sql = """
+                SELECT * FROM stream.stream_session
+                WHERE status = 'ENDED'
+                  AND ended_at > NOW() - (:hours || ' hours')::INTERVAL
+                ORDER BY ended_at DESC
+                LIMIT :limit
+                """;
+        return databaseClient.sql(sql)
+                .bind("hours", effectiveHours)
+                .bind("limit", effectiveLimit)
+                .map(SUMMARY_MAPPER)
+                .all();
+    }
+
     // ── Viewer presence ────────────────────────────────────────────────────
 
     private static final String PRESENCE_KEY_PREFIX = "stream:presence:";
@@ -940,6 +1014,76 @@ public class StreamService {
         var options = org.springframework.data.redis.core.ScanOptions
                 .scanOptions().match(pattern).build();
         return redisTemplate.scan(options).count();
+    }
+
+    // ── Watch history ──────────────────────────────────────────────────────
+
+    /**
+     * Record (or update) a watch history entry for the authenticated user.
+     * Upsert pattern: if an entry exists for user+stream, update watchedAt;
+     * otherwise create a new entry.
+     */
+    public Mono<Void> recordWatchHistory(UUID streamId, Jwt jwt) {
+        String userSubject = jwt.getSubject();
+        return repository.findById(streamId)
+                .switchIfEmpty(Mono.error(new StreamNotFoundException(streamId)))
+                .flatMap(entity -> watchHistoryRepository
+                        .findByUserSubjectAndStreamId(userSubject, streamId)
+                        .flatMap(existing -> {
+                            existing.setWatchedAt(OffsetDateTime.now(ZoneOffset.UTC));
+                            return watchHistoryRepository.save(existing);
+                        })
+                        .switchIfEmpty(Mono.defer(() -> {
+                            WatchHistoryEntity entry = new WatchHistoryEntity();
+                            entry.setId(UUID.randomUUID());
+                            entry.setNew(true);
+                            entry.setUserSubject(userSubject);
+                            entry.setStreamId(streamId);
+                            entry.setWatchedAt(OffsetDateTime.now(ZoneOffset.UTC));
+                            entry.setWatchDurationSeconds(0L);
+                            return watchHistoryRepository.save(entry);
+                        }))
+                        .doOnSuccess(saved -> log.debug(
+                                "Watch history recorded: user={} stream={}",
+                                userSubject, streamId))
+                        .then());
+    }
+
+    /**
+     * Return the authenticated user's watch history, most recent first.
+     * Deleted streams return "[Deleted]" placeholders so the user's list
+     * does not break.
+     */
+    public Flux<WatchHistoryResponse> getWatchHistory(Jwt jwt, int limit) {
+        String userSubject = jwt.getSubject();
+        int effectiveLimit = Math.clamp(limit, 1, 100);
+        return watchHistoryRepository.findAllByUserSubjectOrderByWatchedAtDesc(userSubject)
+                .take(effectiveLimit)
+                .flatMap(entry ->
+                        repository.findById(entry.getStreamId())
+                                .map(entity -> new WatchHistoryResponse(
+                                        entry.getId(),
+                                        entry.getStreamId(),
+                                        entity.getTitle(),
+                                        entity.getStatus().wireValue(),
+                                        entity.getCategory(),
+                                        entity.getThumbnailUrl(),
+                                        entity.getBroadcasterUsername(),
+                                        entity.getViews(),
+                                        entry.getWatchedAt(),
+                                        entry.getWatchDurationSeconds()))
+                                .defaultIfEmpty(new WatchHistoryResponse(
+                                        entry.getId(),
+                                        entry.getStreamId(),
+                                        "[Deleted]",
+                                        "DELETED",
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        entry.getWatchedAt(),
+                                        entry.getWatchDurationSeconds()))
+                );
     }
 
     // ── Private helpers ─────────────────────────────────────────────────────
@@ -978,6 +1122,18 @@ public class StreamService {
         }
         if (request.maxViewers() != null) {
             entity.setMaxViewers(request.maxViewers());
+        }
+
+        if (request.autoArchiveChat() != null) {
+            entity.setAutoArchiveChat(request.autoArchiveChat());
+        }
+        if (request.chatArchiveDelayMinutes() != null) {
+            int delay = request.chatArchiveDelayMinutes();
+            if (delay < 0 || delay > 10080) {
+                return Mono.error(new IllegalArgumentException(
+                        "chatArchiveDelayMinutes must be 0–10080 (7 days), got: " + delay));
+            }
+            entity.setChatArchiveDelayMinutes(delay);
         }
 
         if (request.categoryId() != null) {

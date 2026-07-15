@@ -1,0 +1,4 @@
+ALTER TABLE stream.stream_session
+    ADD COLUMN IF NOT EXISTS auto_archive_chat BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS chat_archive_delay_minutes INTEGER NOT NULL DEFAULT 30,
+    ADD COLUMN IF NOT EXISTS chat_archived_at TIMESTAMPTZ;

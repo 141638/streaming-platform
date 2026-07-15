@@ -15,11 +15,13 @@ import com.streaming.stream.api.dto.StreamResponse;
 import com.streaming.stream.api.dto.StreamSummaryResponse;
 import com.streaming.stream.api.dto.UpdateProfileRequest;
 import com.streaming.stream.api.dto.UpdateStreamRequest;
+import com.streaming.stream.api.dto.WatchHistoryResponse;
 import com.streaming.stream.api.dto.WatchResponse;
 import com.streaming.stream.service.StreamService;
 import jakarta.validation.Valid;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -83,8 +85,9 @@ public class StreamController {
     public Mono<ResponseEntity<LiveStreamPageResponse>> listLive(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String cursor,
-            @RequestParam(defaultValue = "24") int limit) {
-        return streamService.getLiveStreams(keyword, cursor, limit)
+            @RequestParam(defaultValue = "24") int limit,
+            @RequestParam(defaultValue = "started_at") String sort) {
+        return streamService.getLiveStreams(keyword, cursor, limit, sort)
                 .map(ResponseEntity::ok);
     }
 
@@ -270,6 +273,36 @@ public class StreamController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "24") int size) {
         return streamService.getBroadcasts(username, keyword, sort, order, page, size)
+                .map(ResponseEntity::ok);
+    }
+
+    // ── Recently ended streams (browse page multi-rail) ────────────────────────
+
+    @GetMapping("/streams/recently-ended")
+    public Mono<ResponseEntity<List<StreamSummaryResponse>>> recentlyEnded(
+            @RequestParam(defaultValue = "24") int hours,
+            @RequestParam(defaultValue = "20") int limit) {
+        return streamService.getRecentlyEndedStreams(hours, limit)
+                .collectList()
+                .map(ResponseEntity::ok);
+    }
+
+    // ── Watch history ─────────────────────────────────────────────────────────
+
+    @PostMapping("/streams/{id}/watch-history")
+    public Mono<ResponseEntity<Void>> recordWatchHistory(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID id) {
+        return streamService.recordWatchHistory(id, jwt)
+                .then(Mono.just(ResponseEntity.noContent().build()));
+    }
+
+    @GetMapping("/users/me/watch-history")
+    public Mono<ResponseEntity<List<WatchHistoryResponse>>> getWatchHistory(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam(defaultValue = "50") int limit) {
+        return streamService.getWatchHistory(jwt, limit)
+                .collectList()
                 .map(ResponseEntity::ok);
     }
 }

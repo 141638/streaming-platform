@@ -94,10 +94,17 @@ export class StreamDetailPage implements OnInit, OnDestroy {
 
   protected readonly canArchive = computed(() => {
     const s = this.stream();
-    return s !== undefined
-      && s.status.toUpperCase() === 'ENDED'
-      && (s.archivedUrl === null || s.archivedUrl === undefined);
+    return (
+      s !== undefined &&
+      s.status.toUpperCase() === 'ENDED' &&
+      (s.archivedUrl === null || s.archivedUrl === undefined)
+    );
   });
+
+  /** Whether the stream has ended. */
+  protected readonly isEnded = computed(
+    () => this.statusUpper() === 'ENDED',
+  );
 
   /** Whether the stream has been archived (archivedUrl is set). */
   protected readonly isArchived = computed(() => {
@@ -106,7 +113,9 @@ export class StreamDetailPage implements OnInit, OnDestroy {
   });
 
   /** Play URL for the stage; the shell ignores it but the Phase-4 player uses it. */
-  protected readonly playUrl = computed(() => this.publishKey()?.playUrl ?? null);
+  protected readonly playUrl = computed(
+    () => this.publishKey()?.playUrl ?? null,
+  );
 
   /** RTMP server base URL (OBS Settings → Stream → Server). */
   protected readonly rtmpServerUrl = computed(() => {
@@ -146,6 +155,13 @@ export class StreamDetailPage implements OnInit, OnDestroy {
     // Subscribe to SSE stream lifecycle events for this stream
     this.streamSseService.connect();
     this.streamSseService.streamStarted$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((event) => {
+        if (event.streamId === this.id()) {
+          this.loadStream();
+        }
+      });
+    this.streamSseService.streamEnded$
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((event) => {
         if (event.streamId === this.id()) {
@@ -222,11 +238,14 @@ export class StreamDetailPage implements OnInit, OnDestroy {
   /** Toggle auto-archive chat setting for this stream. */
   public toggleAutoArchive(enabled: boolean): void {
     this.streamService
-      .updateStream(this.id(), { autoArchiveChat: enabled } as Partial<StreamResponseDto>)
+      .updateStream(this.id(), {
+        autoArchiveChat: enabled,
+      } as Partial<StreamResponseDto>)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => this.stream.set(data),
-        error: () => this.errorMessage.set('Failed to update archive settings.'),
+        error: () =>
+          this.errorMessage.set('Failed to update archive settings.'),
       });
   }
 
@@ -236,7 +255,9 @@ export class StreamDetailPage implements OnInit, OnDestroy {
       s ? { ...s, chatArchiveDelayMinutes: delay } : undefined,
     );
     this.streamService
-      .updateStream(this.id(), { chatArchiveDelayMinutes: delay } as Partial<StreamResponseDto>)
+      .updateStream(this.id(), {
+        chatArchiveDelayMinutes: delay,
+      } as Partial<StreamResponseDto>)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => this.stream.set(data),
@@ -356,9 +377,7 @@ export class StreamDetailPage implements OnInit, OnDestroy {
   }
 
   /** Runs a lifecycle transition that returns StreamResponseDto, then refreshes state. */
-  private runLifecycle(
-    action: ReturnType<StreamService['endStream']>,
-  ): void {
+  private runLifecycle(action: ReturnType<StreamService['endStream']>): void {
     if (this.actionInProgress()) {
       return;
     }

@@ -25,6 +25,8 @@ import {
 export class StreamStageComponent {
   public readonly stream = input.required<StreamPlayable>();
   public readonly playUrl = input<string | null>(null);
+  /** Chat room key — when set, the real chat panel connects. */
+  public readonly roomKey = input<string | null>(null);
 
   protected readonly isLive = computed(
     () => this.stream().status.toLowerCase() === 'live',

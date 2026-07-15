@@ -9,7 +9,7 @@
   <!-- Stage: player + chat fills viewport -->
   <section class="stream-dashboard-stage flex flex-column" [style.height]="'40rem'">
     <div class="stream-dashboard-stage-player flex-auto">
-      <app-stream-stage [stream]="current" />
+      <app-stream-stage [stream]="current" [roomKey]="current.id" />
     </div>
 
     <!-- Stream info footer -->

@@ -26,7 +26,7 @@ spring:
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
     listener:
       ack-mode: record
-      auto-startup: ${KAFKA_LISTENER_ENABLED:false}
+      auto-startup: ${KAFKA_LISTENER_ENABLED:true}
   data:
     redis:
       host: ${REDIS_HOST:localhost}

@@ -43,7 +43,7 @@ spring:
       # Keep the consumer from auto-starting at boot to avoid connection-retry
       # noise when the Kafka cluster is down or misconfigured. Set to true in
       # the env file when Kafka consumption is needed for active development.
-      auto-startup: ${KAFKA_LISTENER_ENABLED:false}
+      auto-startup: ${KAFKA_LISTENER_ENABLED:true}
 
 eureka:
   client:

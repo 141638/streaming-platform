@@ -66,6 +66,11 @@ export const routes: Routes = [
           import('./pages/browse/browse.page').then((m) => m.BrowsePage),
       },
       {
+        path: 'history',
+        loadComponent: () =>
+          import('./pages/history/history.page').then((m) => m.HistoryPage),
+      },
+      {
         path: 'watch/:id',
         loadComponent: () =>
           import('./pages/watch/watch.page').then((m) => m.WatchPage),

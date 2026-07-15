@@ -1,53 +1,89 @@
 <!-- ── Content ──────────────────────────────────────────────────────────── -->
 @if (data(); as d) {
-  <div class="watch-layout flex flex-column lg:flex-row w-full h-full">
-    <div class="watch-player-col flex-auto flex flex-column">
-      <div class="watch-chassis relative bg-black">
-        <video
-          #videoPlayer
-          class="w-full block"
-          controls
-          playsinline
-          [poster]="d.stream.thumbnailUrl || 'img/stream-placeholder.svg'"
-        ></video>
-        <div
-          class="watch-info-bar absolute bottom-0 left-0 right-0 flex flex-column md:flex-row md:align-items-end md:justify-content-between gap-2 p-3">
-          <div>
-            <h1 class="text-white text-xl md:text-2xl font-bold m-0">
-              {{ d.stream.title }}
-            </h1>
-            <div class="flex align-items-center gap-2 mt-1 flex-wrap">
-              <a
-                [routerLink]="['/@', d.stream.broadcasterUsername]"
-                class="text-white text-sm font-medium no-underline hover:underline">
-                {{ d.stream.broadcasterUsername ?? 'Unknown' }}
-              </a>
-              <app-stream-status-badge [status]="d.stream.status" />
-              @if (d.stream.category) {
-                <span class="text-sm text-white">{{ d.stream.category }}</span>
-              }
-            </div>
+<div class="watch-layout flex flex-column lg:flex-row w-full h-full">
+  <div class="watch-player-col flex-auto flex flex-column">
+    <div class="watch-chassis relative bg-black">
+      @if (isLive() && d.playUrl) {
+      <video
+        #videoPlayer
+        class="w-full block"
+        controls
+        playsinline
+        [poster]="d.thumbnailUrl || 'img/stream-placeholder.svg'"
+      ></video>
+      } @else {
+      <img
+        [src]="d.thumbnailUrl || 'img/stream-placeholder.svg'"
+        class="w-full block"
+        style="aspect-ratio: 16/9; object-fit: cover"
+        alt="Stream thumbnail"
+      />
+      <div
+        class="absolute top-0 left-0 right-0 bottom-0 flex align-items-center justify-content-center"
+        style="background: rgba(0, 0, 0, 0.6)"
+      >
+        <div class="text-center text-white">
+          <i class="pi pi-video text-4xl mb-2"></i>
+          <p class="text-lg font-medium m-0">Stream has ended</p>
+          @if (isChatArchived()) {
+          <p class="text-sm mt-1 m-0">Chat has been archived</p>
+          } @else {
+          <p class="text-sm mt-1 m-0">
+            Chat is still active — join the conversation!
+          </p>
+          }
+        </div>
+      </div>
+      }
+      <div
+        class="watch-info-bar absolute bottom-0 left-0 right-0 flex flex-column md:flex-row md:align-items-end md:justify-content-between gap-2 p-3"
+      >
+        <div>
+          <h1 class="text-white text-xl md:text-2xl font-bold m-0">
+            {{ d.stream.title }}
+          </h1>
+          <div class="flex align-items-center gap-2 mt-1 flex-wrap">
+            <a
+              [routerLink]="['/@' + d.stream.broadcasterUsername]"
+              class="text-white text-sm font-medium no-underline hover:underline"
+            >
+              {{ d.stream.broadcasterUsername ?? 'Unknown' }}
+            </a>
+            <app-stream-status-badge [status]="d.stream.status" />
+            @if (d.stream.category) {
+            <span class="text-sm text-white">{{ d.stream.category }}</span>
+            }
           </div>
         </div>
       </div>
     </div>
-    <div class="watch-chat-col flex-none w-full lg:w-22rem">
-      <app-stream-chat-shell [live]="true" [roomKey]="d.roomKey" />
-    </div>
   </div>
+  <div class="watch-chat-col flex-none w-full lg:w-22rem">
+    <app-stream-chat-shell
+      [live]="isLive() || !isChatArchived()"
+      [roomKey]="d.roomKey"
+    />
+  </div>
+</div>
 } @else if (loading()) {
-  <div class="watch-loading flex flex-column align-items-center justify-content-center">
-    <p-progressSpinner strokeWidth="3" />
-    <p class="text-sm text-color-secondary mt-3 mb-0">Loading stream…</p>
-  </div>
+<div
+  class="watch-loading flex flex-column align-items-center justify-content-center"
+>
+  <p-progressSpinner strokeWidth="3" />
+  <p class="text-sm text-color-secondary mt-3 mb-0">Loading stream…</p>
+</div>
 } @else {
-  <div class="watch-error flex flex-column align-items-center justify-content-center p-6">
-    <i class="pi text-5xl text-color-secondary mb-3"
-       [class.pi-video]="errorCode() === 'STREAM_NOT_FOUND' || errorCode() === 'INVALID_ROUTE'"
-       [class.pi-exclamation-triangle]="errorCode() !== 'STREAM_NOT_FOUND' && errorCode() !== 'INVALID_ROUTE'"></i>
-    <p class="text-lg font-medium m-0">{{ errorMessage() }}</p>
-    <a routerLink="/browse" class="p-button p-button-outlined mt-3 no-underline">
-      Back to browse
-    </a>
-  </div>
+<div
+  class="watch-error flex flex-column align-items-center justify-content-center p-6"
+>
+  <i
+    class="pi text-5xl text-color-secondary mb-3"
+    [class.pi-video]="errorCode() === 'STREAM_NOT_FOUND' || errorCode() === 'INVALID_ROUTE'"
+    [class.pi-exclamation-triangle]="errorCode() !== 'STREAM_NOT_FOUND' && errorCode() !== 'INVALID_ROUTE'"
+  ></i>
+  <p class="text-lg font-medium m-0">{{ errorMessage() }}</p>
+  <a routerLink="/browse" class="p-button p-button-outlined mt-3 no-underline">
+    Back to browse
+  </a>
+</div>
 }

@@ -54,6 +54,11 @@ export class AppShellComponent {
       command: () => this.router.navigateByUrl('/dashboard/streams'),
     },
     {
+      label: 'Watch History',
+      icon: 'pi pi-history',
+      command: () => this.router.navigateByUrl('/history'),
+    },
+    {
       label: 'Stream Summary',
       icon: 'pi pi-list',
       disabled: true,

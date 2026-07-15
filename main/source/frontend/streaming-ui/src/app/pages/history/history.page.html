@@ -1,0 +1,84 @@
+<div class="history-page p-4 md:p-6">
+  <!-- Header -->
+  <div class="browse-header mb-4">
+    <h1 class="text-2xl font-bold m-0">Watch History</h1>
+    <p class="text-sm text-color-secondary mt-1 mb-0">
+      Streams you have watched recently
+    </p>
+  </div>
+
+  @if (loading()) {
+    <div class="flex justify-content-center p-6">
+      <p-progressSpinner strokeWidth="3" />
+    </div>
+  }
+
+  @if (errorMessage()) {
+    <p-message severity="error" [closable]="false">
+      {{ errorMessage() }}
+    </p-message>
+  }
+
+  @if (!loading() && !errorMessage() && entries().length === 0) {
+    <div
+      class="browse-empty flex flex-column align-items-center justify-content-center text-center border-round-xl p-6"
+    >
+      <i class="pi pi-history text-5xl text-color-secondary mb-3"></i>
+      <p class="text-lg font-medium m-0">No watch history yet</p>
+      <p class="text-sm text-color-secondary mt-1 mb-0">
+        Streams you watch will appear here.
+      </p>
+      <a
+        routerLink="/browse"
+        class="p-button p-button-outlined mt-3 no-underline"
+      >
+        Browse streams
+      </a>
+    </div>
+  }
+
+  @if (!loading() && entries().length > 0) {
+    <div class="grid">
+      @for (entry of entries(); track entry.id) {
+        <div class="col-12 sm:col-6 lg:col-4 xl:col-3">
+          <a
+            [routerLink]="['/watch', entry.streamId]"
+            class="browse-card block border-round-xl overflow-hidden no-underline cursor-pointer"
+          >
+            <!-- Thumbnail -->
+            <div class="browse-card-thumb relative overflow-hidden">
+              <img
+                [src]="entry.thumbnailUrl || placeholder"
+                [alt]="entry.title"
+                class="w-full block"
+                loading="lazy"
+              />
+              <!-- Watched at overlay -->
+              <span
+                class="absolute bottom-0 right-0 text-xs text-white px-2 py-1"
+                style="background: rgba(0,0,0,0.7); border-top-left-radius: 0.5rem;"
+              >
+                {{ entry.watchedAt | date: 'short' }}
+              </span>
+            </div>
+            <!-- Info -->
+            <div class="p-3">
+              <p class="font-semibold m-0 line-height-2 browse-card-title">
+                {{ entry.title }}
+              </p>
+              <p class="text-sm mt-1 mb-0 browse-card-meta">
+                {{ entry.broadcasterUsername ?? 'Unknown' }}
+              </p>
+              <div class="flex align-items-center gap-2 mt-2 flex-wrap">
+                <app-stream-status-badge [status]="entry.status" />
+                @if (entry.category) {
+                  <span class="text-xs browse-card-meta">{{ entry.category }}</span>
+                }
+              </div>
+            </div>
+          </a>
+        </div>
+      }
+    </div>
+  }
+</div>

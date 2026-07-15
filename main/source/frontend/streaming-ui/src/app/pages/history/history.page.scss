@@ -1,0 +1,75 @@
+:host {
+  display: block;
+}
+
+/* ── Card (mirrors browse-card) ──────────────────────────────────────── */
+
+.browse-card {
+  position: relative;
+  transition:
+    transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.3s ease;
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border-2);
+  backdrop-filter: blur(8px);
+
+  &:hover {
+    transform: translateY(-4px);
+    border-color: var(--color-border-1);
+    box-shadow:
+      0 8px 24px rgba(0, 0, 0, 0.4),
+      0 0 0 1px var(--color-brand-ring);
+  }
+
+  &:active {
+    transform: translateY(-1px);
+  }
+}
+
+.browse-card-thumb {
+  aspect-ratio: 16 / 9;
+  background: var(--color-surface-2);
+
+  img {
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.4s ease;
+  }
+
+  .browse-card:hover & img {
+    transform: scale(1.03);
+  }
+}
+
+.browse-card-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--color-text-primary);
+}
+
+.browse-card-meta {
+  color: var(--color-text-secondary);
+}
+
+/* ── Empty state ─────────────────────────────────────────────────────── */
+
+.browse-empty {
+  background: var(--color-surface-1);
+  border: 1px dashed var(--color-border-1);
+  min-height: 240px;
+
+  i,
+  p {
+    color: var(--color-text-secondary);
+  }
+}
+
+/* ── Header ──────────────────────────────────────────────────────────── */
+
+.browse-header {
+  h1 {
+    color: var(--color-text-primary);
+  }
+}

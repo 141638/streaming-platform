@@ -2,9 +2,11 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  computed,
   effect,
   ElementRef,
   inject,
+  OnDestroy,
   OnInit,
   signal,
   viewChild,
@@ -18,6 +20,7 @@ import Hls from 'hls.js';
 import { WatchResponseDto } from '../../core/contracts/watch-response.dto';
 import { PresenceService } from '../../core/services/presence.service';
 import { StreamService } from '../../core/services/stream.service';
+import { StreamSseService } from '../../core/services/stream-sse.service';
 import { StreamChatShellComponent } from '../../shared/molecules/stream-chat-shell/stream-chat-shell.component';
 import { StreamStatusBadgeComponent } from '../../shared/molecules/stream-status-badge/stream-status-badge.component';
 
@@ -35,8 +38,9 @@ import { StreamStatusBadgeComponent } from '../../shared/molecules/stream-status
   styleUrl: './watch.page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class WatchPage implements OnInit {
+export class WatchPage implements OnInit, OnDestroy {
   private readonly streamService = inject(StreamService);
+  private readonly streamSseService = inject(StreamSseService);
   private readonly presenceService = inject(PresenceService);
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
@@ -49,16 +53,21 @@ export class WatchPage implements OnInit {
   protected readonly errorCode = signal<string | undefined>(undefined);
   protected readonly errorMessage = signal<string | undefined>(undefined);
 
+  protected readonly isLive = computed(() => this.data()?.isLive ?? false);
+  protected readonly isChatArchived = computed(() => this.data()?.isChatArchived ?? false);
+  protected readonly isEnded = computed(() => !this.isLive() && this.data() !== null);
+
   private hls: Hls | null = null;
   private hlsStarted = false;
 
   constructor() {
     // Start HLS when data arrives and the video element is ready.
     // Guarded with hlsStarted to prevent re-initialization on signal changes.
+    // Only start HLS for live streams.
     effect(() => {
       const d = this.data();
       const el = this.videoEl();
-      if (d && el && !this.hlsStarted) {
+      if (d && el && !this.hlsStarted && d.isLive && d.playUrl) {
         this.hlsStarted = true;
         this.startHls(d.playUrl, el.nativeElement);
       }
@@ -82,6 +91,11 @@ export class WatchPage implements OnInit {
           this.data.set(d);
           this.loading.set(false);
           this.presenceService.start(id);
+          // Fire-and-forget: record watch history entry
+          this.streamService
+            .recordWatchHistory(id)
+            .pipe(takeUntilDestroyed(this.destroyRef))
+            .subscribe();
         },
         error: (err: unknown) => {
           this.loading.set(false);
@@ -106,11 +120,25 @@ export class WatchPage implements OnInit {
           }
         },
       });
+
+    // Subscribe to SSE stream lifecycle events for this stream
+    this.streamSseService.connect(id);
+    this.streamSseService.streamEnded$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((event) => {
+        if (event.streamId === id) {
+          this.data.update((d) =>
+            d ? { ...d, stream: { ...d.stream, status: 'ENDED' } } : null,
+          );
+          this.destroyHls();
+        }
+      });
   }
 
   public ngOnDestroy(): void {
     this.destroyHls();
     this.presenceService.stop();
+    this.streamSseService.disconnect();
   }
 
   private startHls(url: string, video: HTMLVideoElement): void {

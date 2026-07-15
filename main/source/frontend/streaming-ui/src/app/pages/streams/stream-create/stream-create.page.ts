@@ -14,6 +14,8 @@ import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
 import { SelectModule } from 'primeng/select';
+import { ToggleButtonModule } from 'primeng/togglebutton';
+import { FormsModule } from '@angular/forms';
 import { StreamService } from '../../../core/services/stream.service';
 import { CategoryResponseDto } from '../../../core/contracts/category-response.dto';
 
@@ -22,6 +24,7 @@ import { CategoryResponseDto } from '../../../core/contracts/category-response.d
   standalone: true,
   imports: [
     ReactiveFormsModule,
+    FormsModule,
     CardModule,
     ButtonModule,
     InputTextModule,
@@ -30,6 +33,7 @@ import { CategoryResponseDto } from '../../../core/contracts/category-response.d
     SelectModule,
     ChipsModule,
     DatePickerModule,
+    ToggleButtonModule,
   ],
   templateUrl: './stream-create.page.html',
   styleUrls: ['./stream-create.page.scss'],
@@ -51,6 +55,8 @@ export class StreamCreatePage {
     categoryId: [null as string | null],
     tags: [[] as string[]],
     maxViewers: [null as number | null],
+    autoArchiveChat: [true],
+    chatArchiveDelayMinutes: [30],
     scheduledAt: [null as Date | null],
   });
 
@@ -93,6 +99,8 @@ export class StreamCreatePage {
         categoryId: raw.categoryId ?? undefined,
         tags: raw.tags?.length ? raw.tags : undefined,
         maxViewers: raw.maxViewers ?? 0,
+        autoArchiveChat: raw.autoArchiveChat ?? true,
+        chatArchiveDelayMinutes: raw.chatArchiveDelayMinutes ?? 30,
       })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
@@ -142,6 +150,8 @@ export class StreamCreatePage {
         categoryId: raw.categoryId ?? undefined,
         tags: raw.tags?.length ? raw.tags : undefined,
         maxViewers: raw.maxViewers ?? 0,
+        autoArchiveChat: raw.autoArchiveChat ?? true,
+        chatArchiveDelayMinutes: raw.chatArchiveDelayMinutes ?? 30,
         scheduledAt: scheduledAt.toISOString(),
       })
       .pipe(takeUntilDestroyed(this.destroyRef))

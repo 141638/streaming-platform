@@ -54,7 +54,7 @@
               [showClear]="true"
             />
           </div>
-          <div class="flex flex-column gap-1" style="width: 140px">
+          <div class="flex flex-column gap-1" style="width: 120px">
             <label for="stream-create-viewers" class="text-sm font-semibold">
               Max Viewers
             </label>
@@ -62,7 +62,9 @@
               id="stream-create-viewers"
               formControlName="maxViewers"
               class="w-full"
+              inputStyleClass="w-full"
               [min]="0"
+              [showButtons]="false"
             />
           </div>
         </div>
@@ -80,6 +82,41 @@
             [allowDuplicate]="false"
             [max]="10"
           />
+        </div>
+
+        <!-- Chat archive settings -->
+        <div class="flex flex-column gap-2">
+          <label class="text-sm font-semibold">
+            Chat Archive
+          </label>
+          <div class="flex align-items-center gap-2 flex-initial">
+            <p-toggleButton
+              formControlName="autoArchiveChat"
+              [onLabel]="'Auto-archive'"
+              [offLabel]="'Keep chat'"
+              styleClass="w-9rem"
+            />
+            @if (form.get('autoArchiveChat')?.value) {
+              <div class="flex align-items-center gap-2 flex-auto">
+                <label for="stream-create-archive-delay flex-initial" class="text-sm">
+                  Delay (min):
+                </label>
+                <p-inputNumber
+                  id="stream-create-archive-delay"
+                  formControlName="chatArchiveDelayMinutes"
+                  [min]="1"
+                  [max]="1440"
+                  [showButtons]="false"
+                  class="flex-auto"
+                  inputStyleClass="w-full"
+                />
+              </div>
+            }
+          </div>
+          <small class="text-color-secondary">
+            Automatically archive chat after the stream ends. Delay controls how
+            long chat stays active before archiving.
+          </small>
         </div>
 
         <!-- Scheduled Time -->

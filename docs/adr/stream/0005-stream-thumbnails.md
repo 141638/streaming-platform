@@ -1,7 +1,7 @@
 # ADR-0005: Stream Thumbnails via SRS Auto-Snapshot (MinIO Upload Deferred)
 
-**Status:** Proposed
-**Date:** 2026-07-08
+**Status:** Accepted
+**Date:** 2026-07-08 (Proposed), 2026-07-15 (Accepted — implemented)
 **Domain:** Stream Service
 
 ## Context
@@ -65,6 +65,40 @@ Split the work by cost:
     `ossrs/srs` bundles ffmpeg — confirm the tag then.
   - *Snapshot refresh cadence undecided* (once-on-live vs periodic). Mitigation: decide in
     Phase 2.9; the column stores whatever URL the flow produces regardless of cadence.
+
+## Implementation (2026-07-15)
+
+### Approach
+
+ffmpeg runs inside the SRS container itself (bundled at `/usr/local/srs/objs/ffmpeg/bin/ffmpeg`).
+A shell-script watchdog polls the SRS HTTP API every 30s for active RTMP publishers and
+grabs one frame per stream via `ffmpeg -vframes 1`. The thumbnail URL is deterministic —
+`{srsHlsHost}/thumbnails/{srsName}.jpg` — so stream-service sets `thumbnail_url` immediately
+in `handlePublish()` without waiting for the actual frame.
+
+### Decisions made during implementation
+
+1. **ffmpeg inside SRS container** — Keeps deployment self-contained; no host dependencies.
+   The watchdog runs as a background process managed by `entrypoint.sh`.
+2. **Deterministic URL** — No callback from SRS needed. Frontend handles the ~30s gap
+   (before first frame exists) with an `onerror` → placeholder fallback on `<img>` tags.
+3. **Nested Spring placeholder resolution** — `application.yml` builds SRS URLs from
+   `SRS_HOST` + `SRS_HTTP_PORT` when the combined `SRS_HLS_HOST` env var is not set,
+   preventing relative-path bugs.
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `main/docker/srs/scripts/entrypoint.sh` | Container entrypoint — starts SRS + watchdog |
+| `main/docker/srs/scripts/thumbnail-watchdog.sh` | Polls SRS API, runs ffmpeg frame grab |
+| `compose.yaml` | Scripts volume mount + entrypoint command |
+| `StreamService.java` | Sets `thumbnailUrl` in `handlePublish()` after `goLive()` |
+| `application.yml` | Nested placeholder URL construction for SRS hosts |
+
+### Retrospective
+
+See [srs-thumbnails-2.9-retrospective.md](../../plans/srs-thumbnails-2.9-retrospective.md).
 
 ## References
 

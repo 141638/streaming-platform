@@ -1,9 +1,8 @@
 # Implementation Plan
 
 **Last updated:** 2026-07-15
-**Current phase:** 5 — Notifications (foundation ✅, SSE ✅) + 6 — Production Hardening (outbox ✅) + 4 — Viewer Experience (browse/watch/HLS ✅; presence deferred)
-**Active blueprint:** [notification-foundation-5.1-retrospective.md](plans/notification-foundation-5.1-retrospective.md) — notification core shipped; SSE delivery shipped
-**Next session:** Subscription CRUD + follower fan-out (5.1b + 5.2b remainder)
+**Current phase:** 5 — Notifications (foundation ✅, SSE ✅) + 6 — Production Hardening (outbox ✅) + 4 — Viewer Experience (browse/watch/HLS ✅; presence deferred) + 2 — Stream Lifecycle (2.9 thumbnails ✅)
+**Active blueprint:** Phase 2 checklist — all items ✅ (2.7 schedule reminders deferred)
 
 ## End Goal
 
@@ -525,7 +524,7 @@ POST /v1/streams/{id}/archive
 - [x] 2.6 — Kafka integration testing (skipped — manual verification sufficient; defer automated Kafka tests to pre-production hardening)
 - [ ] 2.7 — Schedule reminder batch (deferred — depends on notification + subscription)
 - [x] 2.8 — Stream templates (deferred — revisit when streamer friction data justifies it; not core to stream domain yet)
-- [ ] 2.9 — SRS snapshot thumbnails (deferred — depends on Phase 4.0 SRS)
+- [x] 2.9 — SRS snapshot thumbnails ✅ (implemented 2026-07-15; see [retrospective](plans/srs-thumbnails-2.9-retrospective.md))
 - [x] 2.5c — Channel page refactor: child routes, RailComponent, Video tab, archive flow (complete 2026-07-13; see [retrospective](plans/channel-2.5c-and-view-tracking-retrospective.md))
 
 **Architecture Decisions — see [docs/adr/stream/](adr/stream/):**
@@ -541,25 +540,29 @@ POST /v1/streams/{id}/archive
 | [0008](adr/stream/0008-view-count-analytics-pipeline.md) | View counting: Redis per-user Hash with dedup (Phase 1) → Kafka analytics pipeline (Phase 2). Includes IP fallback, self-view exclusion, `stream_view_event` analytics table, denormalized `views` column. (Accepted — Phase 1 implemented 2026-07-13) |
 | [0009](adr/stream/0009-outbox-pattern.md) | Outbox pattern: transactional outbox table with `FOR UPDATE SKIP LOCKED` poller, at-least-once delivery replacing fire-and-forget. Notification consumer: Redis SETNX dedup + DLQ. (Accepted — implemented 2026-07-14, commits `2409fc1`–`142f32b`) |
 
-#### 2.9 — SRS Snapshot Thumbnails
+#### 2.9 — SRS Snapshot Thumbnails ✅
 
-**Status:** Deferred — depends on Phase 4.0 (SRS Docker service must exist and run).
+**Status:** Implemented (2026-07-15).
 
 **Why:** Phase 2.5 added the `thumbnail_url` field and UI display, but nothing populates
 it — every card shows the placeholder. This item generates the actual thumbnail from the
 live feed.
 
-**What:**
-- Add snapshot capability to SRS config ([custom.conf](../main/docker/srs/conf/custom.conf)) — SRS `exec`/ffmpeg frame grab, or SRS snapshot hook
-- On snapshot generated → stream-service persists `thumbnail_url` pointing at the SRS-served image path (served from the media tier like HLS, not proxied through Spring)
-- Decide refresh cadence: once-on-live vs periodic (record in ADR-0005 revision)
-- Verify ffmpeg is present in the SRS image tag
+**What was implemented:**
+- SRS container watchdog (`thumbnail-watchdog.sh`) polls SRS API every 30s, runs bundled ffmpeg (`/usr/local/srs/objs/ffmpeg/bin/ffmpeg`) to grab one frame per active stream
+- Container entrypoint (`entrypoint.sh`) starts SRS + watchdog as background processes
+- Thumbnail URL is deterministic: `{srsHlsHost}/thumbnails/{srsName}.jpg` — stream-service sets it immediately in `handlePublish()` after `goLive()`
+- Compose mounts scripts directory, uses entrypoint as command
+- Frontend `onerror` → placeholder fallback handles the ~30s gap before first frame (deferred to chat team)
+- Single frame on start (not periodic refresh — sufficient for MVP)
 
-**Depends on:** Phase 4.0 (SRS Docker service)
+**Depends on:** Phase 4.0 (SRS Docker service) — ✅ resolved
 
-**ADR:** [0005](adr/stream/0005-stream-thumbnails.md)
+**ADR:** [0005](adr/stream/0005-stream-thumbnails.md) (Accepted 2026-07-15)
 
-**Validate:** stream goes LIVE → snapshot generated → `thumbnail_url` populated → dashboard card shows real thumbnail instead of placeholder
+**Retrospective:** [srs-thumbnails-2.9-retrospective.md](plans/srs-thumbnails-2.9-retrospective.md)
+
+**Validate:** stream goes LIVE → watchdog generates thumbnail within 30s → `thumbnail_url` populated → dashboard card shows real thumbnail instead of placeholder
 
 ---
 

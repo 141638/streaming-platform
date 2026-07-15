@@ -7,6 +7,9 @@ import java.time.OffsetDateTime;
  * Public-facing room metadata returned to clients.
  * The {@code status} field is the wire value ({@code ACTIVE} / {@code ARCHIVED}).
  *
+ * <p>{@code broadcasterSubject} identifies the streamer who owns this room so
+ * the client can highlight their messages distinct from regular viewers.
+ *
  * <p>{@code viewerCanModerate} is a per-caller capability signal: {@code true}
  * when the requesting JWT holds the {@code chat:moderation moderate} authority
  * for this room's owner. It is computed from the {@code ent} claim
@@ -24,6 +27,7 @@ public record RoomResponse(
         String status,
         OffsetDateTime createdAt,
         OffsetDateTime archivedAt,
+        String broadcasterSubject,
         boolean viewerCanModerate,
         boolean viewerBanned
 ) {
@@ -33,6 +37,7 @@ public record RoomResponse(
                 room.getStatus().wireValue(),
                 room.getCreatedAt(),
                 room.getArchivedAt(),
+                room.getBroadcasterSubject(),
                 viewerCanModerate,
                 viewerBanned
         );

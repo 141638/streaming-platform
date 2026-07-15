@@ -71,6 +71,15 @@ public class StreamControlListener {
                 int delay = event.chatArchiveDelayMinutes() != null
                         ? event.chatArchiveDelayMinutes() : 0;
 
+                // Always post a "Stream ended" system message so viewers
+                // and the broadcaster see the lifecycle announcement in chat,
+                // regardless of the auto-archive preference.
+                chatService.sendSystemMessage(event.streamId(), "Stream ended")
+                        .doOnSuccess(msg -> log.info(
+                                "System message posted for STREAM_ENDED: roomKey={}",
+                                event.streamId()))
+                        .subscribe();
+
                 if (!autoArchive) {
                     log.info("STREAM_ENDED with autoArchiveChat=false — leaving room ACTIVE: roomKey={}",
                             event.streamId());
@@ -89,20 +98,11 @@ public class StreamControlListener {
                             })
                             .doOnError(err -> log.error("Failed to archive room for streamId={}: {}",
                                     event.streamId(), err.getMessage()))
-                            .then(chatService.sendSystemMessage(event.streamId(), "Stream ended"))
-                            .doOnSuccess(msg -> log.info(
-                                    "System message posted for STREAM_ENDED: roomKey={}",
-                                    event.streamId()))
                             .subscribe();
                 } else {
                     // Delay > 0 — ChatArchiveScheduler will handle via CHAT_ARCHIVE_TRIGGERED
                     log.info("STREAM_ENDED with delay={}min — deferring archive to scheduler: roomKey={}",
                             delay, event.streamId());
-                    chatService.sendSystemMessage(event.streamId(), "Stream ended")
-                            .doOnSuccess(msg -> log.info(
-                                    "System message posted for STREAM_ENDED: roomKey={}",
-                                    event.streamId()))
-                            .subscribe();
                 }
             } else if ("CHAT_ARCHIVE_TRIGGERED".equals(event.eventType())) {
                 roomService.archive(event.streamId())

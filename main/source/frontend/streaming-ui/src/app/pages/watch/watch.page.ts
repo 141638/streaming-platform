@@ -52,6 +52,19 @@ export class WatchPage implements OnInit {
   private hls: Hls | null = null;
   private hlsStarted = false;
 
+  constructor() {
+    // Start HLS when data arrives and the video element is ready.
+    // Guarded with hlsStarted to prevent re-initialization on signal changes.
+    effect(() => {
+      const d = this.data();
+      const el = this.videoEl();
+      if (d && el && !this.hlsStarted) {
+        this.hlsStarted = true;
+        this.startHls(d.playUrl, el.nativeElement);
+      }
+    });
+  }
+
   public ngOnInit(): void {
     const id = this.route.snapshot.paramMap.get('id');
     if (!id) {
@@ -93,17 +106,6 @@ export class WatchPage implements OnInit {
           }
         },
       });
-
-    // Start HLS when data arrives and the video element is ready.
-    // Guarded with hlsStarted to prevent re-initialization on signal changes.
-    effect(() => {
-      const d = this.data();
-      const el = this.videoEl();
-      if (d && el && !this.hlsStarted) {
-        this.hlsStarted = true;
-        this.startHls(d.playUrl, el.nativeElement);
-      }
-    });
   }
 
   public ngOnDestroy(): void {

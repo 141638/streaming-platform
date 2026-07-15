@@ -3,7 +3,6 @@ import {
   Component,
   DestroyRef,
   OnDestroy,
-  OnInit,
   computed,
   effect,
   ElementRef,
@@ -29,7 +28,7 @@ export interface StreamPlayable {
   styleUrl: './stream-player.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class StreamPlayerComponent implements OnInit, OnDestroy {
+export class StreamPlayerComponent implements OnDestroy {
   public readonly stream = input.required<StreamPlayable>();
   /** HLS play URL — when set and stream is LIVE, initializes hls.js playback. */
   public readonly playUrl = input<string | null>(null);
@@ -52,18 +51,19 @@ export class StreamPlayerComponent implements OnInit, OnDestroy {
   private hls: Hls | null = null;
   private hlsStarted = false;
 
-  public ngOnInit(): void {
-    // Start HLS when playUrl and video element are both available.
-    // Guarded with hlsStarted to prevent re-initialization on signal changes.
-    effect(() => {
-      const url = this.playUrl();
-      const el = this.videoEl();
-      if (url && el && !this.hlsStarted) {
-        this.hlsStarted = true;
-        this.startHls(url, el.nativeElement);
-      }
-    });
-  }
+  /**
+   * Starts HLS playback when both {@code playUrl} and the video element are
+   * available. A field initializer so {@code effect()} runs within Angular's
+   * injection context — {@code ngOnInit} is too late.
+   */
+  private hlsEffect = effect(() => {
+    const url = this.playUrl();
+    const el = this.videoEl();
+    if (url && el && !this.hlsStarted) {
+      this.hlsStarted = true;
+      this.startHls(url, el.nativeElement);
+    }
+  });
 
   public ngOnDestroy(): void {
     this.destroyHls();

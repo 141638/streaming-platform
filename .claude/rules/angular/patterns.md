@@ -79,6 +79,32 @@ users = toSignal(this.userService.getUsers(), { initialValue: [] });
 
 Never store derived values in separate signals — use `computed`. Never use `effect` to sync signals — use `computed` or `linkedSignal`.
 
+### `effect()` Injection Context (CRITICAL)
+
+`effect()` MUST be created within an Angular injection context. Valid contexts are:
+- **Field initializers** (class property assignments)
+- **Constructor body**
+- **Factory functions** passed to `runInInjectionContext()`
+
+Lifecycle hooks (`ngOnInit`, `ngAfterViewInit`, etc.) are **NOT** injection contexts — calling `effect()` there throws `NG0203`.
+
+```typescript
+// ✅ CORRECT — field initializer runs during construction (injection context active)
+private logUser = effect(() => console.log(this.user()));
+
+// ✅ CORRECT — constructor
+constructor() {
+  effect(() => { /* ... */ });
+}
+
+// ❌ WRONG — ngOnInit is a lifecycle hook, NOT an injection context
+ngOnInit() {
+  effect(() => { /* ... */ });  // 💥 NG0203
+}
+```
+
+When `effect()` is a field initializer, signals like `input()` and `viewChild()` return their initial values (`undefined`/`null`) on first run — guard with conditionals. The effect reruns when those signals populate later.
+
 ## Subscription Cleanup
 
 Use `takeUntilDestroyed()` for all manual subscriptions. Never use manual `ngOnDestroy` + `Subject` + `takeUntil` on new code.

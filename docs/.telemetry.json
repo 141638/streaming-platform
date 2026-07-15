@@ -1,8 +1,8 @@
 {
   "agents.Explore": {
-    "count": 10,
+    "count": 13,
     "firstSeen": "2026-07-12",
-    "lastSeen": "2026-07-14"
+    "lastSeen": "2026-07-15"
   },
   "skills.session-retro": {
     "count": 5,
@@ -20,9 +20,9 @@
     "lastSeen": "2026-07-13"
   },
   "commands.blueprint": {
-    "count": 3,
+    "count": 4,
     "firstSeen": "2026-07-14",
-    "lastSeen": "2026-07-14"
+    "lastSeen": "2026-07-15"
   },
   "commands.retro": {
     "count": 3,

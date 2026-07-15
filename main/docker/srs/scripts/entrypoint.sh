@@ -5,6 +5,15 @@ set -e
 # Starts SRS in the background, then runs the thumbnail watchdog.
 # The SRS process is the primary — when it exits, the container exits.
 
+# Ensure curl is available (ossrs/srs:5 base image ships without it).
+# The thumbnail watchdog depends on curl for SRS HTTP API calls.
+if ! command -v curl >/dev/null 2>&1; then
+    echo "[entrypoint] curl not found, installing..."
+    apt-get update -qq
+    apt-get install -y -qq curl
+    echo "[entrypoint] curl installed"
+fi
+
 echo "[entrypoint] Starting SRS..."
 /usr/local/srs/objs/srs -c /usr/local/srs/conf/custom.conf &
 SRS_PID=$!

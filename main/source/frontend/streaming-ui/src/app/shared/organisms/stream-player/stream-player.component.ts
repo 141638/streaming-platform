@@ -51,17 +51,27 @@ export class StreamPlayerComponent implements OnDestroy {
   private hls: Hls | null = null;
   private hlsStarted = false;
 
+  /** Delay (ms) before starting HLS to give SRS time to produce the first
+   *  segments after a publish event. */
+  private static readonly HLS_INIT_DELAY_MS = 2000;
+
   /**
-   * Starts HLS playback when both {@code playUrl} and the video element are
-   * available. A field initializer so {@code effect()} runs within Angular's
-   * injection context — {@code ngOnInit} is too late.
+   * Starts HLS playback when {@code playUrl}, the video element, and live
+   * status are all available. A field initializer so {@code effect()} runs
+   * within Angular's injection context — {@code ngOnInit} is too late.
    */
   private hlsEffect = effect(() => {
     const url = this.playUrl();
     const el = this.videoEl();
-    if (url && el && !this.hlsStarted) {
+    if (url && el && this.isLive() && !this.hlsStarted) {
       this.hlsStarted = true;
-      this.startHls(url, el.nativeElement);
+      // Delay startup so SRS has time to produce the first HLS segments.
+      // The manifest-retry loop inside startHls is the second line of
+      // defence if SRS is still initialising after the delay.
+      setTimeout(
+        () => this.startHls(url, el.nativeElement),
+        StreamPlayerComponent.HLS_INIT_DELAY_MS,
+      );
     }
   });
 
@@ -74,7 +84,12 @@ export class StreamPlayerComponent implements OnDestroy {
       this.hls = new Hls();
       this.hls.loadSource(url);
       this.hls.attachMedia(video);
+
+      let manifestRetries = 0;
+      const MAX_MANIFEST_RETRIES = 5;
+
       this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        manifestRetries = 0; // reset on success
         video.play().catch(() => {
           // Autoplay may be blocked — user can tap play
         });
@@ -83,7 +98,14 @@ export class StreamPlayerComponent implements OnDestroy {
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
-              this.hls?.startLoad();
+              // Retry manifest load with exponential backoff at stream start
+              if (manifestRetries < MAX_MANIFEST_RETRIES) {
+                manifestRetries++;
+                const delay = Math.min(1000 * Math.pow(2, manifestRetries - 1), 8000);
+                setTimeout(() => this.hls?.startLoad(), delay);
+              } else {
+                this.destroyHls();
+              }
               break;
             case Hls.ErrorTypes.MEDIA_ERROR:
               this.hls?.recoverMediaError();

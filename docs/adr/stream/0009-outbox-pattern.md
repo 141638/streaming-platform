@@ -68,6 +68,8 @@ All `eventPublisher.publish(event).subscribe()` fire-and-forget calls were repla
 
 The notification-service consumer uses Redis `SETNX` on `eventId` with 24h TTL. This is defense-in-depth — the outbox guarantees at-least-once delivery, but Kafka can deliver duplicates during partition rebalancing or producer retries.
 
+**Important:** Dedup keys must be consumer-group-scoped per [ADR common/0003](../common/0003-cross-service-event-dedup-key-scoping.md). The prescribed format is `dedup:{topic}:{consumerGroupId}:{eventId}`. The current notification-service `StreamControlListener` uses an unscoped key (`dedup:stream-event:{eventId}`) — safe today because only one service dedups `stream.control`, but must be refactored before other services add Redis SETNX for the same topic.
+
 ### Dead Letter Queue
 
 The notification-service consumer is configured with a `DefaultErrorHandler` + `DeadLetterPublishingRecoverer`. After 3 retries (1-second fixed backoff), poison-pill messages are forwarded to `stream.control.dlq`. Deserialization errors are not retried (they can never succeed).

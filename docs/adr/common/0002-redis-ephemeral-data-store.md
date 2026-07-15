@@ -31,6 +31,7 @@ This ADR catalogs the Redis use cases we intend to implement, their design appro
 | 4 | Feature flags | all services | String (GET) or Hash | `ff:<flagName>` | ∞ (no TTL) |
 | 5 | WebSocket session affinity | chat-service | Pub/Sub channel + Hash | `ws:session:<sessionId>`, `chat:room:<roomId>` (pub/sub) | connection heartbeat |
 | 6 | Distributed locking | any | String (SET NX PX) | `lock:<resource>` | task timeout |
+| 7 | Kafka event dedup | notification-service, chat-service (future) | String (SET NX EX) | `dedup:{topic}:{consumerGroupId}:{eventId}` per [ADR-0003](./0003-cross-service-event-dedup-key-scoping.md) | 24 hours |
 
 ### Priority
 
@@ -45,6 +46,8 @@ This ADR catalogs the Redis use cases we intend to implement, their design appro
 5. **Feature flags** — Decouple deployment from release. Low volume, simple GET pattern. No TTL needed.
 
 6. **Distributed locking** — For future scheduled tasks (e.g., periodic cleanup, leader election). `SET NX PX` with Redlock for high-availability deployments.
+
+7. **Kafka event dedup** — Already implemented in notification-service (`StreamControlListener`). Key format standardized to `dedup:{topic}:{consumerGroupId}:{eventId}` per [ADR-0003](./0003-cross-service-event-dedup-key-scoping.md). Current implementation uses unscoped key — safe until a second service adds Redis SETNX for the same topic; refactoring tracked in ADR-0003.
 
 ## Alternatives Considered
 

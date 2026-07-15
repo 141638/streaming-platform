@@ -117,7 +117,7 @@ How each external dependency is integrated into this service.
 | Aspect | Detail |
 |--------|--------|
 | **Role** | Deduplication cache for Kafka consumer idempotency |
-| **Pattern** | `SETNX` on `eventId` with 24h TTL — defense-in-depth against at-least-once duplicates |
+| **Pattern** | `SETNX` with 24h TTL — defense-in-depth against at-least-once duplicates. Key format: `dedup:{topic}:{consumerGroupId}:{eventId}` per [ADR common/0003](../common/0003-cross-service-event-dedup-key-scoping.md). Current implementation uses unscoped key (`dedup:stream-event:{eventId}`) — safe until a second service adds Redis SETNX for the same topic; refactoring tracked in the same ADR. |
 | **Resilience** | `.onErrorResume()` fallback — if Redis is unreachable, process the event anyway (duplicate is better than dropped) |
 | **Library** | `ReactiveRedisTemplate<String, String>` |
 | **Future use** | SSE connection registry (in-memory `ConcurrentHashMap` for single-instance; Redis Pub/Sub for multi-instance fanout per ADR-0007 D4) |

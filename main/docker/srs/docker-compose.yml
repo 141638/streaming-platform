@@ -15,11 +15,13 @@ services:
     volumes:
       # Custom SRS config (webhooks, HLS, DVR)
       - ./conf/custom.conf:/usr/local/srs/conf/custom.conf:ro
+      # Thumbnail scripts (entrypoint + watchdog)
+      - ./scripts:/usr/local/srs/scripts:ro
       # DVR recordings persist across container restarts
       - srs_dvr_data:/data/dvr
       # HLS segments — served by SRS embedded HTTP server
       - srs_hls_data:/usr/local/srs/objs/nginx/html
-    command: ["/usr/local/srs/objs/srs", "-c", "/usr/local/srs/conf/custom.conf"]
+    command: ["/usr/local/srs/scripts/entrypoint.sh"]
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:1985/api/v1/versions || exit 1"]
       interval: 10s

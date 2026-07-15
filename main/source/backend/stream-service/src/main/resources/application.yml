@@ -65,8 +65,11 @@ streaming:
     hmac-secret: ${JWT_HMAC_SECRET:MNH6CwQ7H4xAf69hpn0sc2Rn+wxT/d+I9QWELikQqgM=}
   publish-token:
     ttl: 2h
-    srs-rtmp-host: ${SRS_RTMP_HOST:rtmp://localhost:1935}
-    srs-hls-host: ${SRS_HLS_HOST:http://localhost:8080}
+    # Fully-qualified URLs built from SRS_HOST + port vars when the combined
+    # env var is not explicitly set. Nested placeholders ensure the result is
+    # always an absolute URL — no relative paths that break in the browser.
+    srs-rtmp-host: ${SRS_RTMP_HOST:rtmp://${SRS_HOST:localhost}:${SRS_RTMP_PORT:1935}}
+    srs-hls-host: ${SRS_HLS_HOST:http://${SRS_HOST:localhost}:${SRS_HTTP_PORT:8085}}
   srs:
     webhook:
       secret: ${SRS_WEBHOOK_SECRET:change-me}

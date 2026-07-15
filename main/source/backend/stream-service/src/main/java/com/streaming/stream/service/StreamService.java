@@ -692,6 +692,11 @@ public class StreamService {
                                                                     entity.getBroadcasterSubject()));
                                                 }
                                                 entity.goLive();
+                                                entity.setThumbnailUrl(
+                                                        publishTokenProps.srsHlsHost()
+                                                                + "/thumbnails/"
+                                                                + srsName
+                                                                + ".jpg");
                                                 return repository.save(entity)
                                                         .flatMap(saved ->
                                                                 outboxWriter.write(
@@ -699,8 +704,9 @@ public class StreamService {
                                                                                 saved.getId(),
                                                                                 saved.getBroadcasterSubject()))
                                                                         .doOnSuccess(oe -> log.info(
-                                                                                "Stream started via webhook: id={}",
-                                                                                saved.getId()))
+                                                                                "Stream started via webhook: id={} thumbnailUrl={}",
+                                                                                saved.getId(),
+                                                                                saved.getThumbnailUrl()))
                                                                         .thenReturn(saved));
                                             });
                                 }

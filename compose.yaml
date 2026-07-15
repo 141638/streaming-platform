@@ -164,9 +164,10 @@ services:
       - "${SRS_HTTP_PORT:-8085}:8080"
     volumes:
       - ./main/docker/srs/conf/custom.conf:/usr/local/srs/conf/custom.conf:ro
+      - ./main/docker/srs/scripts:/usr/local/srs/scripts:ro
       - srs_dvr_data:/data/dvr
       - srs_hls_data:/usr/local/srs/objs/nginx/html
-    command: ["/usr/local/srs/objs/srs", "-c", "/usr/local/srs/conf/custom.conf"]
+    command: ["/usr/local/srs/scripts/entrypoint.sh"]
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:1985/api/v1/versions || exit 1"]
       interval: 10s

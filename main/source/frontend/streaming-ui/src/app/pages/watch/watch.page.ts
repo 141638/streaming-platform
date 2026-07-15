@@ -18,11 +18,13 @@ import { MessageModule } from 'primeng/message';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
 import Hls from 'hls.js';
 import { WatchResponseDto } from '../../core/contracts/watch-response.dto';
+import { AuthService } from '../../core/services/auth.service';
 import { PresenceService } from '../../core/services/presence.service';
 import { StreamService } from '../../core/services/stream.service';
 import { StreamSseService } from '../../core/services/stream-sse.service';
 import { StreamChatShellComponent } from '../../shared/molecules/stream-chat-shell/stream-chat-shell.component';
 import { StreamStatusBadgeComponent } from '../../shared/molecules/stream-status-badge/stream-status-badge.component';
+import { ButtonModule } from 'primeng/button';
 
 @Component({
   selector: 'app-watch-page',
@@ -33,6 +35,7 @@ import { StreamStatusBadgeComponent } from '../../shared/molecules/stream-status
     ProgressSpinnerModule,
     StreamChatShellComponent,
     StreamStatusBadgeComponent,
+    ButtonModule,
   ],
   templateUrl: './watch.page.html',
   styleUrl: './watch.page.scss',
@@ -42,6 +45,7 @@ export class WatchPage implements OnInit, OnDestroy {
   private readonly streamService = inject(StreamService);
   private readonly streamSseService = inject(StreamSseService);
   private readonly presenceService = inject(PresenceService);
+  private readonly authService = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -56,6 +60,14 @@ export class WatchPage implements OnInit, OnDestroy {
   protected readonly isLive = computed(() => this.data()?.isLive ?? false);
   protected readonly isChatArchived = computed(() => this.data()?.isChatArchived ?? false);
   protected readonly isEnded = computed(() => !this.isLive() && this.data() !== null);
+  /** Set to true when the SSE stream:ended event fires while the viewer is watching. */
+  protected readonly justEnded = signal(false);
+
+  protected readonly isOwnStream = computed(() => {
+    const viewer = this.authService.myUsername();
+    const broadcaster = this.data()?.stream?.broadcasterUsername;
+    return viewer != null && broadcaster != null && viewer === broadcaster;
+  });
 
   private hls: Hls | null = null;
   private hlsStarted = false;
@@ -127,6 +139,7 @@ export class WatchPage implements OnInit, OnDestroy {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((event) => {
         if (event.streamId === id) {
+          this.justEnded.set(true);
           this.data.update((d) =>
             d ? { ...d, stream: { ...d.stream, status: 'ENDED' } } : null,
           );

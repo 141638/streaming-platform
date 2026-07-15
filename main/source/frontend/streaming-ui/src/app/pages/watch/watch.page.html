@@ -2,6 +2,16 @@
 @if (data(); as d) {
 <div class="watch-layout flex flex-column lg:flex-row w-full h-full">
   <div class="watch-player-col flex-auto flex flex-column">
+    @if (justEnded()) {
+    <div
+      class="ended-banner flex align-items-center justify-content-center gap-2 px-3 py-2 border-round mb-2"
+    >
+      <span class="pi pi-info-circle"></span>
+      <span class="text-sm font-medium"
+        >This stream has ended. Thank you for watching!</span
+      >
+    </div>
+    }
     <div class="watch-chassis relative bg-black">
       @if (isLive() && d.playUrl) {
       <video
@@ -39,9 +49,20 @@
         class="watch-info-bar absolute bottom-0 left-0 right-0 flex flex-column md:flex-row md:align-items-end md:justify-content-between gap-2 p-3"
       >
         <div>
-          <h1 class="text-white text-xl md:text-2xl font-bold m-0">
-            {{ d.stream.title }}
-          </h1>
+          <div class="flex align-items-center gap-2">
+            <h1 class="text-white text-xl md:text-2xl font-bold m-0">
+              {{ d.stream.title }}
+            </h1>
+            @if (isOwnStream()) {
+            <a
+              [routerLink]="['/channel', d.stream.id]"
+              class="p-button p-button-xs p-button-outlined no-underline"
+              style="--p-button-padding-x: 0.75rem; --p-button-padding-y: 0.25rem"
+            >
+              <i class="pi pi-cog mr-1"></i>Manage
+            </a>
+            }
+          </div>
           <div class="flex align-items-center gap-2 mt-1 flex-wrap">
             <a
               [routerLink]="['/@' + d.stream.broadcasterUsername]"

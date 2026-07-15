@@ -33,3 +33,9 @@
 .watch-error {
   min-height: 60vh;
 }
+
+.ended-banner {
+  background: color-mix(in oklch, var(--orange-500) 15%, var(--color-surface-1));
+  border: 1px solid color-mix(in oklch, var(--orange-500) 40%, transparent);
+  color: var(--color-text-secondary);
+}

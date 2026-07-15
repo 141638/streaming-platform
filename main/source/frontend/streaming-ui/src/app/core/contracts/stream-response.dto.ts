@@ -10,6 +10,8 @@ export interface StreamResponseDto {
   readonly broadcasterSubject: string;
   readonly thumbnailUrl: string | null;
   readonly archivedUrl: string | null;
+  readonly autoArchiveChat: boolean;
+  readonly chatArchiveDelayMinutes: number;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly startedAt: string | null;

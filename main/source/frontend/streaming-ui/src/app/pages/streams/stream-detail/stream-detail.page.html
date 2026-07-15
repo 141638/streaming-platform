@@ -106,6 +106,43 @@
       {{ s.description || 'No description.' }}
     </p>
 
+    <!-- Chat archive settings -->
+    @if (showArchiveSettings()) {
+      <p-panel header="Chat Archive Settings" [toggleable]="true">
+        <div class="flex flex-column gap-3">
+          <div class="flex align-items-center gap-3">
+            <label class="text-sm font-semibold">Auto-archive chat when stream ends</label>
+            <p-toggleButton
+              [onLabel]="'On'"
+              [offLabel]="'Off'"
+              [ngModel]="!!stream()?.autoArchiveChat"
+              (onChange)="toggleAutoArchive($event.checked ?? false)"
+              styleClass="w-6rem"
+            />
+          </div>
+          @if (stream()?.autoArchiveChat) {
+            <div class="flex flex-column gap-1">
+              <label class="text-sm font-semibold">Archive delay (minutes)</label>
+              <div class="flex align-items-center gap-2">
+                <input
+                  pInputText
+                  type="number"
+                  class="w-8rem"
+                  [ngModel]="stream()?.chatArchiveDelayMinutes"
+                  (ngModelChange)="updateArchiveDelay($event)"
+                  min="1"
+                  max="1440"
+                />
+                <small class="text-color-secondary">
+                  Minutes to wait after the stream ends before archiving the chat.
+                </small>
+              </div>
+            </div>
+          }
+        </div>
+      </p-panel>
+    }
+
     <!-- Publish Key panel -->
     <p-panel header="Publish Key" [toggleable]="true">
       @if (publishKey(); as key) {

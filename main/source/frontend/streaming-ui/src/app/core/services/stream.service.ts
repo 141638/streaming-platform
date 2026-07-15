@@ -12,6 +12,7 @@ import { SocialLinkDto } from '../contracts/social-link.dto';
 import { StreamResponseDto } from '../contracts/stream-response.dto';
 import { LiveStreamPageResponseDto } from '../contracts/live-stream-page-response.dto';
 import { StreamSummaryResponseDto } from '../contracts/stream-summary-response.dto';
+import { WatchHistoryEntryDto } from '../contracts/watch-history-entry.dto';
 import { WatchResponseDto } from '../contracts/watch-response.dto';
 
 @Injectable({ providedIn: 'root' })
@@ -29,14 +30,30 @@ export class StreamService {
     keyword?: string;
     cursor?: string;
     limit?: number;
+    sort?: string;
   }): Observable<LiveStreamPageResponseDto> {
     const q = new URLSearchParams();
     if (params?.keyword) q.set('keyword', params.keyword);
     if (params?.cursor) q.set('cursor', params.cursor);
     if (params?.limit) q.set('limit', String(params.limit));
+    if (params?.sort) q.set('sort', params.sort);
     const qs = q.toString();
     return this.http.get<LiveStreamPageResponseDto>(
       `${this.base}/streams/live${qs ? '?' + qs : ''}`,
+    );
+  }
+
+  /** Returns recently ended streams for the browse page. */
+  public getRecentlyEndedStreams(params?: {
+    hours?: number;
+    limit?: number;
+  }): Observable<StreamSummaryResponseDto[]> {
+    const q = new URLSearchParams();
+    if (params?.hours) q.set('hours', String(params.hours));
+    if (params?.limit) q.set('limit', String(params.limit));
+    const qs = q.toString();
+    return this.http.get<StreamSummaryResponseDto[]>(
+      `${this.base}/streams/recently-ended${qs ? '?' + qs : ''}`,
     );
   }
 
@@ -93,6 +110,17 @@ export class StreamService {
     return this.http.post<StreamResponseDto>(
       `${this.base}/streams/${id}/cancel`,
       null,
+    );
+  }
+
+  /** Update a stream's settings (partial update). */
+  public updateStream(
+    id: string,
+    updates: Partial<StreamResponseDto>,
+  ): Observable<StreamResponseDto> {
+    return this.http.patch<StreamResponseDto>(
+      `${this.base}/streams/${id}`,
+      updates,
     );
   }
 
@@ -178,6 +206,26 @@ export class StreamService {
   public getViewerCount(id: string): Observable<{ count: number }> {
     return this.http.get<{ count: number }>(
       `${this.base}/streams/${id}/viewers`,
+    );
+  }
+
+  // ── Watch History ────────────────────────────────────────────────────────
+
+  /** Record a watch event for the given stream. */
+  public recordWatchHistory(streamId: string): Observable<void> {
+    return this.http.post<void>(
+      `${this.base}/streams/${streamId}/watch-history`,
+      null,
+    );
+  }
+
+  /** Fetch the authenticated user's watch history. */
+  public getWatchHistory(
+    limit?: number,
+  ): Observable<WatchHistoryEntryDto[]> {
+    const q = limit ? `?limit=${limit}` : '';
+    return this.http.get<WatchHistoryEntryDto[]>(
+      `${this.base}/users/me/watch-history${q}`,
     );
   }
 

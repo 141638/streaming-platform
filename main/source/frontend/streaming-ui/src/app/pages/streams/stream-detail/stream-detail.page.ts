@@ -3,6 +3,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  OnDestroy,
   OnInit,
   computed,
   inject,
@@ -10,6 +11,7 @@ import {
   signal,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
 import { CardModule } from 'primeng/card';
@@ -17,9 +19,11 @@ import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
 import { PanelModule } from 'primeng/panel';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
+import { ToggleButtonModule } from 'primeng/togglebutton';
 import { PublishKeyResponseDto } from '../../../core/contracts/publish-key-response.dto';
 import { StreamResponseDto } from '../../../core/contracts/stream-response.dto';
 import { StreamService } from '../../../core/services/stream.service';
+import { StreamSseService } from '../../../core/services/stream-sse.service';
 import { StreamStageComponent } from '../../../shared/organisms/stream-stage/stream-stage.component';
 import { StreamStatusBadgeComponent } from '../../../shared/molecules/stream-status-badge/stream-status-badge.component';
 
@@ -28,12 +32,14 @@ import { StreamStatusBadgeComponent } from '../../../shared/molecules/stream-sta
   standalone: true,
   imports: [
     DatePipe,
+    FormsModule,
     ButtonModule,
     CardModule,
     InputTextModule,
     MessageModule,
     PanelModule,
     ProgressSpinnerModule,
+    ToggleButtonModule,
     StreamStageComponent,
     StreamStatusBadgeComponent,
   ],
@@ -41,10 +47,11 @@ import { StreamStatusBadgeComponent } from '../../../shared/molecules/stream-sta
   styleUrl: './stream-detail.page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class StreamDetailPage implements OnInit {
+export class StreamDetailPage implements OnInit, OnDestroy {
   public readonly id = input.required<string>();
 
   private readonly streamService = inject(StreamService);
+  private readonly streamSseService = inject(StreamSseService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -77,6 +84,12 @@ export class StreamDetailPage implements OnInit {
   protected readonly canCancel = computed(() => {
     const status = this.statusUpper();
     return status === 'DRAFT' || status === 'SCHEDULED';
+  });
+
+  /** Whether the chat archive settings section should be visible. */
+  protected readonly showArchiveSettings = computed(() => {
+    const status = this.statusUpper();
+    return status === 'DRAFT' || status === 'LIVE';
   });
 
   protected readonly canArchive = computed(() => {
@@ -121,7 +134,28 @@ export class StreamDetailPage implements OnInit {
   });
 
   public ngOnInit(): void {
+    // Check for publish key passed via navigation state (from stream creation)
+    const navState = this.router.lastSuccessfulNavigation?.extras?.state as
+      { publishKey?: PublishKeyResponseDto } | undefined;
+    if (navState?.publishKey) {
+      this.publishKey.set(navState.publishKey);
+      this.tokenRevealed.set(true);
+    }
     this.loadStream();
+
+    // Subscribe to SSE stream lifecycle events for this stream
+    this.streamSseService.connect();
+    this.streamSseService.streamStarted$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((event) => {
+        if (event.streamId === this.id()) {
+          this.loadStream();
+        }
+      });
+  }
+
+  public ngOnDestroy(): void {
+    this.streamSseService.disconnect();
   }
 
   /**
@@ -183,6 +217,31 @@ export class StreamDetailPage implements OnInit {
   /** Dismisses the cancel confirmation without acting. */
   public onCancelDismiss(): void {
     this.showCancelConfirm.set(false);
+  }
+
+  /** Toggle auto-archive chat setting for this stream. */
+  public toggleAutoArchive(enabled: boolean): void {
+    this.streamService
+      .updateStream(this.id(), { autoArchiveChat: enabled } as Partial<StreamResponseDto>)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (data) => this.stream.set(data),
+        error: () => this.errorMessage.set('Failed to update archive settings.'),
+      });
+  }
+
+  /** Update the chat archive delay for this stream. */
+  public updateArchiveDelay(delay: number): void {
+    this.stream.update((s) =>
+      s ? { ...s, chatArchiveDelayMinutes: delay } : undefined,
+    );
+    this.streamService
+      .updateStream(this.id(), { chatArchiveDelayMinutes: delay } as Partial<StreamResponseDto>)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (data) => this.stream.set(data),
+        error: () => this.errorMessage.set('Failed to update archive delay.'),
+      });
   }
 
   public onArchive(): void {
@@ -283,6 +342,10 @@ export class StreamDetailPage implements OnInit {
 
   /** Fetches the existing masked key; a 404 simply means none issued yet. */
   private loadPublishKey(): void {
+    // Skip if already set — preserves raw key from navigation state or goLive/generateKey
+    if (this.publishKey()) {
+      return;
+    }
     this.streamService
       .getPublishKey(this.id())
       .pipe(takeUntilDestroyed(this.destroyRef))

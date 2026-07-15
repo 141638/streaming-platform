@@ -1,13 +1,13 @@
 {
   "agents.Explore": {
-    "count": 24,
+    "count": 26,
     "firstSeen": "2026-07-12",
     "lastSeen": "2026-07-15"
   },
   "skills.session-retro": {
-    "count": 5,
+    "count": 6,
     "firstSeen": "2026-07-12",
-    "lastSeen": "2026-07-14"
+    "lastSeen": "2026-07-15"
   },
   "skills.feature-commit": {
     "count": 8,
@@ -20,14 +20,14 @@
     "lastSeen": "2026-07-13"
   },
   "commands.blueprint": {
-    "count": 6,
+    "count": 8,
     "firstSeen": "2026-07-14",
     "lastSeen": "2026-07-15"
   },
   "commands.retro": {
-    "count": 3,
+    "count": 4,
     "firstSeen": "2026-07-14",
-    "lastSeen": "2026-07-14"
+    "lastSeen": "2026-07-15"
   },
   "commands.learn-eval": {
     "count": 1,
@@ -46,6 +46,16 @@
   },
   "agents.general-purpose": {
     "count": 11,
+    "firstSeen": "2026-07-15",
+    "lastSeen": "2026-07-15"
+  },
+  "commands.consult": {
+    "count": 1,
+    "firstSeen": "2026-07-15",
+    "lastSeen": "2026-07-15"
+  },
+  "commands.review": {
+    "count": 1,
     "firstSeen": "2026-07-15",
     "lastSeen": "2026-07-15"
   }

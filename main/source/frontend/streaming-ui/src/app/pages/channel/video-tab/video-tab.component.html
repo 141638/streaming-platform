@@ -53,7 +53,7 @@
       @for (session of res.data; track session.id) {
       <div class="col-12 md:col-6 lg:col-4 xl:col-2">
         <a
-          [routerLink]="['/channel', session.id]"
+          [routerLink]="['/watch', session.id]"
           class="video-card block border-round-lg overflow-hidden surface-card border-1 surface-border no-underline cursor-pointer transition-shadow hover:shadow-3"
         >
           <div class="video-thumbnail relative overflow-hidden" style="aspect-ratio: 16/9;">
@@ -148,7 +148,7 @@
   >
     @for (session of broadcasts(); track session.id) {
     <a
-      [routerLink]="['/channel', session.id]"
+      [routerLink]="['/watch', session.id]"
       class="rail-card flex-none w-20rem border-round-lg overflow-hidden surface-card border-1 surface-border no-underline transition-shadow hover:shadow-3"
     >
       <div class="rail-card-thumb relative overflow-hidden" style="height: 8rem;">

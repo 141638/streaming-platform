@@ -1,7 +1,7 @@
 <app-rail title="Recent Streams" [loading]="loading()" emptyLabel="No streams yet">
   @for (session of sessions(); track session.id) {
     <a
-      [routerLink]="['/channel', session.id]"
+      [routerLink]="['/watch', session.id]"
       class="session-rail-card flex-shrink-0 no-underline cursor-pointer surface-card border-round-lg border-1 surface-border overflow-hidden transition-duration-150 hover:shadow-3"
     >
       <!-- Thumbnail -->

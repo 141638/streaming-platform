@@ -14,5 +14,7 @@ public record CreateStreamRequest(
         UUID categoryId,
         List<@Size(max = 64) String> tags,
         Integer maxViewers,
+        Boolean autoArchiveChat,
+        Integer chatArchiveDelayMinutes,
         @Future OffsetDateTime scheduledAt
 ) {}

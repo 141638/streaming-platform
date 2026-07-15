@@ -131,14 +131,15 @@ public class StreamService {
                 .then(Mono.defer(() -> {
                     StreamSessionEntity entity = buildEntity(id, sub, username, verified,
                             request, now);
+                    // Always generate srsName and streamKeyHash — even SCHEDULED
+                    // streams need them (DB columns are NOT NULL). They'll be
+                    // regenerated on SCHEDULED→DRAFT transition via goLive().
+                    String srsName = newSrsName();
+                    entity.setStreamKeyHash(HashUtils.sha256Hex(srsName));
+                    entity.setSrsName(srsName);
                     if (request.scheduledAt() != null) {
                         entity.setStatus(StreamStatus.SCHEDULED);
                         entity.setScheduledAt(request.scheduledAt());
-                    } else {
-                        // DRAFT: generate srsName and store its hash
-                        String srsName = newSrsName();
-                        entity.setStreamKeyHash(HashUtils.sha256Hex(srsName));
-                        entity.setSrsName(srsName);
                     }
                     if (request.categoryId() != null) {
                         return categoryRepository.findById(request.categoryId())
@@ -784,13 +785,19 @@ public class StreamService {
                                                 log.info(
                                                         "Stream ended via webhook: id={} autoArchiveChat={} delay={}",
                                                         saved.getId(), autoArchive, delay);
-                                                sseRegistry.pushToStreamViewers(
+                                                StreamSseEvent endedEvent = new StreamSseEvent(
+                                                        "stream:ended",
                                                         saved.getId(),
-                                                        new StreamSseEvent(
-                                                                "stream:ended",
-                                                                saved.getId(),
-                                                                "ENDED",
-                                                                null));
+                                                        "ENDED",
+                                                        null);
+                                                // Push to viewers watching the stream
+                                                sseRegistry.pushToStreamViewers(
+                                                        saved.getId(), endedEvent);
+                                                // Also push to the broadcaster (they connect
+                                                // without a streamId so aren't in streamViewers)
+                                                sseRegistry.push(
+                                                        saved.getBroadcasterSubject(),
+                                                        endedEvent);
                                             })
                                             .thenReturn(saved));
                 })
@@ -1109,6 +1116,13 @@ public class StreamService {
             entity.setTags(request.tags().toArray(String[]::new));
         }
 
+        if (request.autoArchiveChat() != null) {
+            entity.setAutoArchiveChat(request.autoArchiveChat());
+        }
+        if (request.chatArchiveDelayMinutes() != null) {
+            entity.setChatArchiveDelayMinutes(request.chatArchiveDelayMinutes());
+        }
+
         return entity;
     }
 
@@ -1179,9 +1193,27 @@ public class StreamService {
                 })
                 .flatMap(saved ->
                         outboxWriter.write(eventFactory.apply(saved))
-                                .doOnSuccess(oe -> log.info(
-                                        "Stream {}: id={}", actionLabel,
-                                        saved.getId()))
+                                .doOnSuccess(oe -> {
+                                    log.info("Stream {}: id={}", actionLabel,
+                                            saved.getId());
+                                    // Push SSE for end transitions so viewers and
+                                    // the broadcaster see the change in real time.
+                                    // The on_unpublish webhook path also pushes,
+                                    // but the explicit endStream API path was
+                                    // missing this — SSE only went through Kafka.
+                                    if ("ended".equals(actionLabel)) {
+                                        StreamSseEvent endedEvent = new StreamSseEvent(
+                                                "stream:ended",
+                                                saved.getId(),
+                                                "ENDED",
+                                                null);
+                                        sseRegistry.pushToStreamViewers(
+                                                saved.getId(), endedEvent);
+                                        sseRegistry.push(
+                                                saved.getBroadcasterSubject(),
+                                                endedEvent);
+                                    }
+                                })
                                 .thenReturn(saved))
                 .map(StreamResponse::from)
                 .onErrorMap(OptimisticLockingFailureException.class,

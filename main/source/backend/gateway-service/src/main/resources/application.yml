@@ -42,6 +42,13 @@ spring:
           uri: lb://auth-service
           predicates:
             - Path=/api/auth/**
+        - id: stream-service-sse
+          uri: lb://stream-service
+          predicates:
+            - Path=/api/streams/v1/streams/events
+          metadata:
+            response-timeout: -1
+            connect-timeout: 5000
         - id: stream-service
           uri: lb://stream-service
           predicates:

@@ -18,7 +18,7 @@ spring:
     username: ${POSTGRES_USER:postgres}
     password: ${POSTGRES_PASSWORD:123456a}
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:19091}
     consumer:
       group-id: ${KAFKA_GROUP_NOTIFICATION:notification-service}
       auto-offset-reset: earliest
@@ -26,6 +26,7 @@ spring:
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
     listener:
       ack-mode: record
+      auto-startup: ${KAFKA_LISTENER_ENABLED:false}
   data:
     redis:
       host: ${REDIS_HOST:localhost}

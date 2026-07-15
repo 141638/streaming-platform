@@ -33,17 +33,16 @@ spring:
       timeout: 2s
       connect-timeout: 2s
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:19091}
     consumer:
       group-id: chat-service
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
     listener:
-      # This team does not operate a Kafka broker yet, so the consumer container
-      # would otherwise start at boot and retry-loop against an unreachable broker,
-      # flooding the logs with NetworkClient connection-refused warnings. Keep it
-      # from starting; flip to true (env) once a broker is owned — see ADR-0007.
+      # Keep the consumer from auto-starting at boot to avoid connection-retry
+      # noise when the Kafka cluster is down or misconfigured. Set to true in
+      # the env file when Kafka consumption is needed for active development.
       auto-startup: ${KAFKA_LISTENER_ENABLED:false}
 
 eureka:

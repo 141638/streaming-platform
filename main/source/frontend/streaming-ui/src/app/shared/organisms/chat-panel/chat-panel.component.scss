@@ -6,6 +6,10 @@
   overflow-y: auto;
 }
 .chat-panel {
+  // Internal horizontal breathing room
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+
   // Own messages: blue tint, right-aligned
   .chat-bubble-own {
     max-width: 80%;
@@ -16,6 +20,13 @@
   .chat-bubble-other {
     max-width: 80%;
     background-color: var(--surface-0);
+  }
+
+  // Broadcaster messages: distinct left-border accent, subtle warm glow
+  .chat-bubble-broadcaster {
+    border-left: 3px solid var(--color-brand, var(--purple-400));
+    box-shadow: 0 0 6px
+      color-mix(in oklch, var(--color-brand, var(--purple-400)) 25%, transparent);
   }
 
   // Superchat: colored highlight (real amounts will drive gradient intensity)

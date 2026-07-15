@@ -7,6 +7,8 @@ export interface RoomResponseDto {
   readonly status: 'ACTIVE' | 'ARCHIVED';
   readonly createdAt: string;
   readonly archivedAt: string | null;
+  /** The JWT subject of the streamer who owns this room. */
+  readonly broadcasterSubject: string;
   /** Whether the current caller may moderate (ban/unban) this room. */
   readonly viewerCanModerate: boolean;
   /**

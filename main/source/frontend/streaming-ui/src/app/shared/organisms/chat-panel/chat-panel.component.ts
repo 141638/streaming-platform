@@ -204,6 +204,14 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
 
   protected readonly currentUserSub = signal<string | null>(null);
   protected readonly currentUsername = signal<string | null>(null);
+  /** The JWT subject of the streamer who owns this room. */
+  protected readonly broadcasterSubject = signal<string | null>(null);
+
+  /** Whether the given message author is the room's broadcaster. */
+  protected isBroadcasterMessage(msg: DisplayMessage): boolean {
+    const b = this.broadcasterSubject();
+    return b !== null && msg.authorSubject === b;
+  }
 
   // ── Emoji picker ────────────────────────────────────────────────────────
 
@@ -560,6 +568,7 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (room: RoomResponseDto) => {
+          this.broadcasterSubject.set(room.broadcasterSubject ?? null);
           this.applyModerationCapability(room);
           this.bannedState.set(room.viewerBanned);
           if (room.status === 'ARCHIVED') {

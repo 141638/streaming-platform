@@ -113,6 +113,7 @@
             <div
               class="chat-bubble chat-bubble-own flex flex-column gap-1 p-2 border-round-lg"
               [class.chat-bubble-super]="msg.messageType === messageType.SUPER_CHAT"
+              [class.chat-bubble-broadcaster]="isBroadcasterMessage(msg)"
             >
               <span class="text-sm white-space-pre-line">{{ msg.body }}</span>
               <div class="flex align-items-center gap-2">
@@ -160,6 +161,7 @@
             <div
               class="chat-bubble chat-bubble-other flex flex-column gap-1 p-2 border-round-lg"
               [class.chat-bubble-super]="msg.messageType === messageType.SUPER_CHAT"
+              [class.chat-bubble-broadcaster]="isBroadcasterMessage(msg)"
             >
               <span class="text-xs font-medium">
                 {{ displayNameFor(msg) }}

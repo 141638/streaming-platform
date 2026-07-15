@@ -33,6 +33,7 @@ describe('ChatService', () => {
   const makeRoom = (overrides: Partial<RoomResponseDto> = {}): RoomResponseDto => ({
     externalKey: roomKey,
     status: 'ACTIVE',
+    broadcasterSubject: 'streamer-1',
     viewerCanModerate: false,
     viewerBanned: false,
     createdAt: '2026-07-13T00:00:00Z',

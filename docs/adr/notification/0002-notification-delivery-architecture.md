@@ -1,7 +1,7 @@
 # ADR-0002: Notification Delivery Architecture — Dispatcher, Outbox Channels, and Fan-Out Strategy
 
 **Date**: 2026-07-16
-**Status**: proposed
+**Status**: accepted
 **Deciders**: hieuht, Claude
 
 ## Context

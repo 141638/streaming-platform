@@ -1,7 +1,7 @@
 # ADR-0001: Subscription Model and Notification Service Boundary
 
 **Date**: 2026-07-16
-**Status**: proposed
+**Status**: accepted
 **Deciders**: hieuht, Claude
 
 ## Context

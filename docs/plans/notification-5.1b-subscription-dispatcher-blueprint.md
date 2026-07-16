@@ -1,7 +1,7 @@
 # Blueprint: Notification Hub Completion — 5.1b Subscription + Dispatcher + Wave 2 Path
 
 **Date:** 2026-07-15 (revised 2026-07-16)
-**Status:** Planned
+**Status:** Implemented
 **Depends on:** 5.0b (Kafka consumer), 5.1a (Notification core), 5.2a (StreamControlListener wiring), 5.2b (SSE delivery)
 **Unlocks:** 5.2b follower fan-out, Wave 2 chat moderation proactive push
 **ADRs:** [0001](adr/notification/0001-subscription-model-and-notification-boundary.md), [0002](adr/notification/0002-notification-delivery-architecture.md)

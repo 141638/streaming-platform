@@ -1,6 +1,9 @@
 package com.streaming.notification.api.error;
 
 import com.streaming.notification.application.NotificationService.NotificationNotFoundException;
+import com.streaming.notification.application.PreferenceService.PreferenceNotFoundException;
+import com.streaming.notification.application.SubscriptionService.SubscriptionAlreadyExistsException;
+import com.streaming.notification.application.SubscriptionService.SubscriptionNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -22,5 +25,29 @@ public class NotificationExceptionHandler {
         log.debug("Notification not found: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(new NotificationApiError("NOTIFICATION_NOT_FOUND", ex.getMessage()));
+    }
+
+    @ExceptionHandler(SubscriptionNotFoundException.class)
+    public ResponseEntity<NotificationApiError> handleSubscriptionNotFound(
+            SubscriptionNotFoundException ex) {
+        log.debug("Subscription not found: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new NotificationApiError("SUBSCRIPTION_NOT_FOUND", ex.getMessage()));
+    }
+
+    @ExceptionHandler(SubscriptionAlreadyExistsException.class)
+    public ResponseEntity<NotificationApiError> handleSubscriptionAlreadyExists(
+            SubscriptionAlreadyExistsException ex) {
+        log.debug("Subscription already exists: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new NotificationApiError("SUBSCRIPTION_ALREADY_EXISTS", ex.getMessage()));
+    }
+
+    @ExceptionHandler(PreferenceNotFoundException.class)
+    public ResponseEntity<NotificationApiError> handlePreferenceNotFound(
+            PreferenceNotFoundException ex) {
+        log.debug("Preference not found: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new NotificationApiError("PREFERENCE_NOT_FOUND", ex.getMessage()));
     }
 }

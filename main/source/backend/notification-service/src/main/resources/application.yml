@@ -58,3 +58,22 @@ streaming:
   jwt:
     issuer: ${JWT_ISSUER:https://auth.streaming.local}
     hmac-secret: ${JWT_HMAC_SECRET:MNH6CwQ7H4xAf69hpn0sc2Rn+wxT/d+I9QWELikQqgM=}
+
+# ── Notification service configuration ────────────────────────────────────
+notification:
+  outbox:
+    poll-interval: ${NOTIFICATION_OUTBOX_POLL_INTERVAL:5000}
+    batch-size: ${NOTIFICATION_OUTBOX_BATCH_SIZE:50}
+    max-retries: ${NOTIFICATION_OUTBOX_MAX_RETRIES:3}
+  email:
+    from: ${NOTIFICATION_EMAIL_FROM:noreply@streaming.local}
+
+# ── Spring Mail (SMTP) ────────────────────────────────────────────────────
+spring.mail:
+  host: ${SMTP_HOST:localhost}
+  port: ${SMTP_PORT:1025}
+  username: ${SMTP_USERNAME:}
+  password: ${SMTP_PASSWORD:}
+  properties:
+    mail.smtp.auth: ${SMTP_AUTH:false}
+    mail.smtp.starttls.enable: ${SMTP_STARTTLS:false}

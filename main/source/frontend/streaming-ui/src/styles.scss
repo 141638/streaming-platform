@@ -1,6 +1,6 @@
-@use 'primeflex/primeflex' as *;
+@use "primeflex/primeflex" as *;
 
-@import 'primeicons/primeicons.css';
+@import "primeicons/primeicons.css";
 
 :root {
   /* ── Surface ── */
@@ -31,13 +31,69 @@
   --color-error: oklch(63% 0.19 15);
 
   /* ── Gradient stops ── */
-  --gradient-auth: linear-gradient(135deg, #0a0a0f 0%, #14141f 40%, #1a1025 100%);
+  --gradient-auth: linear-gradient(
+    135deg,
+    #0a0a0f 0%,
+    #14141f 40%,
+    #1a1025 100%
+  );
 }
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
   background: var(--color-surface-0);
+}
+
+/* ── Global overlay scrollbars ── */
+
+/* width */
+.fixed-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+/* track */
+.fixed-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* thumb */
+.fixed-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+  transition: background 0.2s ease;
+}
+
+/* hover over container */
+.fixed-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+/* hover over thumb */
+.fixed-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.fixed-scroll::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  transition: background-color 0.25s;
+}
+
+.fixed-scroll:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.35);
+}
+
+/* Firefox config */
+.fixed-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.fixed-scroll:hover {
+  scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
 }
 
 .app-shell-brand-icon {

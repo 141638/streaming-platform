@@ -1,4 +1,4 @@
-@if (roomKey(); as key) {
+@if (live() && roomKey(); as key) {
   <!-- Wired: real chat panel -->
   <app-chat-panel [roomKey]="key" />
 } @else {

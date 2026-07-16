@@ -23,22 +23,27 @@
           [routerLink]="['/channel', stream.id]"
         >
           <p-card styleClass="stream-list-card h-full cursor-pointer">
-            <img
-              class="w-full border-round mb-2 stream-list-thumb"
-              [src]="stream.thumbnailUrl || placeholder"
-              [alt]="stream.title"
-              width="640"
-              height="360"
-            />
+            <div
+              class="border-round mb-2 stream-list-thumb"
+              style="height: 220px"
+            >
+              <img
+                class="h-full w-full"
+                [src]="stream.thumbnailUrl || placeholder"
+                [alt]="stream.title"
+              />
+            </div>
             <div class="flex align-items-start justify-content-between gap-2">
-              <span class="font-semibold text-overflow-ellipsis overflow-hidden white-space-nowrap">
+              <span
+                class="font-semibold text-overflow-ellipsis overflow-hidden white-space-nowrap"
+              >
                 {{ stream.title }}
               </span>
               <app-stream-status-badge [status]="stream.status" />
             </div>
             <div class="text-sm text-color-secondary mt-1">
-              {{ stream.category || 'Uncategorized' }}
-              · {{ stream.createdAt | date: 'medium' }}
+              {{ stream.category || "Uncategorized" }}
+              · {{ stream.createdAt | date: "medium" }}
             </div>
           </p-card>
         </a>

@@ -1,4 +1,6 @@
-<div class="stream-player relative w-full h-full overflow-hidden border-round bg-black flex justify-content-center">
+<div
+  class="stream-player relative w-full h-full overflow-hidden border-round bg-black flex justify-content-center"
+>
   <!-- Video element for HLS playback (LIVE with playUrl) -->
   @if (isLive() && playUrl()) {
     <video
@@ -11,15 +13,7 @@
       width="1280"
       height="720"
     ></video>
-  } @else {
-    <!-- Static poster for non-live / no playUrl -->
-    <img
-      class="h-full stream-player-poster"
-      [src]="poster()"
-      [alt]="stream().title"
-      width="1280"
-      height="720"
-    />
+  } @else if (poster()) {
   }
 
   <!-- Top-left status pill overlaid on the poster/video -->

@@ -7,13 +7,19 @@
   <p-message severity="error" [text]="errorMessage()" styleClass="w-full" />
   } @if (!loading() && !errorMessage()) { @if (currentStream(); as current) {
   <!-- Stage: player + chat fills viewport -->
-  <section class="stream-dashboard-stage flex flex-column" [style.height]="'40rem'">
-    <div class="stream-dashboard-stage-player flex-auto">
+  <section
+    class="stream-dashboard-stage flex flex-column align-items-center"
+    [style.height]="'30rem'"
+  >
+    <div
+      class="stream-dashboard-stage-player flex-auto p-4"
+      [style.width]="'60rem'"
+    >
       <app-stream-stage [stream]="current" [roomKey]="current.id" />
     </div>
 
     <!-- Stream info footer -->
-    <footer class="stream-dashboard-footer flex-none p-4">
+    <footer class="stream-dashboard-footer flex-none p-4 w-full">
       <div class="flex align-items-center gap-3">
         <h2 class="m-0 text-xl font-semibold">{{ current.title }}</h2>
         <app-stream-status-badge [status]="current.status" />

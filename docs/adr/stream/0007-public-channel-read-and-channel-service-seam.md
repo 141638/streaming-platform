@@ -74,11 +74,16 @@ addition now, deferring the expensive capability (a real user/channel domain).
 `GET /v1/channels/{username}` returns a **safe cross-user projection**:
 
 - **Includes:** display name, verified flag, public sessions (rail), recent categories.
-- **Excludes, enforced server-side:** `broadcaster_subject`, publish key, `rtmpUrl`, and any
+- **Excludes, enforced server-side:** publish key, `rtmpUrl`, and any
   lifecycle-control affordance. Since any authenticated user can call this for any handle,
   these fields must never appear in the response — this is a hard requirement, not a UI
   concern. The existing owner control panel (`/channel/:id`, publish key + lifecycle) stays
   owner-only and separate.
+  > **Amendment (2026-07-16):** `broadcasterSubject` was added to `ChannelIdentityResponse`
+  > (the `/identity` sub-endpoint) to enable the Follow button without a second HTTP call.
+  > The broadcaster's subject is a UUID — not PII, not a secret — and is already denormalized
+  > on `stream_session` rows visible to any authenticated user. The original exclusion was
+  > overly conservative for a non-secret identifier. See [notification 5.4 retrospective](../../plans/notification-5.4-frontend-implementation-retrospective.md).
 
 The endpoint stays under the service's default `anyExchange().authenticated()` — **no
 `permitAll` matcher and no gateway allowlist**, because channels are login-gated. Owner-vs-

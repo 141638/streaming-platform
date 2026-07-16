@@ -103,6 +103,13 @@ export const routes: Routes = [
           import('./pages/chat/chat-room.page').then((m) => m.ChatRoomPage),
       },
       {
+        path: 'settings/notifications',
+        loadComponent: () =>
+          import('./pages/settings/notification-settings.page').then(
+            (m) => m.NotificationSettingsPage,
+          ),
+      },
+      {
         matcher: channelMatcher,
         loadComponent: () =>
           import('./pages/channel/channel.page').then((m) => m.ChannelPage),

@@ -67,7 +67,7 @@ export class AppShellComponent {
     {
       label: 'Subscriptions',
       icon: 'pi pi-star',
-      disabled: true,
+      command: () => this.router.navigateByUrl('/settings/notifications'),
     },
     {
       label: 'Wallet',

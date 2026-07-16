@@ -1,0 +1,111 @@
+<div class="px-4 py-4 max-w-30rem">
+  <h1 class="text-2xl font-bold mb-4">Notification Settings</h1>
+
+  <!-- ═══ Following ═══════════════════════════════════════════════════════ -->
+  <p-card styleClass="mb-4">
+    <ng-template pCardHeader>
+      <div class="px-3 pt-3 font-semibold text-lg">Following</div>
+    </ng-template>
+
+    @if (isSubscriptionsLoading()) {
+      <div class="flex flex-column gap-3">
+        @for (i of [1, 2]; track i) {
+          <div class="flex align-items-center gap-3">
+            <p-skeleton shape="circle" size="2.5rem" />
+            <div class="flex flex-column gap-1 flex-auto">
+              <p-skeleton width="8rem" height="1rem" />
+              <p-skeleton width="5rem" height="0.75rem" />
+            </div>
+            <p-skeleton width="5rem" height="2rem" />
+          </div>
+        }
+      </div>
+    } @else if (subscriptions().length === 0) {
+      <div class="flex flex-column align-items-center text-500 py-4 gap-2">
+        <span class="pi pi-heart text-2xl"></span>
+        <span class="text-sm">You're not following anyone yet.</span>
+        <span class="text-xs">Visit a channel page and click Follow to get started.</span>
+      </div>
+    } @else {
+      <div class="flex flex-column gap-2">
+        @for (sub of subscriptions(); track sub.id) {
+          <div
+            class="flex align-items-center gap-3 p-2 border-round surface-hover"
+          >
+            <div
+              class="w-2.5rem h-2.5rem border-circle surface-200 flex align-items-center justify-content-center flex-shrink-0"
+            >
+              <span class="pi pi-user text-500 text-sm"></span>
+            </div>
+            <div class="flex flex-column flex-auto min-w-0">
+              <span class="font-medium text-sm">{{ sub.targetId }}</span>
+              <span class="text-xs text-500">
+                {{ targetTypeLabel(sub.targetType) }}
+              </span>
+            </div>
+            <button
+              pButton
+              type="button"
+              label="Unfollow"
+              class="p-button-text p-button-sm p-button-danger"
+              (click)="unfollow(sub)"
+            ></button>
+          </div>
+        }
+      </div>
+    }
+  </p-card>
+
+  <!-- ═══ Delivery Preferences ════════════════════════════════════════════ -->
+  <p-card>
+    <ng-template pCardHeader>
+      <div class="px-3 pt-3 font-semibold text-lg">Delivery Channels</div>
+    </ng-template>
+
+    @if (isPreferencesLoading()) {
+      <div class="flex flex-column gap-3">
+        @for (i of [1, 2]; track i) {
+          <div class="flex align-items-center gap-3">
+            <div class="flex flex-column gap-1 flex-auto">
+              <p-skeleton width="10rem" height="1rem" />
+              <p-skeleton width="7rem" height="0.75rem" />
+            </div>
+            <p-skeleton width="3rem" height="1.5rem" />
+          </div>
+        }
+      </div>
+    } @else if (preferences().length === 0) {
+      <div class="flex flex-column align-items-center text-500 py-4 gap-2">
+        <span class="pi pi-sliders-h text-2xl"></span>
+        <span class="text-sm">No preferences configured.</span>
+        <span class="text-xs">Preferences are created when you first interact with notification channels.</span>
+      </div>
+    } @else {
+      <div class="flex flex-column gap-2">
+        @for (pref of preferences(); track pref.id) {
+          <div
+            class="flex align-items-center gap-3 p-2 border-round surface-hover"
+          >
+            <div class="flex flex-column flex-auto">
+              <span class="font-medium text-sm">
+                {{ channelLabel(pref.channel) }}
+              </span>
+              <span class="text-xs text-500">
+                @if (pref.topicGlob) {
+                  Topics: {{ pref.topicGlob }}
+                } @else {
+                  All notifications
+                }
+              </span>
+            </div>
+            <p-toggleswitch
+              [(ngModel)]="pref.active"
+              (click)="togglePreference(pref)"
+              [disabled]="togglingIds().has(pref.id)"
+            />
+          </div>
+        }
+      </div>
+    }
+  </p-card>
+</div>

@@ -331,9 +331,10 @@ public class StreamService {
                     String resolvedUsername = session.getBroadcasterUsername() != null
                             ? session.getBroadcasterUsername() : username;
                     return ChannelIdentityResponse.of(resolvedUsername,
-                            session.getBroadcasterVerified());
+                            session.getBroadcasterVerified(),
+                            session.getBroadcasterSubject());
                 })
-                .defaultIfEmpty(ChannelIdentityResponse.of(username, null));
+                .defaultIfEmpty(ChannelIdentityResponse.of(username, null, null));
     }
 
     /**

@@ -1,0 +1,90 @@
+<div class="flex flex-column">
+  <!-- Header with settings gear -->
+  <div class="flex align-items-center justify-content-between px-3 py-2">
+    <span class="font-semibold">Notifications</span>
+    <button
+      pButton
+      type="button"
+      icon="pi pi-cog"
+      class="p-button-rounded p-button-text p-button-sm"
+      [routerLink]="'/settings/notifications'"
+      (click)="navigateAway.emit()"
+      aria-label="Notification settings"
+    ></button>
+  </div>
+
+  <!-- Divider between header and content -->
+  <div class="notification-dropdown-divider"></div>
+
+  <!-- Body -->
+  @if (isLoading()) {
+    <!-- Skeleton placeholders (initial load only) -->
+    @for (i of [1, 2, 3]; track i) {
+      <div class="p-3">
+        <div class="flex gap-2">
+          <div
+            class="w-2rem h-2rem border-circle surface-300 animate-pulse"
+          ></div>
+          <div class="flex flex-column gap-2 flex-auto">
+            <div
+              class="h-1rem w-6 surface-300 border-round animate-pulse"
+            ></div>
+            <div
+              class="h-1rem w-9 surface-200 border-round animate-pulse"
+            ></div>
+          </div>
+        </div>
+      </div>
+    }
+  } @else if (error()) {
+    <!-- Error state with retry -->
+    <div
+      class="flex flex-column align-items-center justify-content-center p-6 gap-2"
+      style="height: 200px; color: var(--color-text-muted)"
+    >
+      <span class="pi pi-exclamation-circle text-3xl"></span>
+      <span class="text-sm">Failed to load notifications</span>
+      <button
+        pButton
+        type="button"
+        label="Retry"
+        class="p-button-text p-button-sm"
+        (click)="loadFirstPage()"
+      ></button>
+    </div>
+  } @else if (notifications().length === 0) {
+    <!-- Empty state -->
+    <div
+      class="flex flex-column align-items-center justify-content-center p-6 gap-2"
+      style="height: 200px; color: var(--color-text-muted)"
+    >
+      <span class="pi pi-bell text-3xl"></span>
+      <span class="text-sm">No notifications yet</span>
+    </div>
+  } @else {
+    <!-- Virtual scroll viewport with auto-size strategy -->
+    <cdk-virtual-scroll-viewport
+      [itemSize]="'auto'"
+      class="notification-dropdown-viewport"
+      (scroll)="onScroll()"
+    >
+      <div *cdkVirtualFor="let n of notifications(); trackBy: trackById">
+        <app-notification-card
+          [notification]="n"
+          (cardClick)="onCardClick(n)"
+        />
+      </div>
+
+      <!-- Loading spinner for infinite-scroll page fetch -->
+      @if (isLoadingMore()) {
+        <div class="flex justify-content-center py-2">
+          <p-progressSpinner
+            strokeWidth="3"
+            styleClass="w-1-5rem h-1-5rem"
+            ariaLabel="Loading more notifications"
+          />
+        </div>
+      }
+    </cdk-virtual-scroll-viewport>
+  }
+</div>

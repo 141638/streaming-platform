@@ -1,16 +1,17 @@
 <!--
   Notification bell in the shell header.
-  Wave 5.2: shows unread badge from REST endpoint, click triggers mock toasts.
-  Future: click → toggle popup menu with notification history.
+  Badge shows unread count from REST endpoint.
+  Click toggles the dropdown overlay with notification history.
 -->
-<button
-  pButton
-  type="button"
-  class="p-button-rounded p-button-text p-overlay-badge"
-  icon="pi pi-bell"
-  (click)="onBellClick()"
-  aria-label="Notifications"
->
+<span class="p-overlay-badge" style="position: relative">
+  <button
+    pButton
+    type="button"
+    class="p-button-rounded p-button-text"
+    icon="pi pi-bell"
+    (click)="dropdown.toggle($event)"
+    aria-label="Notifications"
+  ></button>
   @if (unreadCount() > 0) {
     <p-badge
       [value]="unreadCount() > 99 ? '99+' : unreadCount()"
@@ -18,4 +19,14 @@
       size="small"
     />
   }
-</button>
+</span>
+
+<p-popover
+  #dropdown
+  appendTo="body"
+  [showTransitionOptions]="'120ms ease-out'"
+  [hideTransitionOptions]="'100ms ease-in'"
+  [style]="{ width: '360px' }"
+>
+  <app-notification-dropdown (navigateAway)="dropdown.hide()" />
+</p-popover>

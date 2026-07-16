@@ -1,0 +1,16 @@
+:host {
+  display: block;
+}
+
+/* Divider between header and content — box-like separation using
+   the project's border token for dark-theme consistency. */
+.notification-dropdown-divider {
+  height: 1px;
+  background-color: var(--color-border-1);
+}
+
+/* Constrain the virtual scroll viewport. Inherits global overlay
+   scrollbar styles from styles.scss. */
+.notification-dropdown-viewport {
+  height: 400px;
+}

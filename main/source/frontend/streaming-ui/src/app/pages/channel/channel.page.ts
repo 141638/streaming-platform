@@ -21,6 +21,8 @@ import { filter, take } from 'rxjs';
 import { ChannelIdentityResponseDto } from '../../core/contracts/channel-identity-response.dto';
 import { AuthService } from '../../core/services/auth.service';
 import { StreamService } from '../../core/services/stream.service';
+import { SubscriptionService } from '../../core/services/subscription.service';
+import { ToastService } from '../../core/services/toast.service';
 import { ChannelHeaderComponent } from '../../shared/organisms/channel-header/channel-header.component';
 
 type ChannelTab = 'home' | 'video' | 'about';
@@ -54,6 +56,8 @@ export class ChannelPage implements OnInit {
   private readonly router = inject(Router);
   private readonly authService = inject(AuthService);
   private readonly streamService = inject(StreamService);
+  private readonly subscriptionService = inject(SubscriptionService);
+  private readonly toastService = inject(ToastService);
 
   protected readonly channel = signal<ChannelIdentityResponseDto | null>(null);
   protected readonly verified = computed(
@@ -63,6 +67,14 @@ export class ChannelPage implements OnInit {
   protected readonly isOwner = computed(
     () => this.authService.myUsername() === this.username(),
   );
+
+  // ── Follow state ────────────────────────────────────────────────────────
+
+  protected readonly isFollowing = signal(false);
+  protected readonly subscriptionId = signal<string | null>(null);
+  protected readonly isFollowLoading = signal(false);
+  /** Extracted from channel identity — null until loaded or on backfill gaps. */
+  protected readonly broadcasterSubject = signal<string | null>(null);
 
   public ngOnInit(): void {
     // Redirect bare /@username to /@username/home so the child outlet
@@ -127,10 +139,74 @@ export class ChannelPage implements OnInit {
   /** Fetch channel identity for the header. One-shot — no takeUntilDestroyed. */
   private loadChannelIdentity(): void {
     this.streamService.getChannelIdentity(this.username()).subscribe({
-      next: (res) => this.channel.set(res),
+      next: (res) => {
+        this.channel.set(res);
+        const subject = res.broadcasterSubject ?? null;
+        this.broadcasterSubject.set(subject);
+        if (subject) {
+          this.checkFollowState(subject);
+        }
+      },
       error: (err: unknown) => {
         if (err instanceof DOMException && err.name === 'AbortError') return;
         this.channel.set(null);
+      },
+    });
+  }
+
+  /** Check whether the current user already follows this channel. */
+  private checkFollowState(broadcasterSubject: string): void {
+    this.subscriptionService
+      .checkSubscription('CHANNEL', broadcasterSubject)
+      .subscribe({
+        next: (sub) => {
+          this.isFollowing.set(sub.active);
+          this.subscriptionId.set(sub.id);
+        },
+        error: () => {
+          // 404 = not following — expected, not an error.
+        },
+      });
+  }
+
+  /** Follow this channel — optimistic UI with error toast on failure. */
+  public onFollow(): void {
+    const subject = this.broadcasterSubject();
+    if (!subject) return;
+    this.isFollowLoading.set(true);
+    this.subscriptionService.follow('CHANNEL', subject).subscribe({
+      next: (sub) => {
+        this.isFollowing.set(true);
+        this.subscriptionId.set(sub.id);
+        this.isFollowLoading.set(false);
+      },
+      error: (err: unknown) => {
+        // 409 Conflict = already following — check real state from server.
+        if ((err as { status?: number })?.status === 409) {
+          this.checkFollowState(subject);
+          this.isFollowLoading.set(false);
+          return;
+        }
+        this.toastService.showError('Failed to follow', 'Please try again.');
+        this.isFollowLoading.set(false);
+      },
+    });
+  }
+
+  /** Unfollow this channel — optimistic UI with error toast on failure. */
+  public onUnfollow(): void {
+    const id = this.subscriptionId();
+    if (!id) return;
+    this.isFollowLoading.set(true);
+    this.subscriptionService.unfollow(id).subscribe({
+      next: () => {
+        this.isFollowing.set(false);
+        this.subscriptionId.set(null);
+        this.isFollowLoading.set(false);
+      },
+      error: () => {
+        this.toastService.showError('Failed to unfollow', 'Please try again.');
+        this.isFollowLoading.set(false);
       },
     });
   }

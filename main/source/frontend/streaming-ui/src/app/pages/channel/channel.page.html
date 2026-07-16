@@ -13,14 +13,33 @@
     [isOwner]="isOwner()"
   >
     <ng-container slot="viewer-actions">
+      @if (isFollowLoading()) {
+      <button
+        pButton
+        type="button"
+        icon="pi pi-spin pi-spinner"
+        label="Loading"
+        disabled
+      ></button>
+      } @else if (isFollowing()) {
+      <button
+        pButton
+        type="button"
+        label="Following"
+        icon="pi pi-heart-fill"
+        class="w-8rem"
+        (click)="onUnfollow()"
+      ></button>
+      } @else {
       <button
         pButton
         type="button"
         label="Follow"
         icon="pi pi-heart"
-        class="p-button-outlined"
-        disabled
+        class="p-button-outlined w-8rem"
+        (click)="onFollow()"
       ></button>
+      }
       <button
         pButton
         type="button"

@@ -104,14 +104,45 @@ export function severityFromCategory(category: string): NotificationSeverity {
 /**
  * Derive a click action from the notification's action key and metadata.
  *
- * Currently a no-op — most notification types don't navigate.  Wave 2 chat
- * moderation notifications will navigate to the affected room.
+ * <p>Known actions:
+ * <ul>
+ *   <li>{@code stream.started} → navigate to the stream detail page
+ *   <li>{@code stream.ended} → navigate to the stream detail page
+ * </ul>
+ *
+ * <p>Navigation targets will change after fan-out wiring (5.2b):
+ * broadcasters go to {@code /channel/:id}, followers go to
+ * {@code /watch/:id}.
  */
 export function actionFromNotification(
-  _action: string,
-  _metadata: string | null,
+  action: string,
+  metadata: string | null,
 ): NotificationAction {
-  return { type: 'none' };
+  switch (action) {
+    case 'stream.started':
+    case 'stream.ended': {
+      const streamId = parseField(metadata, 'streamId');
+      if (streamId) {
+        return { type: 'navigate', route: `/channel/${streamId}` };
+      }
+      return { type: 'none' };
+    }
+    default:
+      return { type: 'none' };
+  }
+}
+
+/** Try to extract a string field from notification metadata JSON. */
+function parseField(metadata: string | null, field: string): string | null {
+  if (!metadata) return null;
+  try {
+    const parsed = JSON.parse(metadata) as Record<string, unknown>;
+    return typeof parsed[field] === 'string'
+      ? (parsed[field] as string)
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Map a backend {@link NotificationResponseDto} to the frontend DTO. */

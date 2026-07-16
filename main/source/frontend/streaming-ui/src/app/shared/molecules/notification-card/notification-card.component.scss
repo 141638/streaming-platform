@@ -4,26 +4,22 @@
   max-width: 26rem;
 }
 
-/* ---- accent bar (left border colour by severity) ---- */
+/* ---- card container ---- */
 .notification-card {
-  border-left: 4px solid transparent;
+  position: relative;
   transition: filter 150ms ease;
 }
 
-.notification-card--success {
-  border-left-color: var(--green-400, #4caf50);
-}
-
-.notification-card--info {
-  border-left-color: var(--blue-400, #42a5f5);
-}
-
-.notification-card--warn {
-  border-left-color: var(--orange-400, #ffa726);
-}
-
-.notification-card--error {
-  border-left-color: var(--red-400, #ef5350);
+/* ---- unread indicator dot (YouTube-style, replaces 4px left border) ---- */
+.notification-card-unread-dot {
+  position: absolute;
+  left: 0.5rem;
+  top: 1rem;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--color-brand);
+  flex-shrink: 0;
 }
 
 /* ---- clickable state ---- */

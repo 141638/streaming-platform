@@ -115,7 +115,12 @@
               class="browse-card-live-badge absolute top-0 left-0 flex align-items-center gap-1 text-xs font-semibold px-2 py-1 border-round-bottom"
             >
               <span class="browse-card-live-dot"></span>
+              @if (stream.viewerCount != null) {
+              <i class="pi pi-eye" style="font-size: 0.625rem"></i>
+              {{ formatCount(stream.viewerCount) }}
+              } @else {
               {{ formatCount(stream.views) }}
+              }
             </span>
           </div>
           <!-- Info -->

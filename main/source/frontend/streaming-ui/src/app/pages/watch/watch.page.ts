@@ -11,6 +11,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { DecimalPipe } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -36,6 +37,7 @@ import { ButtonModule } from 'primeng/button';
     StreamChatShellComponent,
     StreamStatusBadgeComponent,
     ButtonModule,
+    DecimalPipe,
   ],
   templateUrl: './watch.page.html',
   styleUrl: './watch.page.scss',
@@ -62,6 +64,8 @@ export class WatchPage implements OnInit, OnDestroy {
   protected readonly isEnded = computed(() => !this.isLive() && this.data() !== null);
   /** Set to true when the SSE stream:ended event fires while the viewer is watching. */
   protected readonly justEnded = signal(false);
+
+  protected readonly viewerCount = signal(0);
 
   protected readonly isOwnStream = computed(() => {
     const viewer = this.authService.myUsername();
@@ -133,6 +137,11 @@ export class WatchPage implements OnInit, OnDestroy {
         },
       });
 
+    // Wire viewer count from polling (fallback) + SSE (priority)
+    this.presenceService.viewerCount
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((count) => this.viewerCount.set(count));
+
     // Subscribe to SSE stream lifecycle events for this stream
     this.streamSseService.connect(id);
     this.streamSseService.streamEnded$
@@ -144,6 +153,15 @@ export class WatchPage implements OnInit, OnDestroy {
             d ? { ...d, stream: { ...d.stream, status: 'ENDED' } } : null,
           );
           this.destroyHls();
+        }
+      });
+
+    // SSE-driven viewer count takes priority over polling
+    this.streamSseService.streamViewers$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((event) => {
+        if (event.streamId === id && event.viewerCount != null) {
+          this.viewerCount.set(event.viewerCount);
         }
       });
   }

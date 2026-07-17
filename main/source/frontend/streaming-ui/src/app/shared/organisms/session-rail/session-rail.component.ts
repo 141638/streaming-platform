@@ -1,3 +1,4 @@
+import { DecimalPipe } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -30,6 +31,7 @@ function categoryHue(name: string): number {
     TooltipModule,
     RailComponent,
     StreamStatusBadgeComponent,
+    DecimalPipe,
   ],
   templateUrl: './session-rail.component.html',
   styleUrl: './session-rail.component.scss',

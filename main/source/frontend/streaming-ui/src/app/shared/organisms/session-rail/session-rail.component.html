@@ -55,6 +55,15 @@
             tooltipPosition="left"
           ></button>
           <app-stream-status-badge [status]="session.status" />
+          @if (session.status === 'LIVE' && session.viewerCount != null) {
+          <span
+            class="flex align-items-center gap-1 text-xs"
+            style="color: var(--color-text-muted)"
+          >
+            <i class="pi pi-eye" style="font-size: 0.625rem"></i>
+            <span>{{ session.viewerCount | number }}</span>
+          </span>
+          }
         </div>
       </div>
     </a>

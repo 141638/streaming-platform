@@ -71,6 +71,15 @@
               {{ d.stream.broadcasterUsername ?? 'Unknown' }}
             </a>
             <app-stream-status-badge [status]="d.stream.status" />
+            @if (isLive()) {
+            <span
+              class="flex align-items-center gap-1 text-sm text-white"
+              aria-label="Live viewer count"
+            >
+              <i class="pi pi-eye text-xs"></i>
+              <span>{{ viewerCount() | number }}</span>
+            </span>
+            }
             @if (d.stream.category) {
             <span class="text-sm text-white">{{ d.stream.category }}</span>
             }

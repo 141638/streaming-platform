@@ -186,4 +186,15 @@ public class SseConnectionRegistry {
                 .mapToInt(CopyOnWriteArraySet::size)
                 .sum();
     }
+
+    /**
+     * Returns the set of stream IDs that have at least one connected viewer.
+     * Used by {@code ViewerCountPushService} to know which streams need
+     * viewer count scans.
+     *
+     * @return an unmodifiable view of active stream IDs (empty if none)
+     */
+    public java.util.Set<UUID> getActiveStreamIds() {
+        return java.util.Collections.unmodifiableSet(streamViewers.keySet());
+    }
 }

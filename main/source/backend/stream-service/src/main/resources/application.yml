@@ -81,3 +81,5 @@ streaming:
   view-count:
     flush-interval-ms: 300000
     view-ttl: ${STREAM_VIEW_TTL:24h}
+  heartbeat-harvest:
+    harvest-interval-ms: 30000

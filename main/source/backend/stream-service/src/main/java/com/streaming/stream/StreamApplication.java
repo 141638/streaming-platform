@@ -1,5 +1,6 @@
 package com.streaming.stream;
 
+import com.streaming.stream.config.HeartbeatHarvestProperties;
 import com.streaming.stream.config.ViewCountProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -8,7 +9,7 @@ import org.springframework.kafka.annotation.EnableKafka;
 
 @SpringBootApplication
 @EnableKafka
-@EnableConfigurationProperties(ViewCountProperties.class)
+@EnableConfigurationProperties({ViewCountProperties.class, HeartbeatHarvestProperties.class})
 public class StreamApplication {
 
     public static void main(String[] args) {

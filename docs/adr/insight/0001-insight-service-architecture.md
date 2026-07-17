@@ -63,7 +63,16 @@ chat-service so a developer moving between services re-learns nothing.
 
 ### Negative
 - **One more service** to register in Eureka, route in the gateway, add to compose, and operate.
-- **Cross-service data access**: needs read access to transcripts/metadata owned elsewhere — via events or APIs, not shared tables (platform avoids cross-schema FKs).
+- **Cross-service data access**: needs read access to transcripts/metadata owned elsewhere — via events or APIs, not shared tables (platform avoids cross-schema FKs). Upstream data sources documented below.
+
+### Upstream Data Sources (available when insight-service is built)
+
+| Source | Owned By | Access | Purpose |
+|--------|----------|--------|---------|
+| `stream_viewer_snapshot` | stream-service (ADR-0010) | REST API or DB read | Viewer analytics: peak concurrency, retention curves, category trends |
+| `stream_session` | stream-service | REST API | Stream metadata for summaries, titles, tags |
+| `chat_message` | chat-service | REST API or Kafka | Chat history for summarization, moderation input |
+| Kafka `stream.control` | stream-service | Kafka consumer | RAG ingestion triggers (stream lifecycle events) |
 
 ### Risks
 - **Premature service split if only rung 1 ever ships.** *Mitigation*: rung 1 alone still benefits from isolation (unreliable dependency); the split pays off immediately, not just at RAG.
@@ -74,5 +83,6 @@ chat-service so a developer moving between services re-learns nothing.
 - [ADR-0002](0002-llm-provider-port.md) — the LLM provider port
 - [ADR-0003](0003-pgvector-over-dedicated-vector-db.md) — vector storage decision
 - [ADR-0004](0004-capability-ladder.md) — capability ladder / delivery order
+- [stream/ADR-0010](../stream/0010-viewer-heartbeat-analytics-pipeline.md) — viewer heartbeat analytics pipeline (upstream data source)
 - [SERVICE-ARCHITECTURE.md](../../SERVICE-ARCHITECTURE.md) — per-service style guidance
 - [chat/0001-layered-reactive-architecture.md](../chat/0001-layered-reactive-architecture.md) — precedent for the style choice

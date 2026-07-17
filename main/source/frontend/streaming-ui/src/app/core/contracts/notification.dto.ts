@@ -123,7 +123,7 @@ export function actionFromNotification(
     case 'stream.ended': {
       const streamId = parseField(metadata, 'streamId');
       if (streamId) {
-        return { type: 'navigate', route: `/channel/${streamId}` };
+        return { type: 'navigate', route: `/watch/${streamId}` };
       }
       return { type: 'none' };
     }

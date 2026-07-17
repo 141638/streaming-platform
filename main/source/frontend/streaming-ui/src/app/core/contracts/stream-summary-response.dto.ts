@@ -7,6 +7,7 @@ export interface StreamSummaryResponseDto {
   readonly tags: readonly string[];
   readonly thumbnailUrl: string | null;
   readonly views: number;
+  readonly viewerCount: number | null;
   readonly createdAt: string;
   readonly scheduledAt: string | null;
   readonly broadcasterUsername: string | null;

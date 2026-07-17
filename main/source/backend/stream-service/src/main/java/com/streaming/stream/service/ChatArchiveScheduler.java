@@ -66,7 +66,8 @@ public class ChatArchiveScheduler {
                                             entity.getId());
                                     return outboxWriter.write(StreamEvent.chatArchiveTriggered(
                                             entity.getId(),
-                                            entity.getBroadcasterSubject()));
+                                            entity.getBroadcasterSubject(),
+                                            entity.getBroadcasterUsername()));
                                 }
                                 return reactor.core.publisher.Mono.empty();
                             });

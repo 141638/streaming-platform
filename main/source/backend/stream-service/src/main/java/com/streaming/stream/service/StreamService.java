@@ -159,8 +159,10 @@ public class StreamService {
                 }))
                 .flatMap(saved -> {
                     StreamEvent event = request.scheduledAt() != null
-                            ? StreamEvent.scheduled(saved.getId(), sub)
-                            : StreamEvent.created(saved.getId(), sub);
+                            ? StreamEvent.scheduled(saved.getId(), sub,
+                                    saved.getBroadcasterUsername())
+                            : StreamEvent.created(saved.getId(), sub,
+                                    saved.getBroadcasterUsername());
                     return outboxWriter.write(event)
                             .doOnSuccess(oe -> log.info(
                                     "Stream created: id={} status={} subject={}",
@@ -246,8 +248,8 @@ public class StreamService {
                     OffsetDateTime startedAt = row.get("started_at", OffsetDateTime.class);
 
                     var summary = new StreamSummaryResponse(id, title, statusWire, cat,
-                            catId, tags, thumbnailUrl, views, createdAt,
-                            scheduledAt, broadcasterUsername);
+                            catId, tags, thumbnailUrl, views, null,
+                            createdAt, scheduledAt, broadcasterUsername);
                     return new LiveStreamRow(summary,
                             startedAt != null ? startedAt.toString() : null);
                 })
@@ -265,7 +267,10 @@ public class StreamService {
                             ? rows.get(rows.size() - 1).cursorValue()
                             : null;
                     return LiveStreamPageResponse.of(items, nextCursor, hasMore);
-                });
+                })
+                .flatMap(page -> enrichWithViewerCounts(page.streams())
+                        .map(enriched -> LiveStreamPageResponse.of(
+                                enriched, page.nextCursor(), page.hasMore())));
     }
 
     /**
@@ -545,6 +550,7 @@ public class StreamService {
     public Mono<StreamResponse> endStream(UUID id, Jwt jwt) {
         return lifecycleTransition(id, jwt, StreamSessionEntity::end,
                 entity -> StreamEvent.ended(entity.getId(), entity.getBroadcasterSubject(),
+                        entity.getBroadcasterUsername(),
                         Boolean.TRUE.equals(entity.getAutoArchiveChat()),
                         entity.getChatArchiveDelayMinutes() != null
                                 ? entity.getChatArchiveDelayMinutes() : 0),
@@ -554,7 +560,8 @@ public class StreamService {
     /** Transition a stream to CANCELLED. Only allowed from DRAFT or SCHEDULED. */
     public Mono<StreamResponse> cancelStream(UUID id, Jwt jwt) {
         return lifecycleTransition(id, jwt, StreamSessionEntity::cancel,
-                entity -> StreamEvent.cancelled(entity.getId(), entity.getBroadcasterSubject()),
+                entity -> StreamEvent.cancelled(entity.getId(), entity.getBroadcasterSubject(),
+                        entity.getBroadcasterUsername()),
                 "cancelled");
     }
 
@@ -574,7 +581,8 @@ public class StreamService {
                 })
                 .flatMap(saved ->
                         outboxWriter.write(StreamEvent.cancelled(saved.getId(),
-                                saved.getBroadcasterSubject()))
+                                saved.getBroadcasterSubject(),
+                                saved.getBroadcasterUsername()))
                                 .doOnSuccess(oe -> log.info(
                                         "Stream cancelled via delete: id={}",
                                         saved.getId()))
@@ -728,7 +736,8 @@ public class StreamService {
                                                                 outboxWriter.write(
                                                                         StreamEvent.started(
                                                                                 saved.getId(),
-                                                                                saved.getBroadcasterSubject()))
+                                                                                saved.getBroadcasterSubject(),
+                                                                                saved.getBroadcasterUsername()))
                                                                         .doOnSuccess(oe -> {
                                                                             log.info(
                                                                                     "Stream started via webhook: id={} thumbnailUrl={}",
@@ -781,6 +790,7 @@ public class StreamService {
                                     outboxWriter.write(
                                             StreamEvent.ended(saved.getId(),
                                                     saved.getBroadcasterSubject(),
+                                                    saved.getBroadcasterUsername(),
                                                     autoArchive, delay))
                                             .doOnSuccess(oe -> {
                                                 log.info(
@@ -915,8 +925,8 @@ public class StreamService {
                 String broadcasterUsername = row.get("broadcaster_username", String.class);
 
                 return new StreamSummaryResponse(id, title, statusWire, category,
-                        categoryId, tags, thumbnailUrl, views, createdAt,
-                        scheduledAt, broadcasterUsername);
+                        categoryId, tags, thumbnailUrl, views, null,
+                        createdAt, scheduledAt, broadcasterUsername);
             };
 
     /**
@@ -1022,6 +1032,59 @@ public class StreamService {
         var options = org.springframework.data.redis.core.ScanOptions
                 .scanOptions().match(pattern).build();
         return redisTemplate.scan(options).count();
+    }
+
+    /**
+     * Batch-fetches viewer counts from Redis and returns a new list with
+     * viewerCount set on each LIVE summary. Non-LIVE summaries pass through
+     * unchanged.
+     *
+     * <p>A single Redis SCAN is performed across all presence keys; results
+     * are grouped by stream ID and applied to matching summaries.
+     */
+    private Mono<List<StreamSummaryResponse>> enrichWithViewerCounts(
+            List<StreamSummaryResponse> items) {
+        if (items == null || items.isEmpty()) {
+            return Mono.just(List.of());
+        }
+
+        // Pre-allocate counters for LIVE streams only
+        java.util.Map<UUID, java.util.concurrent.atomic.AtomicLong> counters =
+                new java.util.concurrent.ConcurrentHashMap<>();
+        for (StreamSummaryResponse item : items) {
+            if ("LIVE".equals(item.status())) {
+                counters.put(item.id(), new java.util.concurrent.atomic.AtomicLong(0));
+            }
+        }
+
+        if (counters.isEmpty()) {
+            return Mono.just(items);
+        }
+
+        var options = org.springframework.data.redis.core.ScanOptions
+                .scanOptions().match(PRESENCE_KEY_PREFIX + "*").count(1000).build();
+
+        return redisTemplate.scan(options)
+                .doOnNext(key -> {
+                    UUID streamId = ViewerCountPushService.extractStreamId(key);
+                    if (streamId != null) {
+                        java.util.concurrent.atomic.AtomicLong counter =
+                                counters.get(streamId);
+                        if (counter != null) {
+                            counter.incrementAndGet();
+                        }
+                    }
+                })
+                .then()
+                .thenReturn(items.stream()
+                        .map(item -> {
+                            java.util.concurrent.atomic.AtomicLong counter =
+                                    counters.get(item.id());
+                            return counter != null
+                                    ? item.withViewerCount(counter.get())
+                                    : item;
+                        })
+                        .toList());
     }
 
     // ── Watch history ──────────────────────────────────────────────────────

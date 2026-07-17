@@ -78,4 +78,19 @@ public class NotificationController {
         return notificationService.markAsRead(id, recipientSubject)
                 .map(NotificationResponse::from);
     }
+
+    /**
+     * Mark all unread notifications as read for the authenticated user.
+     *
+     * <p>Uses a bulk UPDATE under the hood — O(1) query regardless of how
+     * many unread notifications the user has. Returns the remaining unread
+     * count (always 0 after a successful call).
+     */
+    @PostMapping("/notifications/read-all")
+    public Mono<UnreadCountResponse> markAllAsRead(
+            @AuthenticationPrincipal Jwt jwt) {
+        String recipientSubject = jwt.getSubject();
+        return notificationService.markAllAsRead(recipientSubject)
+                .then(Mono.just(UnreadCountResponse.of(0L)));
+    }
 }

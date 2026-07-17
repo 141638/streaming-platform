@@ -98,6 +98,29 @@ public class NotificationService {
         };
     }
 
+    /**
+     * Create a follower notification for fan-out. Called when a followed
+     * broadcaster starts a stream.
+     *
+     * @param event             the stream event carrying broadcaster info
+     * @param followerSubject   the subscriber who follows the broadcaster
+     * @return a persisted-and-delivered notification
+     */
+    public Mono<Notification> createForFollower(StreamEvent event, String followerSubject) {
+        String username = event.broadcasterUsername() != null
+                ? event.broadcasterUsername()
+                : "A streamer you follow";
+        Notification n = Notification.create(
+                followerSubject,
+                NotificationCategory.STREAM_LIVE,
+                "stream.started",
+                username + " is now live",
+                "Stream started broadcasting.",
+                "{\"streamId\":\"" + event.streamId() + "\"}",
+                OffsetDateTime.now(ZoneOffset.UTC));
+        return Mono.just(n);
+    }
+
     // ── Read ────────────────────────────────────────────────────────────
 
     /**
@@ -164,6 +187,23 @@ public class NotificationService {
                             .doOnSuccess(saved -> log.debug(
                                     "Notification marked as read: id={} recipient={}",
                                     saved.getId(), saved.getRecipientSubject()));
+                });
+    }
+
+    /**
+     * Mark all of a user's unread notifications as read in a single bulk
+     * UPDATE. More efficient than fetching and saving each row individually.
+     *
+     * @param recipientSubject the JWT {@code sub} of the calling user
+     * @return the number of notifications that were marked as read (0 if none)
+     */
+    public Mono<Long> markAllAsRead(String recipientSubject) {
+        return notificationRepository.markAllAsReadByRecipientSubject(recipientSubject)
+                .doOnSuccess(count -> {
+                    if (count > 0) {
+                        log.debug("Marked {} notifications as read: recipient={}",
+                                count, recipientSubject);
+                    }
                 });
     }
 

@@ -3,6 +3,7 @@ package com.streaming.notification.infrastructure.persistence;
 import com.streaming.notification.domain.Notification;
 import java.time.OffsetDateTime;
 import java.util.UUID;
+import org.springframework.data.r2dbc.repository.Modifying;
 import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.repository.reactive.ReactiveCrudRepository;
 import reactor.core.publisher.Flux;
@@ -40,4 +41,14 @@ public interface ReactiveNotificationRepository extends ReactiveCrudRepository<N
      * belongs to the calling user.
      */
     Mono<Notification> findByIdAndRecipientSubject(UUID id, String recipientSubject);
+
+    /**
+     * Mark all unread notifications as read for a recipient.
+     * Uses a bulk UPDATE to avoid fetching every row individually.
+     *
+     * @return the number of rows that were updated (0 if none were unread)
+     */
+    @Modifying
+    @Query("UPDATE notification SET is_read = true WHERE recipient_subject = :recipientSubject AND is_read = false")
+    Mono<Long> markAllAsReadByRecipientSubject(String recipientSubject);
 }

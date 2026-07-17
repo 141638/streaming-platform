@@ -2,7 +2,9 @@ package com.streaming.notification.messaging;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.streaming.common.messaging.StreamEvent;
+import com.streaming.notification.application.NotificationDispatcher;
 import com.streaming.notification.application.NotificationService;
+import com.streaming.notification.application.SubscriptionService;
 import java.io.IOException;
 import java.time.Duration;
 import org.slf4j.Logger;
@@ -32,22 +34,30 @@ public class StreamControlListener {
 
     private static final Logger log = LoggerFactory.getLogger(StreamControlListener.class);
 
-    private static final String DEDUP_PREFIX = "dedup:stream-event:";
     private static final Duration DEDUP_TTL = Duration.ofHours(24);
 
     private final ObjectMapper objectMapper;
     private final ReactiveRedisTemplate<String, String> redisTemplate;
     private final NotificationService notificationService;
+    private final SubscriptionService subscriptionService;
+    private final NotificationDispatcher dispatcher;
 
     @Value("${STREAM_CONTROL_TOPIC:stream.control}")
     private String topic;
 
+    @Value("${spring.kafka.consumer.group-id}")
+    private String consumerGroupId;
+
     public StreamControlListener(ObjectMapper objectMapper,
                                  ReactiveRedisTemplate<String, String> redisTemplate,
-                                 NotificationService notificationService) {
+                                 NotificationService notificationService,
+                                 SubscriptionService subscriptionService,
+                                 NotificationDispatcher dispatcher) {
         this.objectMapper = objectMapper;
         this.redisTemplate = redisTemplate;
         this.notificationService = notificationService;
+        this.subscriptionService = subscriptionService;
+        this.dispatcher = dispatcher;
     }
 
     @KafkaListener(
@@ -64,7 +74,7 @@ public class StreamControlListener {
             return;
         }
 
-        String dedupKey = DEDUP_PREFIX + event.eventId();
+        String dedupKey = "dedup:" + topic + ":" + consumerGroupId + ":" + event.eventId();
         redisTemplate.opsForValue()
                 .setIfAbsent(dedupKey, "1", DEDUP_TTL)
                 .flatMap(acquired -> {
@@ -108,13 +118,39 @@ public class StreamControlListener {
     // ── Event handlers ─────────────────────────────────────────────────
 
     /**
-     * STREAM_STARTED → persist a STREAM_LIVE notification for the broadcaster.
-     * In the future, this will also fan out to followers via subscription lookup.
+     * STREAM_STARTED → broadcast self-notification + fan out to followers.
+     *
+     * <p>Fan-out is inline for MVP (per ADR-0002 §4). When subscriber counts
+     * warrant it, this switches to outbox-driven {@code FanOutJob}.
      */
     private Mono<Void> onStreamStarted(StreamEvent event) {
-        log.info("STREAM_STARTED: streamId={} broadcaster={}",
-                event.streamId(), event.broadcasterSubject());
-        return notificationService.createFromStreamEvent(event);
+        log.info("STREAM_STARTED: streamId={} broadcaster={} username={}",
+                event.streamId(), event.broadcasterSubject(),
+                event.broadcasterUsername());
+
+        // 1. Broadcaster self-notification
+        Mono<Void> broadcasterNotification = notificationService
+                .createFromStreamEvent(event);
+
+        // 2. Fan-out to followers — query active subscribers, create
+        //    follower notifications, dispatch via deliverToMany
+        Mono<Void> fanOut = subscriptionService
+                .getSubscribers("CHANNEL", event.broadcasterSubject())
+                .flatMap(sub -> notificationService.createForFollower(
+                        event, sub.getSubscriberSubject()))
+                .collectList()
+                .flatMap(notifications -> {
+                    if (notifications.isEmpty()) {
+                        log.debug("No followers to notify: broadcaster={}",
+                                event.broadcasterSubject());
+                        return Mono.empty();
+                    }
+                    log.info("Fan-out to {} followers: broadcaster={}",
+                            notifications.size(), event.broadcasterSubject());
+                    return dispatcher.deliverToMany(notifications, 8);
+                });
+
+        return broadcasterNotification.then(fanOut);
     }
 
     /**

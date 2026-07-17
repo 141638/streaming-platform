@@ -1,7 +1,7 @@
 # ADR-0003: Cross-Service Event Dedup Key Scoping
 
 **Date**: 2026-07-16
-**Status**: proposed
+**Status**: accepted
 **Deciders**: streaming-platform team
 
 ## Context

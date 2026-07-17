@@ -1,8 +1,8 @@
 # Implementation Plan
 
 **Last updated:** 2026-07-17 (Option A blueprint: viewer presence + fan-out + dedup + heartbeat harvest)
-**Current phase:** 5 — Notifications (foundation ✅, SSE ✅, subscription+dispatcher+outbox ✅, frontend follow+bell+settings ✅) + 6 — Production Hardening (outbox ✅) + 4 — Viewer Experience (browse/watch/HLS ✅; presence in progress; heartbeat harvest planned)
-**Active blueprint:** [Option A](plans/option-a-viewer-presence-fanout-blueprint.md) — viewer count display (A1), follower fan-out (A2), dedup key scoping (A3), heartbeat harvest service (A4)
+**Current phase:** 5 — Notifications (foundation ✅, SSE ✅, subscription+dispatcher+outbox ✅, frontend follow+bell+settings ✅, mark-all-as-read ✅) + 6 — Production Hardening (outbox ✅) + 4 — Viewer Experience (browse/watch/HLS ✅; presence ✅ — Option A implemented, pending commit)
+**Active blueprint:** [Option A](plans/option-a-viewer-presence-fanout-blueprint.md) — ✅ implemented (A1 viewer count display, A2 follower fan-out, A3 dedup key scoping, A4 heartbeat harvest service)
 
 ## End Goal
 
@@ -1010,14 +1010,14 @@ ADR-0003 §Deferred).
 - [x] 4.1 — Browse/discovery page (cursor pagination, category filter, `e9ded9d`)
 - [x] 4.2 — Stream viewing page (HLS player via hls.js + embedded chat panel, `5f7c1b3`, `734f466`)
 - [x] 4.3 — Playback URL generation (HLS `.m3u8` URL in `PublishKeyResponse`, wired in watch page)
-- [ ] 4.4 — Viewer presence (REST heartbeat + viewer count endpoints ✅; SSE push + frontend display + session card counts — see [Option A blueprint](plans/option-a-viewer-presence-fanout-blueprint.md) A1)
-- [ ] 4.4b — Heartbeat harvest service (time-series viewer analytics, minute-bucket aggregation — see [ADR-0010](adr/stream/0010-viewer-heartbeat-analytics-pipeline.md) and [Option A blueprint](plans/option-a-viewer-presence-fanout-blueprint.md) A4)
+- [x] 4.4 — Viewer presence (REST heartbeat + viewer count endpoints ✅; SSE push + frontend display + session card counts ✅ — see [Option A blueprint](plans/option-a-viewer-presence-fanout-blueprint.md) A1; implemented 2026-07-17, pending commit)
+- [x] 4.4b — Heartbeat harvest service (time-series viewer analytics, minute-bucket aggregation ✅ — see [ADR-0010](adr/stream/0010-viewer-heartbeat-analytics-pipeline.md) and [Option A blueprint](plans/option-a-viewer-presence-fanout-blueprint.md) A4; implemented 2026-07-17, pending commit)
 
 ---
 
 ## Phase 5 — Notifications ○
 
-**Status:** In Progress — notification-service foundation complete: domain entity, persistence, REST API (cursor-paginated bell list, unread count, mark-as-read), SSE delivery (`SseConnectionRegistry`, 30s heartbeat, gateway timeout exclusion), Kafka consumer with Redis SETNX dedup + DLQ (3-retry backoff), subscription model (follow/unfollow with DB-constraint idempotency, polymorphic targets), delivery preferences (per-channel toggles), `NotificationDispatcher` facade (persist → SSE → outbox), outbox + email skeleton (mirrors stream-service `FOR UPDATE SKIP LOCKED`). Frontend complete: toast/bell prebuild (5.0), follow button on channel page, bell dropdown with history, notification settings page (5.4). Deferred: follower fan-out wiring, email template rendering, subscribe (paid membership) button.
+**Status:** In Progress — notification-service foundation complete: domain entity, persistence, REST API (cursor-paginated bell list, unread count, mark-as-read, mark-all-as-read), SSE delivery (`SseConnectionRegistry`, 30s heartbeat, gateway timeout exclusion), Kafka consumer with Redis SETNX dedup + DLQ (3-retry backoff), subscription model (follow/unfollow with DB-constraint idempotency, polymorphic targets), delivery preferences (per-channel toggles), `NotificationDispatcher` facade (persist → SSE → outbox), outbox + email skeleton (mirrors stream-service `FOR UPDATE SKIP LOCKED`). Frontend complete: toast/bell prebuild (5.0), follow button on channel page, bell dropdown with history (with mark-all-as-read), notification settings page (5.4). Deferred: email template rendering, subscribe (paid membership) button. **Follower fan-out ✅** — `StreamControlListener.onStreamStarted()` wired with `getSubscribers()` → `createForFollower()` → `deliverToMany()` (inline for MVP). **Dedup key scoping ✅** — `dedup:{topic}:{consumerGroupId}:{eventId}` per ADR common/0003.
 
 **Goal:** Users get notified about followed streamers going live, chat mentions, moderation actions, etc. The notification service is the platform's general notification hub — moderation push is its first client, not its only shape.
 
@@ -1030,7 +1030,7 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 | [0000](adr/notification/0000-architecture-foundation.md) | Layered reactive (`api/` → `application/` → `domain/` → `infrastructure/`) matching stream/chat conventions. Two inbound channels (Kafka consumers per topic), two outbound channels (REST + SSE). General hub pattern — moderation is first client, not only shape. |
 | [0001](adr/notification/0001-subscription-model-and-notification-boundary.md) | **Accepted.** Table split: `notification_preference` (delivery) + `subscription` (polymorphic follow targets). Notification projection boundary — service stores "who wants notifications about X," not Follow vs Subscribe tiers. Implemented 2026-07-16. |
 | [0002](adr/notification/0002-notification-delivery-architecture.md) | **Accepted.** Concrete `NotificationDispatcher` facade (persist → SSE → outbox). Outbox-driven email + fan-out (designed now, inline for MVP). DB constraint for subscription idempotency. Implemented 2026-07-16. |
-| [common/0003](adr/common/0003-cross-service-event-dedup-key-scoping.md) | **Proposed.** Cross-service event dedup key scoping — `dedup:{topic}:{consumerGroupId}:{eventId}`. Current notification-service `StreamControlListener` uses unscoped key (safe today, refactoring tracked). |
+| [common/0003](adr/common/0003-cross-service-event-dedup-key-scoping.md) | **Accepted.** Cross-service event dedup key scoping — `dedup:{topic}:{consumerGroupId}:{eventId}`. Implemented 2026-07-17, pending commit. |
 
 ### Work Items
 
@@ -1053,10 +1053,11 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 - [x] 5.1b — Subscription + preference CRUD + dispatcher + outbox + email adapter (implemented 2026-07-16; see [ADR-0001](adr/notification/0001-subscription-model-and-notification-boundary.md), [ADR-0002](adr/notification/0002-notification-delivery-architecture.md), [blueprint](plans/notification-5.1b-subscription-dispatcher-blueprint.md), [implementation retro](plans/notification-5.1b-implementation-retrospective.md))
 - [x] 5.2a — StreamControlListener → NotificationService wiring (2026-07-15)
 - [x] 5.2b — SSE delivery (2026-07-15): `SseConnectionRegistry` + SSE controller + gateway timeout + frontend wiring
-- [ ] 5.2b — Dedup key scoping refactor — change unscoped `dedup:stream-event:{eventId}` to scoped `dedup:{topic}:{consumerGroupId}:{eventId}` per [ADR common/0003](adr/common/0003-cross-service-event-dedup-key-scoping.md). See [Option A blueprint](plans/option-a-viewer-presence-fanout-blueprint.md) A3.
-- [ ] 5.2b — Follower fan-out (subscription lookup on STREAM_STARTED → notify all followers). Architecture designed in ADR-0002 §4; inline for MVP, outbox-driven at scale. See [Option A blueprint](plans/option-a-viewer-presence-fanout-blueprint.md) A2.
+- [x] 5.2b — Dedup key scoping refactor — changed unscoped `dedup:stream-event:{eventId}` to scoped `dedup:{topic}:{consumerGroupId}:{eventId}` per [ADR common/0003](adr/common/0003-cross-service-event-dedup-key-scoping.md). Implemented 2026-07-17, pending commit.
+- [x] 5.2b — Follower fan-out (subscription lookup on STREAM_STARTED → notify all followers). Architecture designed in ADR-0002 §4; inline for MVP, outbox-driven at scale. Implemented 2026-07-17, pending commit.
 - [x] 5.3 — Email adapter skeleton (merged into 5.1b — outbox-driven email via Spring Mail, `EmailAdapter` skeleton, actual SMTP dispatch deferred to Phase 5.3 proper)
 - [x] 5.4 — Frontend notification settings + follow button + bell dropdown (implemented 2026-07-16; see [blueprint](plans/notification-5.4-frontend-subscription-ui-blueprint.md), [retrospective](plans/notification-5.4-frontend-implementation-retrospective.md))
+- [x] 5.4b — mark-all-as-read button (backend: `POST /v1/notifications/mark-all-read` bulk endpoint `d96bed3`; frontend: button in dropdown `a8b708d`)
 
 ---
 
@@ -1286,4 +1287,5 @@ Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`
 - [AUTH-INTERCEPTOR-PATTERN.md](AUTH-INTERCEPTOR-PATTERN.md) — Frontend 401 handling
 - [IDEMPOTENCY-PATTERN.md](IDEMPOTENCY-PATTERN.md) — Idempotency key design
 - [INSIGHT-SERVICE-SKETCH.md](INSIGHT-SERVICE-SKETCH.md) — Phase 7 AI/LLM layer design sketch (deferred)
+- [PRIMENG-MENU-STABLE-REFERENCE.md](PRIMENG-MENU-STABLE-REFERENCE.md) — PrimeNG menu stable array reference pattern
 - [docs/adr/insight/](adr/insight/) — AI/LLM layer ADRs (all Proposed)

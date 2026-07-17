@@ -1,7 +1,7 @@
 # ADR-0010: Viewer Heartbeat Analytics Pipeline
 
 **Date**: 2026-07-17
-**Status**: proposed
+**Status**: accepted
 **Deciders**: hieuht, Claude
 **Domain**: Stream Service / Insight Service
 

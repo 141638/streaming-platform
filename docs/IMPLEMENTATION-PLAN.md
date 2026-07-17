@@ -1,8 +1,8 @@
 # Implementation Plan
 
-**Last updated:** 2026-07-16 (notification 5.4 frontend subscription UI)
-**Current phase:** 5 — Notifications (foundation ✅, SSE ✅, subscription+dispatcher+outbox ✅, frontend follow+bell+settings ✅) + 6 — Production Hardening (outbox ✅) + 4 — Viewer Experience (browse/watch/HLS ✅; presence deferred) + 2 — Stream Lifecycle (2.9 thumbnails ✅)
-**Active blueprint:** Phase 5 — notification 5.4 implemented (uncommitted); 5.2b fan-out + 5.3 email deferred
+**Last updated:** 2026-07-17 (Option A blueprint: viewer presence + fan-out + dedup + heartbeat harvest)
+**Current phase:** 5 — Notifications (foundation ✅, SSE ✅, subscription+dispatcher+outbox ✅, frontend follow+bell+settings ✅) + 6 — Production Hardening (outbox ✅) + 4 — Viewer Experience (browse/watch/HLS ✅; presence in progress; heartbeat harvest planned)
+**Active blueprint:** [Option A](plans/option-a-viewer-presence-fanout-blueprint.md) — viewer count display (A1), follower fan-out (A2), dedup key scoping (A3), heartbeat harvest service (A4)
 
 ## End Goal
 
@@ -1010,7 +1010,8 @@ ADR-0003 §Deferred).
 - [x] 4.1 — Browse/discovery page (cursor pagination, category filter, `e9ded9d`)
 - [x] 4.2 — Stream viewing page (HLS player via hls.js + embedded chat panel, `5f7c1b3`, `734f466`)
 - [x] 4.3 — Playback URL generation (HLS `.m3u8` URL in `PublishKeyResponse`, wired in watch page)
-- [ ] 4.4 — Viewer presence (Redis `SETEX` heartbeat + viewer count in UI)
+- [ ] 4.4 — Viewer presence (REST heartbeat + viewer count endpoints ✅; SSE push + frontend display + session card counts — see [Option A blueprint](plans/option-a-viewer-presence-fanout-blueprint.md) A1)
+- [ ] 4.4b — Heartbeat harvest service (time-series viewer analytics, minute-bucket aggregation — see [ADR-0010](adr/stream/0010-viewer-heartbeat-analytics-pipeline.md) and [Option A blueprint](plans/option-a-viewer-presence-fanout-blueprint.md) A4)
 
 ---
 
@@ -1052,10 +1053,10 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 - [x] 5.1b — Subscription + preference CRUD + dispatcher + outbox + email adapter (implemented 2026-07-16; see [ADR-0001](adr/notification/0001-subscription-model-and-notification-boundary.md), [ADR-0002](adr/notification/0002-notification-delivery-architecture.md), [blueprint](plans/notification-5.1b-subscription-dispatcher-blueprint.md), [implementation retro](plans/notification-5.1b-implementation-retrospective.md))
 - [x] 5.2a — StreamControlListener → NotificationService wiring (2026-07-15)
 - [x] 5.2b — SSE delivery (2026-07-15): `SseConnectionRegistry` + SSE controller + gateway timeout + frontend wiring
-- [ ] 5.2b — Dedup key scoping refactor — change `StreamControlListener` dedup key from unscoped `dedup:stream-event:{eventId}` to scoped `dedup:stream.control:{consumerGroupId}:{eventId}` per [ADR common/0003](adr/common/0003-cross-service-event-dedup-key-scoping.md). Safe today (only one service dedups), required before any other service adds Redis SETNX for `stream.control`.
-- [ ] 5.2b — Follower fan-out (designed in ADR-0002 §4; inline for MVP, outbox-driven at scale; deferred past 5.1b)
+- [ ] 5.2b — Dedup key scoping refactor — change unscoped `dedup:stream-event:{eventId}` to scoped `dedup:{topic}:{consumerGroupId}:{eventId}` per [ADR common/0003](adr/common/0003-cross-service-event-dedup-key-scoping.md). See [Option A blueprint](plans/option-a-viewer-presence-fanout-blueprint.md) A3.
+- [ ] 5.2b — Follower fan-out (subscription lookup on STREAM_STARTED → notify all followers). Architecture designed in ADR-0002 §4; inline for MVP, outbox-driven at scale. See [Option A blueprint](plans/option-a-viewer-presence-fanout-blueprint.md) A2.
 - [x] 5.3 — Email adapter skeleton (merged into 5.1b — outbox-driven email via Spring Mail, `EmailAdapter` skeleton, actual SMTP dispatch deferred to Phase 5.3 proper)
-- [x] 5.4 — Frontend notification settings + follow button + bell dropdown (implemented 2026-07-16, uncommitted; see [blueprint](plans/notification-5.4-frontend-subscription-ui-blueprint.md), [retrospective](plans/notification-5.4-frontend-implementation-retrospective.md))
+- [x] 5.4 — Frontend notification settings + follow button + bell dropdown (implemented 2026-07-16; see [blueprint](plans/notification-5.4-frontend-subscription-ui-blueprint.md), [retrospective](plans/notification-5.4-frontend-implementation-retrospective.md))
 
 ---
 

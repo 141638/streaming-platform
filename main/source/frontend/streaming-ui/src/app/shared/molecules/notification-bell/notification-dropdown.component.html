@@ -2,15 +2,27 @@
   <!-- Header with settings gear -->
   <div class="flex align-items-center justify-content-between px-3 py-2">
     <span class="font-semibold">Notifications</span>
-    <button
-      pButton
-      type="button"
-      icon="pi pi-cog"
-      class="p-button-rounded p-button-text p-button-sm"
-      [routerLink]="'/settings/notifications'"
-      (click)="navigateAway.emit()"
-      aria-label="Notification settings"
-    ></button>
+    <div class="flex align-items-center gap-1">
+      <button
+        pButton
+        type="button"
+        [icon]="isMarkingAllRead() ? 'pi pi-spin pi-spinner' : 'pi pi-check-square'"
+        class="p-button-rounded p-button-text p-button-sm"
+        [disabled]="isMarkingAllRead()"
+        (click)="markAllAsRead()"
+        title="Mark all as read"
+        aria-label="Mark all notifications as read"
+      ></button>
+      <button
+        pButton
+        type="button"
+        icon="pi pi-cog"
+        class="p-button-rounded p-button-text p-button-sm"
+        [routerLink]="'/settings/notifications'"
+        (click)="navigateAway.emit()"
+        aria-label="Notification settings"
+      ></button>
+    </div>
   </div>
 
   <!-- Divider between header and content -->

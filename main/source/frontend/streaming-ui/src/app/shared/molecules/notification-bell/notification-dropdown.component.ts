@@ -68,6 +68,7 @@ export class NotificationDropdownComponent implements OnInit {
   protected readonly notifications = signal<NotificationDto[]>([]);
   protected readonly isLoading = signal(true);
   protected readonly isLoadingMore = signal(false);
+  protected readonly isMarkingAllRead = signal(false);
   protected readonly hasMore = signal(false);
   protected readonly error = signal(false);
 
@@ -141,6 +142,33 @@ export class NotificationDropdownComponent implements OnInit {
     if (route) {
       this.router.navigateByUrl(route);
     }
+  }
+
+  /**
+   * Mark every unread notification as read for the current user.
+   *
+   * <p>Uses a bulk API call instead of looping over individual
+   * {@link onCardClick} calls. On success, all locally held notifications
+   * are marked read and the bell badge is reset to zero.
+   */
+  public markAllAsRead(): void {
+    this.isMarkingAllRead.set(true);
+    this.notificationService.markAllAsRead().subscribe({
+      next: () => {
+        // Mark every locally held notification as read so the UI updates
+        // without needing a full re-fetch.
+        this.notifications.update((list) =>
+          list.map((n) => (n.read ? n : { ...n, read: true })),
+        );
+        this.notificationService.refreshUnreadCount().subscribe();
+        this.isMarkingAllRead.set(false);
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.isMarkingAllRead.set(false);
+        this.cdr.detectChanges();
+      },
+    });
   }
 
   // ── Private methods ──────────────────────────────────────────────────────

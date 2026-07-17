@@ -78,6 +78,14 @@ export class NotificationService {
     );
   }
 
+  /** Mark all unread notifications as read for the current user. */
+  public markAllAsRead(): Observable<UnreadCountResponseDto> {
+    return this.http.post<UnreadCountResponseDto>(
+      `${this.basePath}/notifications/read-all`,
+      null,
+    );
+  }
+
   // -- push routing --------------------------------------------------------
 
   /** Push a notification to the toast surface. Idempotent — safe for replay. */

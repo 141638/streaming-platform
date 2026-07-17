@@ -39,24 +39,42 @@ export class AppShellComponent {
     },
   ];
 
-  protected readonly userMenuItems: MenuItem[] = [
+  protected readonly userMenuItems: MenuItem[] = buildUserMenu(
+    inject(AuthService),
+    inject(Router),
+  );
+
+  public navigateHome(): void {
+    this.router.navigateByUrl('/browse');
+  }
+}
+
+/** Build the user menu once at construction time so PrimeNG gets a stable reference. */
+function buildUserMenu(auth: AuthService, router: Router): MenuItem[] {
+  const items: MenuItem[] = [
     {
       label: 'Channel',
       icon: 'pi pi-play',
       command: () => {
-        const u = this.authService.myUsername();
-        this.router.navigateByUrl(u ? `/@${u}/home` : '/dashboard/streams');
+        const u = auth.myUsername();
+        router.navigateByUrl(u ? `/@${u}/home` : '/dashboard/streams');
       },
     },
-    {
+  ];
+
+  if (auth.isStreamer()) {
+    items.push({
       label: 'Creator Dashboard',
       icon: 'pi pi-chart-bar',
-      command: () => this.router.navigateByUrl('/dashboard/streams'),
-    },
+      command: () => router.navigateByUrl('/dashboard/streams'),
+    });
+  }
+
+  items.push(
     {
       label: 'Watch History',
       icon: 'pi pi-history',
-      command: () => this.router.navigateByUrl('/history'),
+      command: () => router.navigateByUrl('/history'),
     },
     {
       label: 'Stream Summary',
@@ -67,7 +85,7 @@ export class AppShellComponent {
     {
       label: 'Subscriptions',
       icon: 'pi pi-star',
-      command: () => this.router.navigateByUrl('/settings/notifications'),
+      command: () => router.navigateByUrl('/settings/notifications'),
     },
     {
       label: 'Wallet',
@@ -94,11 +112,9 @@ export class AppShellComponent {
     {
       label: 'Logout',
       icon: 'pi pi-sign-out',
-      command: () => this.authService.logout(),
+      command: () => auth.logout(),
     },
-  ];
+  );
 
-  public navigateHome(): void {
-    this.router.navigateByUrl('/browse');
-  }
+  return items;
 }

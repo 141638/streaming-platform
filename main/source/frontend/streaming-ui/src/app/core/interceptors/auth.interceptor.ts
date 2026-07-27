@@ -37,7 +37,12 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
           if (SAFE_METHODS.has(req.method)) {
             return next(cloneWithAuth(req, authService.accessToken()));
           }
-          // POST/PUT/PATCH/DELETE — token refreshed but caller must retry
+          // Unsafe method with idempotency key — safe to retry because
+          // the gateway will return the cached response on duplicates.
+          if (req.headers.has('Idempotency-Key')) {
+            return next(cloneWithAuth(req, authService.accessToken()));
+          }
+          // Unsafe method without idempotency key — caller must retry
           return throwError(() => error);
         }),
         catchError((err: unknown) => {

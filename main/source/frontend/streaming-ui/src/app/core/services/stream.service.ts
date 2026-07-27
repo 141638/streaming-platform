@@ -14,6 +14,7 @@ import { LiveStreamPageResponseDto } from '../contracts/live-stream-page-respons
 import { StreamSummaryResponseDto } from '../contracts/stream-summary-response.dto';
 import { WatchHistoryEntryDto } from '../contracts/watch-history-entry.dto';
 import { WatchResponseDto } from '../contracts/watch-response.dto';
+import { IdempotencyService } from './idempotency.service';
 
 @Injectable({ providedIn: 'root' })
 export class StreamService {
@@ -76,8 +77,13 @@ export class StreamService {
 
   public create(
     request: CreateStreamRequestDto,
+    idempotencyKey?: string,
   ): Observable<StreamResponseDto> {
-    return this.http.post<StreamResponseDto>(`${this.base}/streams`, request);
+    return this.http.post<StreamResponseDto>(
+      `${this.base}/streams`,
+      request,
+      IdempotencyService.options(idempotencyKey),
+    );
   }
 
   public listMyStreams(): Observable<StreamSummaryResponseDto[]> {
@@ -92,24 +98,36 @@ export class StreamService {
 
   /** DRAFT → returns publish key for OBS. The actual LIVE transition
    *  happens via the SRS on_publish webhook. */
-  public startStream(id: string): Observable<PublishKeyResponseDto> {
+  public startStream(
+    id: string,
+    idempotencyKey?: string,
+  ): Observable<PublishKeyResponseDto> {
     return this.http.post<PublishKeyResponseDto>(
       `${this.base}/streams/${id}/start`,
       null,
+      IdempotencyService.options(idempotencyKey),
     );
   }
 
-  public endStream(id: string): Observable<StreamResponseDto> {
+  public endStream(
+    id: string,
+    idempotencyKey?: string,
+  ): Observable<StreamResponseDto> {
     return this.http.post<StreamResponseDto>(
       `${this.base}/streams/${id}/end`,
       null,
+      IdempotencyService.options(idempotencyKey),
     );
   }
 
-  public cancelStream(id: string): Observable<StreamResponseDto> {
+  public cancelStream(
+    id: string,
+    idempotencyKey?: string,
+  ): Observable<StreamResponseDto> {
     return this.http.post<StreamResponseDto>(
       `${this.base}/streams/${id}/cancel`,
       null,
+      IdempotencyService.options(idempotencyKey),
     );
   }
 
@@ -117,18 +135,24 @@ export class StreamService {
   public updateStream(
     id: string,
     updates: Partial<StreamResponseDto>,
+    idempotencyKey?: string,
   ): Observable<StreamResponseDto> {
     return this.http.patch<StreamResponseDto>(
       `${this.base}/streams/${id}`,
       updates,
+      IdempotencyService.options(idempotencyKey),
     );
   }
 
   /** SCHEDULED → DRAFT with a fresh publish key (see stream ADR-0001/0004). */
-  public goLive(id: string): Observable<PublishKeyResponseDto> {
+  public goLive(
+    id: string,
+    idempotencyKey?: string,
+  ): Observable<PublishKeyResponseDto> {
     return this.http.post<PublishKeyResponseDto>(
       `${this.base}/streams/${id}/go-live`,
       null,
+      IdempotencyService.options(idempotencyKey),
     );
   }
 
@@ -142,10 +166,14 @@ export class StreamService {
   }
 
   /** Issue or rotate the publish key; returns the raw token once. */
-  public issuePublishKey(id: string): Observable<PublishKeyResponseDto> {
+  public issuePublishKey(
+    id: string,
+    idempotencyKey?: string,
+  ): Observable<PublishKeyResponseDto> {
     return this.http.post<PublishKeyResponseDto>(
       `${this.base}/streams/${id}/publish-key`,
       null,
+      IdempotencyService.options(idempotencyKey),
     );
   }
 
@@ -185,11 +213,13 @@ export class StreamService {
     username: string,
     bio: string,
     socialLinks: readonly SocialLinkDto[] | null,
+    idempotencyKey?: string,
   ): Observable<void> {
-    return this.http.post<void>(`${this.base}/channels/${username}/profile`, {
-      bio,
-      socialLinks,
-    });
+    return this.http.post<void>(
+      `${this.base}/channels/${username}/profile`,
+      { bio, socialLinks },
+      IdempotencyService.options(idempotencyKey),
+    );
   }
 
   // ── Viewer presence ─────────────────────────────────────────────────────
@@ -232,10 +262,14 @@ export class StreamService {
   // ── Archive ──────────────────────────────────────────────────────────────
 
   /** Archive an ended stream. Owner-only. */
-  public archiveStream(id: string): Observable<StreamResponseDto> {
+  public archiveStream(
+    id: string,
+    idempotencyKey?: string,
+  ): Observable<StreamResponseDto> {
     return this.http.post<StreamResponseDto>(
       `${this.base}/streams/${id}/archive`,
       null,
+      IdempotencyService.options(idempotencyKey),
     );
   }
 

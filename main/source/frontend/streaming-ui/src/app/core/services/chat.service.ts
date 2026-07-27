@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 import { ChatMessageResponseDto } from '../contracts/chat-message-response.dto';
 import { RoomResponseDto } from '../contracts/room-response.dto';
 import { SendMessageRequestDto } from '../contracts/send-message-request.dto';
+import { IdempotencyService } from './idempotency.service';
 
 @Injectable({ providedIn: 'root' })
 export class ChatService {
@@ -17,11 +18,13 @@ export class ChatService {
   public sendMessage(
     roomKey: string,
     content: string,
+    idempotencyKey?: string,
   ): Observable<ChatMessageResponseDto> {
     const body: SendMessageRequestDto = { content };
     return this.http.post<ChatMessageResponseDto>(
       `${this.basePath}/${roomKey}/messages`,
       body,
+      IdempotencyService.options(idempotencyKey),
     );
   }
 

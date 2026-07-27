@@ -13,6 +13,7 @@ import {
   UnreadCountResponseDto,
 } from '../contracts/notification.dto';
 import { AuthService } from './auth.service';
+import { IdempotencyService } from './idempotency.service';
 import { ToastService } from './toast.service';
 import {
   EventSourceMessage,
@@ -71,18 +72,25 @@ export class NotificationService {
   }
 
   /** Mark a notification as read on the server. */
-  public markAsRead(id: string): Observable<NotificationResponseDto> {
+  public markAsRead(
+    id: string,
+    idempotencyKey?: string,
+  ): Observable<NotificationResponseDto> {
     return this.http.post<NotificationResponseDto>(
       `${this.basePath}/notifications/${encodeURIComponent(id)}/read`,
       null,
+      IdempotencyService.options(idempotencyKey),
     );
   }
 
   /** Mark all unread notifications as read for the current user. */
-  public markAllAsRead(): Observable<UnreadCountResponseDto> {
+  public markAllAsRead(
+    idempotencyKey?: string,
+  ): Observable<UnreadCountResponseDto> {
     return this.http.post<UnreadCountResponseDto>(
       `${this.basePath}/notifications/read-all`,
       null,
+      IdempotencyService.options(idempotencyKey),
     );
   }
 

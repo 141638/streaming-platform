@@ -10,6 +10,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { interval, Observable, tap } from 'rxjs';
 import { BanRequestDto } from '../contracts/ban-request.dto';
 import { BanResponseDto } from '../contracts/ban-response.dto';
+import { IdempotencyService } from './idempotency.service';
 
 /** Client-side expiry tick cadence (cosmetic — the server guard is authoritative). */
 const EXPIRY_TICK_MS = 30_000;
@@ -68,9 +69,14 @@ export class ChatModerationService {
   public ban(
     roomKey: string,
     request: BanRequestDto,
+    idempotencyKey?: string,
   ): Observable<BanResponseDto> {
     return this.http
-      .post<BanResponseDto>(`${this.basePath}/${roomKey}/bans`, request)
+      .post<BanResponseDto>(
+        `${this.basePath}/${roomKey}/bans`,
+        request,
+        IdempotencyService.options(idempotencyKey),
+      )
       .pipe(
         tap((created) =>
           this._bans.update((current) => [
@@ -93,11 +99,13 @@ export class ChatModerationService {
     roomKey: string,
     subject: string,
     durationSeconds: number | null,
+    idempotencyKey?: string,
   ): Observable<BanResponseDto> {
     return this.http
       .patch<BanResponseDto>(
         `${this.basePath}/${roomKey}/bans/${encodeURIComponent(subject)}`,
         { durationSeconds },
+        IdempotencyService.options(idempotencyKey),
       )
       .pipe(
         tap((updated) =>
@@ -115,7 +123,11 @@ export class ChatModerationService {
    * removal and the rollback re-insert operate on the current value (not a
    * whole-list snapshot), so a concurrent load/mutation is preserved.
    */
-  public unban(roomKey: string, subject: string): Observable<void> {
+  public unban(
+    roomKey: string,
+    subject: string,
+    idempotencyKey?: string,
+  ): Observable<void> {
     const removed = this._bans().filter((ban) => ban.bannedSubject === subject);
     this._bans.update((current) =>
       current.filter((ban) => ban.bannedSubject !== subject),
@@ -123,6 +135,7 @@ export class ChatModerationService {
     return this.http
       .delete<void>(
         `${this.basePath}/${roomKey}/bans/${encodeURIComponent(subject)}`,
+        IdempotencyService.options(idempotencyKey),
       )
       .pipe(
         tap({

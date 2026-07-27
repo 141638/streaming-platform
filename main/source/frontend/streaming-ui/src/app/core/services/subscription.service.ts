@@ -5,6 +5,7 @@ import { PreferenceRequestDto } from '../contracts/preference-request.dto';
 import { PreferenceResponseDto } from '../contracts/preference-response.dto';
 import { SubscriptionRequestDto } from '../contracts/subscription-request.dto';
 import { SubscriptionResponseDto } from '../contracts/subscription-response.dto';
+import { IdempotencyService } from './idempotency.service';
 
 /**
  * HTTP client for notification subscription and delivery-preference APIs.
@@ -22,18 +23,27 @@ export class SubscriptionService {
   // ── Subscriptions (follow / unfollow) ──────────────────────────────────
 
   /** Follow a target. Idempotent — returns existing subscription on 409. */
-  public follow(targetType: string, targetId: string): Observable<SubscriptionResponseDto> {
+  public follow(
+    targetType: string,
+    targetId: string,
+    idempotencyKey?: string,
+  ): Observable<SubscriptionResponseDto> {
     const body: SubscriptionRequestDto = { targetType, targetId };
     return this.http.put<SubscriptionResponseDto>(
       `${this.basePath}/subscriptions`,
       body,
+      IdempotencyService.options(idempotencyKey),
     );
   }
 
   /** Unfollow a target — soft delete. */
-  public unfollow(id: string): Observable<void> {
+  public unfollow(
+    id: string,
+    idempotencyKey?: string,
+  ): Observable<void> {
     return this.http.delete<void>(
       `${this.basePath}/subscriptions/${encodeURIComponent(id)}`,
+      IdempotencyService.options(idempotencyKey),
     );
   }
 
@@ -69,11 +79,13 @@ export class SubscriptionService {
   public upsertPreference(
     channel: string,
     topicGlob: string | null,
+    idempotencyKey?: string,
   ): Observable<PreferenceResponseDto> {
     const body: PreferenceRequestDto = { channel, topicGlob };
     return this.http.put<PreferenceResponseDto>(
       `${this.basePath}/preferences`,
       body,
+      IdempotencyService.options(idempotencyKey),
     );
   }
 
@@ -88,17 +100,23 @@ export class SubscriptionService {
   public updatePreference(
     id: string,
     body: { active?: boolean; topicGlob?: string | null },
+    idempotencyKey?: string,
   ): Observable<PreferenceResponseDto> {
     return this.http.patch<PreferenceResponseDto>(
       `${this.basePath}/preferences/${encodeURIComponent(id)}`,
       body,
+      IdempotencyService.options(idempotencyKey),
     );
   }
 
   /** Delete a preference — ownership-scoped. */
-  public deletePreference(id: string): Observable<void> {
+  public deletePreference(
+    id: string,
+    idempotencyKey?: string,
+  ): Observable<void> {
     return this.http.delete<void>(
       `${this.basePath}/preferences/${encodeURIComponent(id)}`,
+      IdempotencyService.options(idempotencyKey),
     );
   }
 }

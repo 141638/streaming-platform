@@ -99,15 +99,24 @@ The Redis Lua script translates these to:
 3. If revoked → `SMEMBERS rt_family:<familyId>` → `HSET each revoked=true` (replay defense)
 4. If valid → `HSET old revoked=true`, `HSET rt:<newHash> ...metadata...`, `EXPIRE rt:<newHash> <ttl>`, `SADD rt_family:<familyId> <newHash>`, `SREM rt_family:<familyId> <oldHash>`, `SADD rt_user:<userId> <newHash>`
 
-### Rate Limiting Design
+### Rate Limiting Design (Implemented: Sliding Window Log)
 
-Per-endpoint, per-identifier (user ID or IP), per time window:
+**Implemented approach (Phase 6.3, 2026-07-28): Sliding Window Log** — each client IP owns a Redis sorted set of epoch-millisecond request timestamps. An atomic Lua script prunes expired entries (`ZREMRANGEBYSCORE`), counts the remainder (`ZCARD`), rejects if at or above the limit, otherwise records the request (`ZADD` with a nonce-suffixed member for millisecond-level uniqueness). Single round-trip, exact to the boundary.
+
+```
+Key: rl:<ip> (Sorted Set)
+Lua: ZREMRANGEBYSCORE → ZCARD → if count ≥ limit: reject → else: ZADD(nowMs, nowMs:nonce) → EXPIRE
+Response: 429 + Retry-After + structured JSON body {"error":"...","error_code":"rate_limit_exceeded","message":"..."}
+Config: streaming.gateway.ratelimit.limit=200, .window-seconds=60 (env-var overridable)
+```
+
+**Simpler alternative (not yet implemented): Fixed-Window Counter** — per-endpoint, per-identifier, per window:
 ```
 rl:auth:login:<userId>  →  INCR → check ≤ 5  →  EXPIRE 60
 rl:api:global:<ip>      →  INCR → check ≤ 100 →  EXPIRE 1
 ```
 
-For sliding window counters (more accurate), use sorted sets or Redis Stack's `TS.CREATE`.
+The sliding-window-log approach was chosen for the gateway because it has no boundary blind spot (fixed-window allows 2× the limit across a window boundary). The fixed-window `INCR + EXPIRE` pattern remains a valid simplification for lower-throughput endpoints like login rate limiting (ADR auth/0003).
 
 ## References
 

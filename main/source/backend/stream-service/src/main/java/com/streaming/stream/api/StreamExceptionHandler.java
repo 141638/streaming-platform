@@ -1,5 +1,6 @@
 package com.streaming.stream.api;
 
+import com.streaming.stream.security.StreamAuthorization.StreamAccessDeniedException;
 import com.streaming.stream.service.StreamService.InvalidPublishTokenException;
 import com.streaming.stream.service.StreamService.NoPublishKeyException;
 import com.streaming.stream.service.StreamService.ProfileOwnershipException;
@@ -62,6 +63,13 @@ public class StreamExceptionHandler {
             ProfileOwnershipException ex) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(Map.of("code", "PROFILE_OWNERSHIP", "message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(StreamAccessDeniedException.class)
+    public ResponseEntity<Map<String, String>> handleAccessDenied(
+            StreamAccessDeniedException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(Map.of("code", "ACCESS_DENIED", "message", ex.getMessage()));
     }
 
     @ExceptionHandler(IllegalStateException.class)

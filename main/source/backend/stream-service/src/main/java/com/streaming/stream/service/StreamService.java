@@ -278,9 +278,16 @@ public class StreamService {
      * LIVE streams get a playUrl; non-LIVE streams get playUrl=null
      * so the UI can render an archive/ended state instead of a 409 error.
      */
-    public Mono<WatchResponse> getWatchData(UUID id) {
+    public Mono<WatchResponse> getWatchData(UUID id, Jwt jwt) {
         return repository.findById(id)
                 .switchIfEmpty(Mono.error(new StreamNotFoundException(id)))
+                .flatMap(entity -> authorization
+                        .requireAccess(jwt, new RequiredAuthority(
+                                AuthResourceDomain.STREAM, AuthResourceKind.SESSION,
+                                AuthAction.READ, entity.getBroadcasterSubject()))
+                        .onErrorMap(StreamAuthorization.StreamAccessDeniedException.class,
+                                e -> new StreamNotFoundException(id))
+                        .thenReturn(entity))
                 .map(entity -> {
                     boolean isLive = entity.getStatus() == StreamStatus.LIVE;
                     String playUrl = null;
@@ -763,8 +770,20 @@ public class StreamService {
                 .then();
     }
 
-    /** Handle an SRS {@code on_unpublish} webhook. Ends the stream if LIVE. */
-    public Mono<Void> handleUnpublish(String srsName) {
+    /**
+     * Handle an SRS {@code on_unpublish} webhook.
+     *
+     * <p>Validates the publish token (signature + srsName match, expiry skipped)
+     * before ending the stream. This prevents unauthorized third parties from
+     * forging unpublish events.
+     */
+    public Mono<Void> handleUnpublish(String srsName, String rawToken) {
+        return publishTokenService.validateForUnpublish(rawToken, srsName)
+                .then(doHandleUnpublish(srsName));
+    }
+
+    /** Inner unpublish logic after token validation. */
+    private Mono<Void> doHandleUnpublish(String srsName) {
         String hash = HashUtils.sha256Hex(srsName);
         return repository.findByStreamKeyHash(hash)
                 .switchIfEmpty(Mono.defer(() -> {
@@ -1014,6 +1033,9 @@ public class StreamService {
         return repository.findById(streamId)
                 .switchIfEmpty(Mono.error(new StreamNotFoundException(streamId)))
                 .flatMap(entity -> {
+                    if (entity.getStatus() != StreamStatus.LIVE) {
+                        return Mono.empty(); // only count heartbeats for LIVE streams
+                    }
                     if (viewerSubject.equals(entity.getBroadcasterSubject())) {
                         return Mono.empty(); // self-view excluded
                     }

@@ -128,6 +128,52 @@ public class PublishTokenService {
         });
     }
 
+    /**
+     * Validate a publish token for an unpublish event.
+     *
+     * <p>Unlike {@link #validateForPublish}, this variant skips expiry and
+     * stream-status checks entirely — the stream may already be ENDED by the
+     * time SRS delivers {@code on_unpublish}. Only JWT signature and
+     * {@code srsName} match are verified.
+     *
+     * @param token           raw JWT string from the RTMP {@code ?token=} param
+     * @param expectedSrsName the SRS stream name extracted from the RTMP path
+     * @return validated claims on success, error signal on failure
+     */
+    public Mono<PublishTokenClaims> validateForUnpublish(
+            String token, String expectedSrsName) {
+
+        return Mono.fromCallable(() -> {
+            SignedJWT jwt = SignedJWT.parse(token);
+
+            // 1. Verify signature
+            JWSVerifier verifier = new MACVerifier(signingKey());
+            if (!jwt.verify(verifier)) {
+                throw new InvalidPublishTokenException("Publish token signature invalid");
+            }
+
+            JWTClaimsSet claims = jwt.getJWTClaimsSet();
+
+            // 2. Verify srsName matches
+            String tokenSrsName = claims.getStringClaim("srsName");
+            if (tokenSrsName == null || !tokenSrsName.equals(expectedSrsName)) {
+                throw new InvalidPublishTokenException(
+                        "srsName mismatch: token=" + tokenSrsName + " expected=" + expectedSrsName);
+            }
+
+            // 3. Expiry is intentionally skipped — the stream may already
+            //    be ENDED when SRS delivers on_unpublish
+
+            String sub = claims.getSubject();
+            String streamIdStr = claims.getStringClaim("streamId");
+            UUID streamId = streamIdStr != null ? UUID.fromString(streamIdStr) : null;
+
+            return new PublishTokenClaims(sub, streamId, tokenSrsName,
+                    claims.getExpirationTime() != null
+                            ? claims.getExpirationTime().toInstant() : null);
+        });
+    }
+
     private byte[] signingKey() {
         return jwtProps.hmacSecret().getBytes(StandardCharsets.UTF_8);
     }

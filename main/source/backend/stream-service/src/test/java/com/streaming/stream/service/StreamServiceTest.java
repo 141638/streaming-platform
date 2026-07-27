@@ -736,17 +736,26 @@ class StreamServiceTest {
     class HandleUnpublish {
 
         private static final String SRS_NAME = "test-srs-name";
+        private static final String TOKEN = "eyJhbGciOiJIUzI1NiJ9.test-token";
+
+        private void stubValidateUnpublish() {
+            PublishTokenService.PublishTokenClaims claims =
+                    new PublishTokenService.PublishTokenClaims(OWNER_SUB, STREAM_ID, SRS_NAME, null);
+            when(publishTokenService.validateForUnpublish(TOKEN, SRS_NAME))
+                    .thenReturn(Mono.just(claims));
+        }
 
         @Test
         @DisplayName("LIVE → ENDED")
         void liveToEnded() {
+            stubValidateUnpublish();
             stubPublish();
             StreamSessionEntity e = entity(STREAM_ID, OWNER_SUB, StreamStatus.LIVE);
             e.setStreamKeyHash("hashed");
             when(repository.findByStreamKeyHash(any())).thenReturn(Mono.just(e));
             when(repository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
 
-            StepVerifier.create(service.handleUnpublish(SRS_NAME))
+            StepVerifier.create(service.handleUnpublish(SRS_NAME, TOKEN))
                     .verifyComplete();
 
             verify(outboxWriter).write(any());
@@ -755,11 +764,12 @@ class StreamServiceTest {
         @Test
         @DisplayName("non-LIVE is idempotent no-op")
         void nonLiveNoop() {
+            stubValidateUnpublish();
             StreamSessionEntity e = entity(STREAM_ID, OWNER_SUB, StreamStatus.ENDED);
             e.setStreamKeyHash("hashed");
             when(repository.findByStreamKeyHash(any())).thenReturn(Mono.just(e));
 
-            StepVerifier.create(service.handleUnpublish(SRS_NAME))
+            StepVerifier.create(service.handleUnpublish(SRS_NAME, TOKEN))
                     .verifyComplete();
 
             verify(repository, never()).save(any());
@@ -769,9 +779,10 @@ class StreamServiceTest {
         @Test
         @DisplayName("unknown srsName is swallowed (idempotent)")
         void unknownSrsNameSwallowed() {
+            stubValidateUnpublish();
             when(repository.findByStreamKeyHash(any())).thenReturn(Mono.empty());
 
-            StepVerifier.create(service.handleUnpublish(SRS_NAME))
+            StepVerifier.create(service.handleUnpublish(SRS_NAME, TOKEN))
                     .verifyComplete();
         }
     }

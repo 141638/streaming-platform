@@ -63,7 +63,17 @@ public class SrsWebhookController {
     /** Called by SRS when an RTMP connection ends. */
     @PostMapping(path = "/on_unpublish", consumes = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<Integer>> onUnpublish(@RequestBody SrsWebhookPayload body) {
-        return streamService.handleUnpublish(body.stream())
-                .thenReturn(ResponseEntity.ok(0));
+        String token = body.extractToken();
+        if (token == null) {
+            log.warn("on_unpublish: missing token in param: {}", body.param());
+            return Mono.just(ResponseEntity.status(403).build());
+        }
+
+        return streamService.handleUnpublish(body.stream(), token)
+                .thenReturn(ResponseEntity.ok(0))
+                .onErrorResume(InvalidPublishTokenException.class, e -> {
+                    log.warn("on_unpublish rejected: {}", e.getMessage());
+                    return Mono.just(ResponseEntity.status(403).build());
+                });
     }
 }

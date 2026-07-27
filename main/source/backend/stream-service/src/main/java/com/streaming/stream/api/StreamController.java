@@ -104,7 +104,7 @@ public class StreamController {
     public Mono<ResponseEntity<WatchResponse>> watch(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID id) {
-        return streamService.getWatchData(id).map(ResponseEntity::ok);
+        return streamService.getWatchData(id, jwt).map(ResponseEntity::ok);
     }
 
     // ── Viewer presence ─────────────────────────────────────────────────────

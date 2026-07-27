@@ -4,6 +4,11 @@ server:
 spring:
   application:
     name: gateway-service
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
   cloud:
     gateway:
       httpclient:
@@ -84,6 +89,8 @@ streaming:
     jwt:
       issuer: ${JWT_ISSUER:https://auth.streaming.local}
       hmac-secret: ${JWT_HMAC_SECRET:MNH6CwQ7H4xAf69hpn0sc2Rn+wxT/d+I9QWELikQqgM=}
+    idempotency:
+      ttl-seconds: ${IDEMPOTENCY_TTL_SECONDS:86400}
 
 management:
   endpoints:

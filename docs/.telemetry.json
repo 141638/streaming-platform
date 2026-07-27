@@ -5,12 +5,12 @@
     "lastSeen": "2026-07-27"
   },
   "skills.session-retro": {
-    "count": 13,
+    "count": 14,
     "firstSeen": "2026-07-12",
     "lastSeen": "2026-07-27"
   },
   "skills.feature-commit": {
-    "count": 15,
+    "count": 16,
     "firstSeen": "2026-07-13",
     "lastSeen": "2026-07-27"
   },
@@ -20,12 +20,12 @@
     "lastSeen": "2026-07-13"
   },
   "commands.blueprint": {
-    "count": 17,
+    "count": 19,
     "firstSeen": "2026-07-14",
     "lastSeen": "2026-07-27"
   },
   "commands.retro": {
-    "count": 9,
+    "count": 10,
     "firstSeen": "2026-07-14",
     "lastSeen": "2026-07-27"
   },
@@ -35,7 +35,7 @@
     "lastSeen": "2026-07-17"
   },
   "commands.commit": {
-    "count": 12,
+    "count": 13,
     "firstSeen": "2026-07-14",
     "lastSeen": "2026-07-27"
   },
@@ -50,12 +50,12 @@
     "lastSeen": "2026-07-27"
   },
   "commands.consult": {
-    "count": 3,
+    "count": 4,
     "firstSeen": "2026-07-15",
-    "lastSeen": "2026-07-16"
+    "lastSeen": "2026-07-27"
   },
   "commands.review": {
-    "count": 3,
+    "count": 4,
     "firstSeen": "2026-07-15",
     "lastSeen": "2026-07-27"
   },
@@ -70,7 +70,7 @@
     "lastSeen": "2026-07-17"
   },
   "commands.learn": {
-    "count": 2,
+    "count": 3,
     "firstSeen": "2026-07-27",
     "lastSeen": "2026-07-27"
   }

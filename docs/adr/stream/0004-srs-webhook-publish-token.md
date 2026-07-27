@@ -130,10 +130,15 @@ SRS receives non-200 → rejects RTMP → OBS shows connection error
 **On unpublish (OBS stops):**
 ```
 SRS ──POST /api/streams/v1/webhooks/srs/on_unpublish──→ Gateway ──→ Stream Service
-  → If LIVE: entity.end(), fire STREAM_ENDED
-  → If non-LIVE: idempotent no-op
-  → Return 200
+  1. Extract publish token from body.param (same extraction as on_publish)
+  2. Validate JWT signature + srsName match (expiry skipped — stream may be ENDED)
+  3. If token missing or invalid → return 403
+  4. If LIVE: entity.end(), fire STREAM_ENDED
+  5. If non-LIVE: idempotent no-op
+  6. Return 200
 ```
+
+**Why validate the token on unpublish?** Prior to Phase 6.2, `on_unpublish` had zero authentication — any caller who could reach the internal network could forge an unpublish event and end any LIVE stream. The publish token is already embedded in the RTMP URL (extracted from SRS's `param` field), so the same validation used for `on_publish` (signature + srsName match) is applied to `on_unpublish`, with the expiry check skipped because the stream may already be ENDED by the time SRS delivers the webhook.
 
 ### 6. Webhook Routing & Authentication
 
@@ -206,7 +211,7 @@ The V3 migration (`DROP NOT NULL on stream_key_hash`) is reversed via V5. The `s
 - **Positive**: Gateway routing provides retry resilience for webhook calls
 - **Positive**: Plaintext `srs_name` column enables URL reconstruction without reversing SHA-256
 - **Negative**: Sol3 breaks JWT semantic purity — `exp` is contextual rather than absolute. A token that is "expired" can still reconnect to a LIVE stream. Some security auditors may object.
-- **Negative**: No shared secret on webhook endpoints in Phase 2 (mitigated by internal Docker network isolation + JWT publish token validation)
+- **Negative**: No shared secret on webhook endpoints in Phase 2 (mitigated by internal Docker network isolation + JWT publish token validation on both on_publish and on_unpublish)
 - **Negative**: srsName UUID is visible in HLS URLs (acceptable — it's a UUID, not a secret, and is rotatable in DRAFT)
 - **Negative**: `stream_key_hash` is irreversible — DB-level queries by srsName go through the hash, not the plaintext
 
@@ -214,11 +219,11 @@ The V3 migration (`DROP NOT NULL on stream_key_hash`) is reversed via V5. The `s
 
 - [ADR-0001: Stream State Machine (Revised)](0001-stream-state-machine.md)
 - [ADR-0002: Kafka Event Publishing](0002-kafka-event-publishing.md)
-- `PublishTokenService.java` — JWT issuance + Sol3 validation
-- `SrsWebhookController.java` — webhook endpoints (on_publish, on_unpublish)
+- `PublishTokenService.java` — JWT issuance + Sol3 validation; `validateForPublish()` and `validateForUnpublish()`
+- `SrsWebhookController.java` — webhook endpoints (on_publish, on_unpublish); both validate the publish token
 - `StreamService.goLiveFromSchedule()` — SCHEDULED→DRAFT go-live action
 - `StreamService.handlePublish()` — Sol3 webhook handler
-- `StreamService.handleUnpublish()` — idempotent end handler
+- `StreamService.handleUnpublish()` — validates token via `validateForUnpublish()`, then delegates to `doHandleUnpublish()`
 - `V5__reverse_stream_key_hash_not_null.sql` — migration (NOT NULL + srs_name column)
 - Gateway `SecurityConfig.java` — webhook paths in public filter chain
 - Auth Service: `AccessTokenIssuanceService.issueForServiceAccount()` — future webhook auth

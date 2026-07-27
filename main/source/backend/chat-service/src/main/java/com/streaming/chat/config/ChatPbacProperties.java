@@ -5,13 +5,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /**
  * Feature flag for chat PBAC ({@code ent}) enforcement.
  *
- * <p>PBAC ships <b>dark</b> (default {@code false}): {@link com.streaming.chat.security.ChatAuthorization}
- * short-circuits to allow when disabled, so the enforcement code lands in
- * production without gating any request until auth-service is confirmed to emit
- * chat {@code ent} templates compatible with the matcher. Flip
- * {@code chat.pbac.enabled=true} (env {@code CHAT_PBAC_ENABLED}) to activate.
+ * <p>PBAC enforcement is <b>on by default</b>. The {@code dev} Spring profile
+ * allows disabling for local testing; in any other profile disabling is a hard
+ * startup failure (see {@link com.streaming.chat.security.ChatAuthorization#enforceOrWarn}).
+ * Set {@code CHAT_PBAC_ENABLED=false} (env) or {@code chat.pbac.enabled=false}
+ * to disable during development.
  *
- * @param enabled whether {@code requireAccess} enforces entitlements (default {@code false})
+ * @param enabled whether {@code requireAccess} enforces entitlements (default {@code true})
  */
 @ConfigurationProperties(prefix = "chat.pbac")
 public record ChatPbacProperties(boolean enabled) {

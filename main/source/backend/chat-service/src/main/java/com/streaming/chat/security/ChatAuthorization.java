@@ -9,6 +9,8 @@ import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
@@ -26,10 +28,10 @@ import reactor.core.publisher.Mono;
  *       .then(persistMessage(...));
  * }</pre>
  *
- * <p><b>Ships dark:</b> when {@code chat.pbac.enabled=false} (the default),
- * {@link #requireAccess} returns {@link Mono#empty()} immediately without
- * consulting the matcher. This lets the enforcement wiring land in production
- * before auth-service is confirmed to emit compatible chat {@code ent} lines.
+ * <p>PBAC enforcement is gated by {@code chat.pbac.enabled}. In development
+ * ({@code dev} profile active), disabling it emits a visible WARN. In any other
+ * profile (production, staging), disabling it is a hard startup failure — PBAC
+ * must be enabled.
  */
 @Component
 @RequiredArgsConstructor
@@ -39,17 +41,47 @@ public class ChatAuthorization {
 
     private final ChatPbacProperties properties;
 
+    @Autowired(required = false)
+    private Environment environment;
+
     /**
-     * Emit a startup WARN when enforcement is disabled so an operator can never
-     * unknowingly run with PBAC off in production (e.g. {@code CHAT_PBAC_ENABLED}
-     * unset). Dark-launch is intentional but should be visible in the logs.
+     * Validate that PBAC enforcement is enabled in non-dev environments.
+     *
+     * <p>In development ({@code dev} profile active or no Spring context), a
+     * disabled flag emits a visible WARN so dark-launch is still possible for
+     * local testing. In any other profile (production, staging), disabled PBAC
+     * is a hard startup failure — the application will not start until
+     * {@code chat.pbac.enabled=true} / {@code CHAT_PBAC_ENABLED=true}.
      */
     @PostConstruct
-    void warnIfDisabled() {
+    void enforceOrWarn() {
         if (!properties.enabled()) {
+            if (isProductionProfile()) {
+                throw new IllegalStateException(
+                        "chat.pbac.enabled must be true in production profiles. "
+                                + "Set CHAT_PBAC_ENABLED=true or chat.pbac.enabled=true.");
+            }
             log.warn("PBAC enforcement is DISABLED (chat.pbac.enabled=false / CHAT_PBAC_ENABLED unset) — "
                     + "chat authorization checks are bypassed. Enable once auth-service emits compatible ent lines.");
         }
+    }
+
+    /**
+     * Determine whether the application is running in a non-dev profile.
+     * When no Spring {@link Environment} is available (unit tests without
+     * Spring context), defaults to {@code false} — safe, warn-only.
+     */
+    private boolean isProductionProfile() {
+        if (environment == null) {
+            return false;
+        }
+        for (String profile : environment.getActiveProfiles()) {
+            if ("dev".equals(profile)) {
+                return false;
+            }
+        }
+        // No "dev" profile active — treat as production
+        return true;
     }
 
     /**

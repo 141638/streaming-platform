@@ -5,7 +5,7 @@
     "lastSeen": "2026-07-23"
   },
   "skills.session-retro": {
-    "count": 11,
+    "count": 12,
     "firstSeen": "2026-07-12",
     "lastSeen": "2026-07-27"
   },
@@ -25,7 +25,7 @@
     "lastSeen": "2026-07-27"
   },
   "commands.retro": {
-    "count": 7,
+    "count": 8,
     "firstSeen": "2026-07-14",
     "lastSeen": "2026-07-27"
   },
@@ -35,7 +35,7 @@
     "lastSeen": "2026-07-17"
   },
   "commands.commit": {
-    "count": 9,
+    "count": 10,
     "firstSeen": "2026-07-14",
     "lastSeen": "2026-07-27"
   },

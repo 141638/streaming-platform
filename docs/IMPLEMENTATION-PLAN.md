@@ -1,8 +1,9 @@
 # Implementation Plan
 
-**Last updated:** 2026-07-28 (Phase 6.3 rate limiting implemented — uncommitted)
-**Current phase:** 6 — Production Hardening ⚡ (6.0a–c ✅, 6.1 ✅, 6.2 ✅, 6.2a ✅, 6.3 ✅, 6.4–6.6 planned)
-**Active blueprint:** None — next is Phase 6.4 WebSocket chat
+**Last updated:** 2026-07-28 (Phase 2-5 production gap analysis completed; remediation blueprint active)
+**Current phase:** 6 — Production Hardening ⚡ (6.0a–c ✅, 6.1 ✅, 6.2 ✅, 6.2a ✅, 6.3 ✅, 6.4–6.6 planned, **6.7 — Gap Remediation ⚡ active**)
+**Active blueprint:** [phase-2-5-gap-remediation-blueprint.md](plans/phase-2-5-gap-remediation-blueprint.md)
+**Gap analysis:** [phase-2-5-production-gap-analysis-retrospective.md](plans/phase-2-5-production-gap-analysis-retrospective.md) — 50+ findings across phases 2-5
 
 ## End Goal
 
@@ -24,7 +25,9 @@ Streamer signs in → creates stream → gets publish key → OBS publishes to S
 ```
 Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 ──► Phase 6 ──► Phase 7
 (Auth)      (Stream)    (Chat)      (Viewer)    (Notify)    (Harden)    (AI/LLM)
-  ✅          ✅           ✅           ○           ○           ⚡           ○
+  ✅          ⚠️           ⚠️           ⚠️           ⚠️           ⚡           ○
+  
+⚠️ = Functionally complete but has documented production gaps — see gap analysis
 ```
 
 | Phase | Status | Goal | Third-Party Services |
@@ -1102,6 +1105,39 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
   - [ ] Micrometer metrics (Prometheus endpoint)
   - [ ] Grafana dashboard
   - [ ] Centralized log backend (Loki/Grafana or ELK)
+
+---
+
+### 6.7 — Gap Remediation (Phase 2-5 Production Hardening) ⚡
+
+**Status:** Active — see [remediation blueprint](plans/phase-2-5-gap-remediation-blueprint.md) and [gap analysis retrospective](plans/phase-2-5-production-gap-analysis-retrospective.md)
+
+**Why:** A 6-agent production readiness audit (2026-07-28) identified 50+ gaps across phases 2-5:
+8 CRITICAL, 16 HIGH, 19 MEDIUM, 7 LOW, plus 8 systematic weaknesses. Phases 2-5 are functionally complete but not production-ready.
+
+**Goal:** Close the delta between "checkbox done" and "production ready" before any deployment.
+
+#### Remediation Tracks
+
+| Track | Focus | Effort | Priority |
+|-------|-------|--------|----------|
+| A — Security Triage | Remove hardcoded secrets, add catch-all exception handlers, restrict health endpoints, rotate compromised keys | 1 day | 🔴 CRITICAL |
+| B — Outbox & State Machine Integrity | Wire `@Transactional`, fix SCHEDULED cancel gap, fix double-subscribe in chat consumer, fix `goLiveFromSchedule()` bypass | 1 day | 🔴 CRITICAL |
+| C — Notification Hardening | Add smoke tests, fix fan-out blocking, implement real email or remove skeleton, fix `OutboxService.enqueue()` fire-and-forget | 2-3 days | 🔴 CRITICAL |
+| D — Observability Foundation | Wire Micrometer metrics + Prometheus endpoint, wire trace propagation, add Grafana dashboard scaffold | 2-3 days | 🟠 HIGH |
+| E — Infrastructure Maturity | Redis Lua scripting, disable auto-create-topics, connection pool config, SCAN limits, SSE buffer bounds + zombie drain | 1-2 days | 🟠 HIGH |
+| F — Error Handling Standardization | Catch-all handlers in 3 services, WARN logging for security events, exception-passing convention (`.getMessage()` → pass `ex`), shared base handler in pbac-common | 1 day | 🟠 HIGH |
+| G — Test Execution | CI Docker-based test suite, minimum smoke tests for notification-service, verify existing chat/stream tests pass | Ongoing | 🟡 MEDIUM |
+
+#### Phase 6.7 Checklist
+
+- [ ] Track A — Security triage
+- [ ] Track B — Outbox & state machine integrity
+- [ ] Track C — Notification hardening
+- [ ] Track D — Observability foundation
+- [ ] Track E — Infrastructure maturity
+- [ ] Track F — Error handling standardization
+- [ ] Track G — Test execution pipeline
 
 ---
 

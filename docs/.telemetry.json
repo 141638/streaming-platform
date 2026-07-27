@@ -5,12 +5,12 @@
     "lastSeen": "2026-07-27"
   },
   "skills.session-retro": {
-    "count": 14,
+    "count": 15,
     "firstSeen": "2026-07-12",
     "lastSeen": "2026-07-27"
   },
   "skills.feature-commit": {
-    "count": 16,
+    "count": 17,
     "firstSeen": "2026-07-13",
     "lastSeen": "2026-07-27"
   },
@@ -20,12 +20,12 @@
     "lastSeen": "2026-07-13"
   },
   "commands.blueprint": {
-    "count": 19,
+    "count": 20,
     "firstSeen": "2026-07-14",
     "lastSeen": "2026-07-27"
   },
   "commands.retro": {
-    "count": 10,
+    "count": 11,
     "firstSeen": "2026-07-14",
     "lastSeen": "2026-07-27"
   },
@@ -35,7 +35,7 @@
     "lastSeen": "2026-07-17"
   },
   "commands.commit": {
-    "count": 13,
+    "count": 14,
     "firstSeen": "2026-07-14",
     "lastSeen": "2026-07-27"
   },
@@ -50,7 +50,7 @@
     "lastSeen": "2026-07-27"
   },
   "commands.consult": {
-    "count": 4,
+    "count": 5,
     "firstSeen": "2026-07-15",
     "lastSeen": "2026-07-27"
   },
@@ -60,9 +60,9 @@
     "lastSeen": "2026-07-27"
   },
   "agents.code-explorer": {
-    "count": 2,
+    "count": 6,
     "firstSeen": "2026-07-17",
-    "lastSeen": "2026-07-17"
+    "lastSeen": "2026-07-27"
   },
   "commands.perform": {
     "count": 1,
@@ -70,7 +70,17 @@
     "lastSeen": "2026-07-17"
   },
   "commands.learn": {
-    "count": 3,
+    "count": 4,
+    "firstSeen": "2026-07-27",
+    "lastSeen": "2026-07-27"
+  },
+  "agents.silent-failure-hunter": {
+    "count": 1,
+    "firstSeen": "2026-07-27",
+    "lastSeen": "2026-07-27"
+  },
+  "agents.security-reviewer": {
+    "count": 1,
     "firstSeen": "2026-07-27",
     "lastSeen": "2026-07-27"
   }

@@ -1,6 +1,4 @@
-package com.streaming.chat.config;
-
-// PBAC-COMMON-CANDIDATE — extract to pbac-common in Phase 6.2
+package com.streaming.pbac.config;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,15 +14,14 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * Returns a structured JSON 401 body with an {@code error_code} field so the
- * frontend can distinguish expired tokens (→ refresh + retry) from invalid
- * or missing tokens (→ force logout).
+ * frontend can distinguish expired tokens (refresh + retry) from invalid or
+ * missing tokens (force logout).
  *
- * <p>Mirrors the gateway's {@code CustomServerAuthenticationEntryPoint} so
- * errors from downstream services carry the same contract.
+ * <p>All downstream services and the gateway use the same contract.
  */
-public class ChatAuthenticationEntryPoint implements ServerAuthenticationEntryPoint {
+public class Structured401AuthenticationEntryPoint implements ServerAuthenticationEntryPoint {
 
-    private static final Logger log = LoggerFactory.getLogger(ChatAuthenticationEntryPoint.class);
+    private static final Logger log = LoggerFactory.getLogger(Structured401AuthenticationEntryPoint.class);
 
     private static final String BODY_EXPIRED =
             "{\"error\":\"Unauthorized\",\"error_code\":\"token_expired\",\"message\":\"Access token has expired\"}";
@@ -40,7 +37,7 @@ public class ChatAuthenticationEntryPoint implements ServerAuthenticationEntryPo
                 isExpired(ex) ? "expired" : "invalid",
                 exchange.getRequest().getMethod(),
                 exchange.getRequest().getURI().getPath(),
-                ex.getMessage());
+                ex == null ? null : ex.getMessage());
 
         exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
         exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);

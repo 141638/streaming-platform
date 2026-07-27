@@ -7,7 +7,7 @@ import com.nimbusds.jose.crypto.MACSigner;
 import com.nimbusds.jose.crypto.MACVerifier;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
-import com.streaming.stream.config.JwtProperties;
+import com.streaming.pbac.config.JwtProperties;
 import com.streaming.stream.config.PublishTokenProperties;
 import com.streaming.stream.persistence.entity.StreamStatus;
 import java.nio.charset.StandardCharsets;

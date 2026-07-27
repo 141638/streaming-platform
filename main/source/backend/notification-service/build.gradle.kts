@@ -19,6 +19,7 @@ java {
 
 dependencies {
     implementation(project(":common"))
+    implementation(project(":pbac-common"))
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")
     implementation("org.springframework.boot:spring-boot-starter-webflux")

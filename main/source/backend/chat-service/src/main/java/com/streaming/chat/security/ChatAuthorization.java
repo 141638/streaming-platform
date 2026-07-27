@@ -3,6 +3,8 @@ package com.streaming.chat.security;
 // PBAC-COMMON-CANDIDATE — extract to pbac-common in Phase 6.2
 
 import com.streaming.chat.config.ChatPbacProperties;
+import com.streaming.pbac.EntitlementMatcher;
+import com.streaming.pbac.RequiredAuthority;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;

@@ -1,15 +1,17 @@
-package com.streaming.chat.security;
-
-// PBAC-COMMON-CANDIDATE — extract to pbac-common in Phase 6.2
+package com.streaming.pbac;
 
 /**
  * First segment of {@code {domain}:{kind}:{scope}} resource patterns.
  *
- * <p>Mirrors {@code com.streaming.auth.authorization.AuthResourceDomain} (chat subset).
- * Phase 6.2: extract to shared {@code pbac-common} library.
+ * <p>Mirrors {@code com.streaming.auth.authorization.AuthResourceDomain}.
  */
 public enum AuthResourceDomain {
-    CHAT("chat");
+    IDENTITY("identity"),
+    STREAM("stream"),
+    MEDIA("media"),
+    CHAT("chat"),
+    NOTIFICATION("notification"),
+    PLATFORM("platform");
 
     private final String segment;
 

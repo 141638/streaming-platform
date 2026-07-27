@@ -85,10 +85,10 @@ eureka:
 streaming:
   service:
     instance-id: "${random.uuid}"
+  jwt:
+    issuer: ${JWT_ISSUER:https://auth.streaming.local}
+    hmac-secret: ${JWT_HMAC_SECRET:MNH6CwQ7H4xAf69hpn0sc2Rn+wxT/d+I9QWELikQqgM=}
   gateway:
-    jwt:
-      issuer: ${JWT_ISSUER:https://auth.streaming.local}
-      hmac-secret: ${JWT_HMAC_SECRET:MNH6CwQ7H4xAf69hpn0sc2Rn+wxT/d+I9QWELikQqgM=}
     idempotency:
       ttl-seconds: ${IDEMPOTENCY_TTL_SECONDS:86400}
 

@@ -1,6 +1,4 @@
-package com.streaming.stream.security;
-
-// PBAC-COMMON-CANDIDATE — extract to pbac-common in Phase 6.2
+package com.streaming.pbac;
 
 import java.util.List;
 import org.springframework.security.oauth2.jwt.Jwt;

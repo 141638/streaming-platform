@@ -1,5 +1,7 @@
 package com.streaming.stream.security;
 
+import com.streaming.pbac.EntitlementMatcher;
+import com.streaming.pbac.RequiredAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;

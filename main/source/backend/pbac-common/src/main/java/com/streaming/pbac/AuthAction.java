@@ -1,6 +1,4 @@
-package com.streaming.stream.security;
-
-// PBAC-COMMON-CANDIDATE — extract to pbac-common in Phase 6.2
+package com.streaming.pbac;
 
 /**
  * Canonical authorization verbs for PBAC and JWT {@code ent} lines.
@@ -10,7 +8,6 @@ package com.streaming.stream.security;
  * rewriting historical rows.
  *
  * <p>Mirrors {@code com.streaming.auth.authorization.AuthAction}.
- * Phase 6.2: extract to shared {@code pbac-common} library.
  */
 public enum AuthAction {
     CREATE("create"),

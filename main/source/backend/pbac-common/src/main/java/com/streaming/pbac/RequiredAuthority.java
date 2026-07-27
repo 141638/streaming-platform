@@ -1,22 +1,18 @@
-package com.streaming.chat.security;
+package com.streaming.pbac;
 
-// PBAC-COMMON-CANDIDATE — extract to pbac-common in Phase 6.2
-
-import org.springframework.lang.Nullable;
+import jakarta.annotation.Nullable;
 
 /**
  * Describes the authority required to access a resource.
  *
- * <p>Used with {@link EntitlementMatcher#isAuthorized} and
- * {@link ChatAuthorization#requireAccess} to check whether a JWT's
- * {@code ent} claim grants sufficient privileges.
+ * <p>Used with {@link EntitlementMatcher#isAuthorized} to check whether
+ * a JWT's {@code ent} claim grants sufficient privileges.
  *
  * <h3>Example</h3>
  * <pre>{@code
  *   var required = new RequiredAuthority(
- *       AuthResourceDomain.CHAT, AuthResourceKind.MESSAGE,
- *       AuthAction.SEND, room.getBroadcasterSubject());
- *   authorization.requireAccess(jwt, required);
+ *       AuthResourceDomain.STREAM, AuthResourceKind.SESSION,
+ *       AuthAction.READ, ownerSubject);
  * }</pre>
  *
  * @param domain       resource domain

@@ -1,6 +1,7 @@
 package com.streaming.chat.api;
 
 import com.streaming.chat.api.dto.BanDurationRequest;
+import com.streaming.pbac.JwtAttr;
 import com.streaming.chat.api.dto.BanRequest;
 import com.streaming.chat.api.dto.BanResponse;
 import com.streaming.chat.application.ModerationService;

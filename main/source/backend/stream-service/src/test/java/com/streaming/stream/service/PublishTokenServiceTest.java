@@ -3,7 +3,7 @@ package com.streaming.stream.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streaming.stream.config.JwtProperties;
+import com.streaming.pbac.config.JwtProperties;
 import com.streaming.stream.config.PublishTokenProperties;
 import com.streaming.stream.persistence.entity.StreamStatus;
 import java.time.Duration;

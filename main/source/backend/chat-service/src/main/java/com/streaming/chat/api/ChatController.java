@@ -1,5 +1,6 @@
 package com.streaming.chat.api;
 
+import com.streaming.pbac.JwtAttr;
 import java.util.List;
 
 import org.springframework.http.MediaType;

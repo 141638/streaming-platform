@@ -1,4 +1,4 @@
-package com.streaming.chat.security;
+package com.streaming.pbac;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.Jwt;
 
-@DisplayName("EntitlementMatcher (chat)")
+@DisplayName("EntitlementMatcher")
 class EntitlementMatcherTest {
 
     private static final String SUB = "e8f9a1b2-3c4d-5e6f-7a8b-9c0d1e2f3a4b";
@@ -32,7 +32,7 @@ class EntitlementMatcherTest {
     }
 
     private static RequiredAuthority required(AuthAction action, String ownerSub) {
-        return new RequiredAuthority(AuthResourceDomain.CHAT, AuthResourceKind.ROOM, action, ownerSub);
+        return new RequiredAuthority(AuthResourceDomain.STREAM, AuthResourceKind.SESSION, action, ownerSub);
     }
 
     private static RequiredAuthority required(AuthResourceKind kind, AuthAction action, String ownerSub) {
@@ -48,29 +48,57 @@ class EntitlementMatcherTest {
         @Test
         @DisplayName("authorizes when owner matches sub")
         void authorizesWhenOwnerMatches() {
-            Jwt jwt = jwtWithEnt(List.of("allow chat:room:self read send"));
+            Jwt jwt = jwtWithEnt(List.of("allow stream:session:self create read update"));
             assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthAction.READ, SUB))).isTrue();
         }
 
         @Test
         @DisplayName("denies when owner differs from sub")
         void deniesWhenOwnerDiffers() {
-            Jwt jwt = jwtWithEnt(List.of("allow chat:room:self read send"));
+            Jwt jwt = jwtWithEnt(List.of("allow stream:session:self create read update"));
             assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthAction.READ, OTHER_SUB))).isFalse();
         }
 
         @Test
         @DisplayName("denies when owner is null")
         void deniesWhenOwnerIsNull() {
-            Jwt jwt = jwtWithEnt(List.of("allow chat:room:self read send"));
+            Jwt jwt = jwtWithEnt(List.of("allow stream:session:self create read update"));
             assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthAction.READ, null))).isFalse();
         }
 
         @Test
         @DisplayName("denies when action not in line")
         void deniesWhenActionNotInLine() {
+            Jwt jwt = jwtWithEnt(List.of("allow stream:session:self create read update"));
+            assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthAction.DELETE, SUB))).isFalse();
+        }
+
+        @Test
+        @DisplayName("chat:room:self authorizes when owner matches sub")
+        void chatRoomSelfAuthorizesWhenOwnerMatches() {
             Jwt jwt = jwtWithEnt(List.of("allow chat:room:self read send"));
-            assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthAction.CREATE, SUB))).isFalse();
+            assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthResourceKind.ROOM, AuthAction.READ, SUB))).isTrue();
+        }
+
+        @Test
+        @DisplayName("chat:room:self denies when owner differs from sub")
+        void chatRoomSelfDeniesWhenOwnerDiffers() {
+            Jwt jwt = jwtWithEnt(List.of("allow chat:room:self read send"));
+            assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthResourceKind.ROOM, AuthAction.READ, OTHER_SUB))).isFalse();
+        }
+
+        @Test
+        @DisplayName("chat:room:self denies when owner is null")
+        void chatRoomSelfDeniesWhenOwnerIsNull() {
+            Jwt jwt = jwtWithEnt(List.of("allow chat:room:self read send"));
+            assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthResourceKind.ROOM, AuthAction.READ, null))).isFalse();
+        }
+
+        @Test
+        @DisplayName("chat:room:self denies when action not in line")
+        void chatRoomSelfDeniesWhenActionNotInLine() {
+            Jwt jwt = jwtWithEnt(List.of("allow chat:room:self read send"));
+            assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthResourceKind.ROOM, AuthAction.CREATE, SUB))).isFalse();
         }
     }
 
@@ -83,33 +111,60 @@ class EntitlementMatcherTest {
         @Test
         @DisplayName("authorizes regardless of owner")
         void authorizesRegardlessOfOwner() {
-            Jwt jwt = jwtWithEnt(List.of("allow chat:room:* read send"));
+            Jwt jwt = jwtWithEnt(List.of("allow stream:session:* read update delete"));
             assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthAction.READ, OTHER_SUB))).isTrue();
         }
 
         @Test
         @DisplayName("authorizes with null owner")
         void authorizesWithNullOwner() {
-            Jwt jwt = jwtWithEnt(List.of("allow chat:room:* read send"));
+            Jwt jwt = jwtWithEnt(List.of("allow stream:session:* read update delete"));
             assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthAction.READ, null))).isTrue();
+        }
+
+        @Test
+        @DisplayName("chat:room:* authorizes regardless of owner")
+        void chatRoomWildcardAuthorizesRegardlessOfOwner() {
+            Jwt jwt = jwtWithEnt(List.of("allow chat:room:* read send"));
+            assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthResourceKind.ROOM, AuthAction.READ, OTHER_SUB))).isTrue();
+        }
+
+        @Test
+        @DisplayName("chat:room:* authorizes with null owner")
+        void chatRoomWildcardAuthorizesWithNullOwner() {
+            Jwt jwt = jwtWithEnt(List.of("allow chat:room:* read send"));
+            assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthResourceKind.ROOM, AuthAction.READ, null))).isTrue();
         }
     }
 
     // ── wrong domain/kind ────────────────────────────────────────────────
 
     @Test
-    @DisplayName("denies when kind does not match")
-    void deniesForWrongKind() {
-        // message-kind line must not satisfy a room-kind requirement
-        Jwt jwt = jwtWithEnt(List.of("allow chat:message:self send"));
+    @DisplayName("denies when domain:kind does not match")
+    void deniesForWrongDomainKind() {
+        Jwt jwt = jwtWithEnt(List.of("allow chat:room:* read send"));
         assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthAction.READ, SUB))).isFalse();
+    }
+
+    @Test
+    @DisplayName("denies when domain matches but kind differs")
+    void deniesForWrongKind() {
+        Jwt jwt = jwtWithEnt(List.of("allow stream:publish-key:self validate_publish"));
+        assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthAction.READ, SUB))).isFalse();
+    }
+
+    @Test
+    @DisplayName("denies when kind does not match (chat)")
+    void deniesForWrongKindChat() {
+        Jwt jwt = jwtWithEnt(List.of("allow chat:message:self send"));
+        assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthResourceKind.ROOM, AuthAction.READ, SUB))).isFalse();
     }
 
     @Test
     @DisplayName("denies when moderation kind does not match room requirement")
     void deniesForModerationKind() {
         Jwt jwt = jwtWithEnt(List.of("allow chat:moderation:* moderate"));
-        assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthAction.READ, SUB))).isFalse();
+        assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthResourceKind.ROOM, AuthAction.READ, SUB))).isFalse();
     }
 
     // ── empty / missing ent ──────────────────────────────────────────────
@@ -134,9 +189,9 @@ class EntitlementMatcherTest {
     @DisplayName("matches from any line")
     void matchesFromAnyLine() {
         Jwt jwt = jwtWithEnt(List.of(
-                "allow chat:moderation:* moderate",
-                "allow chat:room:* read",
-                "allow chat:message:* send read_history"
+                "allow chat:room:* read send",
+                "allow stream:session:self create read update lifecycle issue_key",
+                "allow notification:subscription:self create read update delete"
         ));
         assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthAction.READ, SUB))).isTrue();
     }
@@ -145,10 +200,31 @@ class EntitlementMatcherTest {
     @DisplayName("first matching line wins")
     void firstMatchingLineWins() {
         Jwt jwt = jwtWithEnt(List.of(
+                "allow stream:session:self create read update",
+                "allow stream:session:* read"
+        ));
+        assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthAction.READ, SUB))).isTrue();
+    }
+
+    @Test
+    @DisplayName("matches from any line (chat domain)")
+    void matchesFromAnyLineChat() {
+        Jwt jwt = jwtWithEnt(List.of(
+                "allow chat:moderation:* moderate",
+                "allow chat:room:* read",
+                "allow chat:message:* send read_history"
+        ));
+        assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthResourceKind.ROOM, AuthAction.READ, SUB))).isTrue();
+    }
+
+    @Test
+    @DisplayName("first matching line wins (chat domain)")
+    void firstMatchingLineWinsChat() {
+        Jwt jwt = jwtWithEnt(List.of(
                 "allow chat:room:self read",
                 "allow chat:room:* read"
         ));
-        assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthAction.READ, SUB))).isTrue();
+        assertThat(EntitlementMatcher.isAuthorized(jwt, required(AuthResourceKind.ROOM, AuthAction.READ, SUB))).isTrue();
     }
 
     // ── flattened seed grammar (3-segment; mirrors auth V10) ─────────────

@@ -17,22 +17,27 @@ java {
     }
 }
 
+// This module must NOT produce a fat jar — it is a shared library.
+// Spring Boot's bootJar task is disabled; only the plain jar is published.
+tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
+    enabled = false
+}
+
+tasks.named<Jar>("jar") {
+    enabled = true
+}
+
 dependencies {
-    implementation(project(":pbac-common"))
-    implementation("org.springframework.cloud:spring-cloud-starter-gateway")
-    implementation("org.springframework.cloud:spring-cloud-starter-netflix-eureka-client")
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
-    implementation("org.springframework.boot:spring-boot-starter-actuator")
-    implementation("org.springframework.boot:spring-boot-starter-data-redis-reactive")
-    implementation("net.logstash.logback:logstash-logback-encoder:8.0")
-    implementation("org.springframework.retry:spring-retry")
+    implementation("org.springframework.boot:spring-boot-starter-webflux")
+    implementation("org.springframework.boot:spring-boot-configuration-processor")
+    implementation("jakarta.annotation:jakarta.annotation-api")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testImplementation("io.projectreactor:reactor-test")
     testImplementation("org.springframework.security:spring-security-test")
 }
 
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
 }
-
-

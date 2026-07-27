@@ -352,16 +352,18 @@ public class ChatService {
      * finds anyone who has ever chatted in this room, not just visible
      * messages.
      *
+     * @param jwt     the authenticated caller's validated access token
      * @param roomKey the room's external key
      * @param query   prefix filter (case-insensitive); empty returns top 10
      * @param limit   max results (default 10)
      */
-    public Mono<List<String>> getParticipants(String roomKey, String query, int limit) {
-        return roomRepository.findByExternalKey(roomKey)
+    public Mono<List<String>> getParticipants(Jwt jwt, String roomKey, String query, int limit) {
+        return authorizeRead(jwt, roomKey, AuthResourceKind.ROOM, AuthAction.READ)
+                .then(roomRepository.findByExternalKey(roomKey)
                 .switchIfEmpty(Mono.error(new RoomNotFoundException(roomKey)))
                 .flatMapMany(room -> messageRepository
                         .findDistinctAuthorUsernamesByRoomId(room.getId(), query != null ? query : "", limit))
-                .collectList();
+                .collectList());
     }
 
     // -- exceptions --------------------------------------------------------

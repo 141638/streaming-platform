@@ -107,7 +107,7 @@ public class ChatController {
             @PathVariable String roomKey,
             @RequestParam(defaultValue = "") String q,
             @RequestParam(defaultValue = "10") int limit) {
-        return chatService.getParticipants(roomKey, q, limit);
+        return chatService.getParticipants(jwt, roomKey, q, limit);
     }
 
 }

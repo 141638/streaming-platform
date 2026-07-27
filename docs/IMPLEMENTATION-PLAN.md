@@ -1,8 +1,8 @@
 # Implementation Plan
 
-**Last updated:** 2026-07-17 (Option A blueprint: viewer presence + fan-out + dedup + heartbeat harvest)
-**Current phase:** 5 — Notifications (foundation ✅, SSE ✅, subscription+dispatcher+outbox ✅, frontend follow+bell+settings ✅, mark-all-as-read ✅) + 6 — Production Hardening (outbox ✅) + 4 — Viewer Experience (browse/watch/HLS ✅; presence ✅ — Option A implemented, pending commit)
-**Active blueprint:** [Option A](plans/option-a-viewer-presence-fanout-blueprint.md) — ✅ implemented (A1 viewer count display, A2 follower fan-out, A3 dedup key scoping, A4 heartbeat harvest service)
+**Last updated:** 2026-07-27 (session retro: stripped stale "pending commit" markers, Phase 4/5 statuses corrected)
+**Current phase:** 5 — Notifications ✅ complete + 4 — Viewer Experience ✅ complete + 6 — Production Hardening ⚡ (6.0a–c ✅, 6.1–6.6 planned)
+**Active blueprint:** None — next is Phase 6.1 Idempotency Keys (see [IDEMPOTENCY-PATTERN.md](IDEMPOTENCY-PATTERN.md))
 
 ## End Goal
 
@@ -32,9 +32,9 @@ Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 
 | [1 — Auth & Foundation](#phase-1--auth--foundation) | ✅ Done | Login, token rotation, PBAC JWT, gateway, frontend auth | PostgreSQL |
 | [2 — Stream Lifecycle](#phase-2--stream-lifecycle) | ✅ Done | Stream CRUD with PBAC, state machine, SRS webhook, frontend dashboard, channel page | PostgreSQL, Kafka |
 | [3 — Real-time Chat](#phase-3--real-time-chat) | ✅ Done | PG-backed chat with Redis ZSET cache-aside, room lifecycle from stream events, moderation | PostgreSQL, Redis |
-| [4 — Viewer Experience](#phase-4--viewer-experience) | ○ Planned | Stream discovery, HLS player, embedded chat, viewer presence | **SRS** |
-| [5 — Notifications](#phase-5--notifications) | ○ Planned | Email notifications, subscription management, Kafka-driven dispatch | Kafka, SMTP |
-| [6 — Production Hardening](#phase-6--production-hardening) | ⚡ In Progress | Idempotency, shared pbac-common, rate limiting, WebSocket, observability. Redis infrastructure hardened, structured logging done, refresh tokens migrated to Redis. | — |
+| [4 — Viewer Experience](#phase-4--viewer-experience) | ✅ Done | Stream discovery, HLS player, embedded chat, viewer presence + heartbeat harvest | **SRS** |
+| [5 — Notifications](#phase-5--notifications) | ✅ Done | Email notifications, subscription management, Kafka-driven dispatch, SSE delivery, follower fan-out, frontend settings + follow + bell | Kafka, SMTP |
+| [6 — Production Hardening](#phase-6--production-hardening) | ⚡ In Progress | Idempotency, shared pbac-common, rate limiting, WebSocket, observability. Redis infrastructure hardened, structured logging done, refresh tokens migrated to Redis, outbox pattern shipped. | — |
 | [7 — AI / LLM Layer](#phase-7--ai--llm-layer-insight-service-) | ○ Planned (final) | `insight-service`: LLM summaries, moderation, semantic search, RAG — built in a 4-rung capability ladder. **Scaffolding only so far** (ADRs + sketch). | LLM provider, **pgvector** |
 
 ---
@@ -968,9 +968,9 @@ ADR-0003 §Deferred).
 
 ---
 
-## Phase 4 — Viewer Experience ○
+## Phase 4 — Viewer Experience ✅
 
-**Status:** In Progress — browse page, watch page, HLS player, SRS compose, and chat panel integration shipped. Remaining: viewer presence (4.4).
+**Status:** Complete — browse page, watch page, HLS player, SRS compose, chat panel integration, viewer presence (SSE push + frontend display), and heartbeat harvest service all shipped. Commits: `6cec5c5`–`d485685` (2026-07-17).
 
 **Goal:** A viewer can discover live streams, watch them, and interact via chat.
 
@@ -1010,14 +1010,14 @@ ADR-0003 §Deferred).
 - [x] 4.1 — Browse/discovery page (cursor pagination, category filter, `e9ded9d`)
 - [x] 4.2 — Stream viewing page (HLS player via hls.js + embedded chat panel, `5f7c1b3`, `734f466`)
 - [x] 4.3 — Playback URL generation (HLS `.m3u8` URL in `PublishKeyResponse`, wired in watch page)
-- [x] 4.4 — Viewer presence (REST heartbeat + viewer count endpoints ✅; SSE push + frontend display + session card counts ✅ — see [Option A blueprint](plans/option-a-viewer-presence-fanout-blueprint.md) A1; implemented 2026-07-17, pending commit)
-- [x] 4.4b — Heartbeat harvest service (time-series viewer analytics, minute-bucket aggregation ✅ — see [ADR-0010](adr/stream/0010-viewer-heartbeat-analytics-pipeline.md) and [Option A blueprint](plans/option-a-viewer-presence-fanout-blueprint.md) A4; implemented 2026-07-17, pending commit)
+- [x] 4.4 — Viewer presence (REST heartbeat + viewer count endpoints ✅; SSE push + frontend display + session card counts ✅ — see [Option A blueprint](plans/option-a-viewer-presence-fanout-blueprint.md) A1; implemented 2026-07-17)
+- [x] 4.4b — Heartbeat harvest service (time-series viewer analytics, minute-bucket aggregation ✅ — see [ADR-0010](adr/stream/0010-viewer-heartbeat-analytics-pipeline.md) and [Option A blueprint](plans/option-a-viewer-presence-fanout-blueprint.md) A4; implemented 2026-07-17)
 
 ---
 
-## Phase 5 — Notifications ○
+## Phase 5 — Notifications ✅
 
-**Status:** In Progress — notification-service foundation complete: domain entity, persistence, REST API (cursor-paginated bell list, unread count, mark-as-read, mark-all-as-read), SSE delivery (`SseConnectionRegistry`, 30s heartbeat, gateway timeout exclusion), Kafka consumer with Redis SETNX dedup + DLQ (3-retry backoff), subscription model (follow/unfollow with DB-constraint idempotency, polymorphic targets), delivery preferences (per-channel toggles), `NotificationDispatcher` facade (persist → SSE → outbox), outbox + email skeleton (mirrors stream-service `FOR UPDATE SKIP LOCKED`). Frontend complete: toast/bell prebuild (5.0), follow button on channel page, bell dropdown with history (with mark-all-as-read), notification settings page (5.4). Deferred: email template rendering, subscribe (paid membership) button. **Follower fan-out ✅** — `StreamControlListener.onStreamStarted()` wired with `getSubscribers()` → `createForFollower()` → `deliverToMany()` (inline for MVP). **Dedup key scoping ✅** — `dedup:{topic}:{consumerGroupId}:{eventId}` per ADR common/0003.
+**Status:** Complete — notification-service foundation: domain entity, persistence, REST API (cursor-paginated bell list, unread count, mark-as-read, mark-all-as-read), SSE delivery (`SseConnectionRegistry`, 30s heartbeat, gateway timeout exclusion), Kafka consumer with Redis SETNX dedup + DLQ (3-retry backoff), subscription model (follow/unfollow with DB-constraint idempotency, polymorphic targets), delivery preferences (per-channel toggles), `NotificationDispatcher` facade (persist → SSE → outbox), outbox + email skeleton (mirrors stream-service `FOR UPDATE SKIP LOCKED`). Frontend: toast/bell prebuild (5.0), follow button on channel page, bell dropdown with history + mark-all-as-read, notification settings page (5.4). Follower fan-out ✅ — `StreamControlListener.onStreamStarted()` wired with `getSubscribers()` → `createForFollower()` → `deliverToMany()` (inline for MVP). Dedup key scoping ✅ — `dedup:{topic}:{consumerGroupId}:{eventId}` per ADR common/0003. **Deferred:** email template rendering, subscribe (paid membership) button.
 
 **Goal:** Users get notified about followed streamers going live, chat mentions, moderation actions, etc. The notification service is the platform's general notification hub — moderation push is its first client, not its only shape.
 
@@ -1030,7 +1030,7 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 | [0000](adr/notification/0000-architecture-foundation.md) | Layered reactive (`api/` → `application/` → `domain/` → `infrastructure/`) matching stream/chat conventions. Two inbound channels (Kafka consumers per topic), two outbound channels (REST + SSE). General hub pattern — moderation is first client, not only shape. |
 | [0001](adr/notification/0001-subscription-model-and-notification-boundary.md) | **Accepted.** Table split: `notification_preference` (delivery) + `subscription` (polymorphic follow targets). Notification projection boundary — service stores "who wants notifications about X," not Follow vs Subscribe tiers. Implemented 2026-07-16. |
 | [0002](adr/notification/0002-notification-delivery-architecture.md) | **Accepted.** Concrete `NotificationDispatcher` facade (persist → SSE → outbox). Outbox-driven email + fan-out (designed now, inline for MVP). DB constraint for subscription idempotency. Implemented 2026-07-16. |
-| [common/0003](adr/common/0003-cross-service-event-dedup-key-scoping.md) | **Accepted.** Cross-service event dedup key scoping — `dedup:{topic}:{consumerGroupId}:{eventId}`. Implemented 2026-07-17, pending commit. |
+| [common/0003](adr/common/0003-cross-service-event-dedup-key-scoping.md) | **Accepted.** Cross-service event dedup key scoping — `dedup:{topic}:{consumerGroupId}:{eventId}`. Implemented 2026-07-17. |
 
 ### Work Items
 
@@ -1053,17 +1053,17 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 - [x] 5.1b — Subscription + preference CRUD + dispatcher + outbox + email adapter (implemented 2026-07-16; see [ADR-0001](adr/notification/0001-subscription-model-and-notification-boundary.md), [ADR-0002](adr/notification/0002-notification-delivery-architecture.md), [blueprint](plans/notification-5.1b-subscription-dispatcher-blueprint.md), [implementation retro](plans/notification-5.1b-implementation-retrospective.md))
 - [x] 5.2a — StreamControlListener → NotificationService wiring (2026-07-15)
 - [x] 5.2b — SSE delivery (2026-07-15): `SseConnectionRegistry` + SSE controller + gateway timeout + frontend wiring
-- [x] 5.2b — Dedup key scoping refactor — changed unscoped `dedup:stream-event:{eventId}` to scoped `dedup:{topic}:{consumerGroupId}:{eventId}` per [ADR common/0003](adr/common/0003-cross-service-event-dedup-key-scoping.md). Implemented 2026-07-17, pending commit.
-- [x] 5.2b — Follower fan-out (subscription lookup on STREAM_STARTED → notify all followers). Architecture designed in ADR-0002 §4; inline for MVP, outbox-driven at scale. Implemented 2026-07-17, pending commit.
+- [x] 5.2b — Dedup key scoping refactor — changed unscoped `dedup:stream-event:{eventId}` to scoped `dedup:{topic}:{consumerGroupId}:{eventId}` per [ADR common/0003](adr/common/0003-cross-service-event-dedup-key-scoping.md). Implemented 2026-07-17.
+- [x] 5.2b — Follower fan-out (subscription lookup on STREAM_STARTED → notify all followers). Architecture designed in ADR-0002 §4; inline for MVP, outbox-driven at scale. Implemented 2026-07-17.
 - [x] 5.3 — Email adapter skeleton (merged into 5.1b — outbox-driven email via Spring Mail, `EmailAdapter` skeleton, actual SMTP dispatch deferred to Phase 5.3 proper)
 - [x] 5.4 — Frontend notification settings + follow button + bell dropdown (implemented 2026-07-16; see [blueprint](plans/notification-5.4-frontend-subscription-ui-blueprint.md), [retrospective](plans/notification-5.4-frontend-implementation-retrospective.md))
 - [x] 5.4b — mark-all-as-read button (backend: `POST /v1/notifications/mark-all-read` bulk endpoint `d96bed3`; frontend: button in dropdown `a8b708d`)
 
 ---
 
-## Phase 6 — Production Hardening ○
+## Phase 6 — Production Hardening ⚡
 
-**Status:** In Progress — Redis infrastructure hardened, structured logging deployed, refresh tokens migrated to Redis. **Kafka outbox pattern ✅** — transactional outbox with `FOR UPDATE SKIP LOCKED` poller shipped (`2409fc1`, `81ec12a`). Notification consumer idempotency (Redis SETNX + DLQ) shipped (`142f32b`). Remaining items are planned but not started.
+**Status:** In Progress — Redis infrastructure hardened, structured logging deployed, refresh tokens migrated to Redis. Kafka outbox pattern ✅ — transactional outbox with `FOR UPDATE SKIP LOCKED` poller shipped (`2409fc1`, `81ec12a`). Notification consumer idempotency (Redis SETNX + DLQ) shipped (`142f32b`). Remaining items (6.1–6.6) are planned but not started.
 
 **Goal:** The platform is safe, scalable, and maintainable for production use.
 

@@ -1,7 +1,7 @@
 # Option A — Viewer Presence + Fan-out + Dedup + Harvest (Implementation Retrospective)
 
 **Date:** 2026-07-17
-**Status:** Implemented (uncommitted) — all 7 tasks complete, 2 bug fixes applied, + mark-all-as-read add-on
+**Status:** Implemented (committed) — all 7 tasks complete, 2 bug fixes applied, + mark-all-as-read add-on, committed 2026-07-17
 **Session type:** Architecture design + full implementation + bug fixes
 
 ## 1. What was implemented (vs the original plan)
@@ -61,7 +61,7 @@
 | `docs/IMPLEMENTATION-PLAN.md` | A1/A2/A3/A4 as unchecked | All 7 tasks implemented | Check 4.4, 4.4b, 5.2b dedup, 5.2b fan-out; update header status |
 | `docs/adr/stream/0010-viewer-heartbeat-analytics-pipeline.md` | Status: proposed | Harvest service implemented | Accept ADR |
 | `docs/adr/common/0003-cross-service-event-dedup-key-scoping.md` | Status: proposed | Dedup scoping implemented | Accept ADR |
-| This retrospective | Status: "awaiting implementation" | All tasks implemented | Updated (this file) |
+| This retrospective | Status: "awaiting implementation" → "Implemented (committed)" | Updated 2026-07-27 (session retro) |
 
 ## 6. Updated execution order (actual vs planned)
 
@@ -83,4 +83,4 @@
 1. **Fan-out blocks Kafka listener thread** — mitigated by `flatMap` concurrency 8 on bounded elastic + `blockOptional(10s)`. Acceptable for MVP follower counts.
 2. **`StreamEvent` field addition breaks downstream consumers** — mitigated by Java record backward compatibility (nullable field, `@JsonIgnoreProperties(ignoreUnknown = true)`).
 3. **Harvest UPSERT contention at scale** — mitigated by `GREATEST()` on UPSERT + minute-bucket granularity.
-4. **All Option A code is uncommitted** — working tree changes across 23 files. Must be committed before switching branches or merging.
+4. ~~All Option A code is uncommitted~~ **Resolved** — all 23 files committed 2026-07-17 on `develop`.

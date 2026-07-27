@@ -1,7 +1,7 @@
 # Idempotency Key Pattern
 
-**Status:** Documented — pending implementation  
-**Prerequisite for:** Safe POST/PUT/PATCH/DELETE retry in auth interceptor
+**Status:** Implemented (2026-07-27) — Phase 6.1 complete, uncommitted  
+**Prerequisite for:** Safe POST/PUT/PATCH/DELETE retry in auth interceptor ✅
 
 ## Problem
 

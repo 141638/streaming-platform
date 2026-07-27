@@ -83,5 +83,44 @@
 ## 7. Key risks carried forward
 
 1. **Fan-out blocks Kafka listener thread** — Documented in Option A retro. Acceptable for MVP; needs monitoring at scale.
-2. **6.1–6.6 remain unstarted** — No Phase 6 work items have been implemented. The Phase 6 blueprint doesn't exist yet (the untracked file was a test artifact and has been removed). Next session should begin with a plan for 6.1 Idempotency Keys.
+2. **6.2–6.6 remain unstarted** — 6.1 (Idempotency Keys) is implemented but uncommitted. 6.2 (shared pbac-common) is the logical next step.
 3. **All Phase 4/5 work is committed and stable** — No risks from the implementation itself. The only issues were documentation staleness, now resolved.
+
+---
+
+## 8. Phase 6.1 — Idempotency Keys (2026-07-27, afternoon session)
+
+**Status:** Implemented (uncommitted — 22 files changed: 18 modified, 4 new)
+**Blueprint:** [phase-6.1-idempotency-keys.md](../blueprints/phase-6.1-idempotency-keys.md)
+
+### 8.1 What was implemented (vs the blueprint)
+
+| Planned item | Files | Notes |
+|-------------|-------|-------|
+| Task 1 — Gateway Redis dependency + config | `build.gradle.kts`, `application.yml`, `IdempotencyProperties.java`, `GatewayApplication.java` | `spring-boot-starter-data-redis-reactive` added; `streaming.gateway.idempotency.ttl-seconds` config |
+| Task 2 — IdempotencyFilter + CachedResponse | `IdempotencyFilter.java` (209 lines), `CachedResponse.java` | `WebFilter` + `Ordered`, `@Order(2)`, `ServerHttpResponseDecorator` + `DataBufferUtils.join`, fail-open, 2xx-only caching, Base64 body encoding |
+| Task 3 — Frontend IdempotencyService + service wiring | `idempotency.service.ts`, `stream.service.ts`, `chat.service.ts`, `subscription.service.ts`, `notification.service.ts`, `chat-moderation.service.ts` | `newKey()` → `crypto.randomUUID()`; static `options(key?)` helper (consolidated from 5 duplicate `withKey` methods during review); 17 state-changing methods accept optional `idempotencyKey?` |
+| Task 4 — Auth interceptor POST retry | `auth.interceptor.ts` | Unsafe methods with `Idempotency-Key` header are now retried after token refresh |
+| Task 5 — Component wiring | `stream-detail.page.ts`, `stream-create.page.ts`, `chat-panel.component.ts`, `channel.page.ts`, `notification-dropdown.component.ts`, `notification-settings.page.ts`, `ban-list-panel.component.ts`, `about-tab.component.ts` | `chat-panel` uses `Map<string, string>` for retry-safe key reuse per `clientId`; `stream-detail` uses factory pattern for `runLifecycle()` |
+
+### 8.2 Decisions made during implementation
+
+1. **`@Order(2)` settled** — Blueprint waffled between `-1`, `0`, `1`. Settled on `2` because Spring Security chains use `@Order(0)` (public) and `@Order(1)` (protected). The filter MUST run after authentication.
+2. **`IdempotencyService.options()` static method** — Emerged from code review. Five services had an identical `private withKey(key?)` helper. Extracted to a single static method that returns `{ headers?: HttpHeaders }`, fitting directly into `HttpClient` options.
+3. **`CachedResponse` uses Base64 body** — `DataBufferUtils.join` produces raw bytes; Base64 encoding avoids JSON escaping issues with binary/non-UTF8 response bodies.
+
+### 8.3 What was deferred (documented)
+
+| Item | Deferred to | Reason |
+|------|------------|--------|
+| Integration tests (Testcontainers Redis) | Post-Docker setup | Docker-gated per project convention |
+| Component wiring for remaining callers | Incremental follow-up | Most impactful components wired; remaining can be added as needed |
+| `idempotencyKeyByClientId` Map memory leak | Follow-up | LOW — failed-never-retried messages leave stale entries; acceptable for MVP |
+
+### 8.4 Review findings (all fixed)
+
+| # | Severity | Finding | Fix |
+|---|----------|---------|-----|
+| 1 | MEDIUM | `@Order(0)` ambiguous vs Spring Security chains | Changed to `@Order(2)` |
+| 2 | MEDIUM | `withKey` helper duplicated in 5 services | Extracted to `IdempotencyService.options()` static method |
+| 3 | MEDIUM | No unit tests for IdempotencyFilter | Deferred (Docker-gated) |

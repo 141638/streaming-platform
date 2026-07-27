@@ -1,8 +1,8 @@
 # Implementation Plan
 
-**Last updated:** 2026-07-27 (session retro: Phase 6.2 pbac-common + authorization gap remediation committed — `2f71586`..`20685e9`)
-**Current phase:** 6 — Production Hardening ⚡ (6.0a–c ✅, 6.1 ✅, 6.2 ✅, 6.2a ✅, 6.3–6.6 planned)
-**Active blueprint:** None — next is Phase 6.3 Rate limiting
+**Last updated:** 2026-07-28 (Phase 6.3 rate limiting implemented — uncommitted)
+**Current phase:** 6 — Production Hardening ⚡ (6.0a–c ✅, 6.1 ✅, 6.2 ✅, 6.2a ✅, 6.3 ✅, 6.4–6.6 planned)
+**Active blueprint:** None — next is Phase 6.4 WebSocket chat
 
 ## End Goal
 
@@ -1074,10 +1074,10 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 | 6.0a | ✅ **Redis infrastructure hardening** — pinned image (7.2.4-alpine), AOF+RDB persistence, password auth, memory limits (256MB allkeys-lru), RedisInsight (2.44.0), json-file log rotation, restart policy | — |
 | 6.0b | ✅ **Refresh token → Redis migration** — replaced JPA pessimistic-lock rotation with atomic Lua script; deleted RefreshTokenEntity/Repository/MaintenanceService; auth-service now uses Redis as primary store for ephemeral credentials. See [ADR auth/0001](adr/auth/0001-redis-refresh-token-storage.md) | 6.0a |
 | 6.0c | ✅ **Kafka outbox pattern** — transactional outbox (`outbox` table in same TX as entity change), `OutboxPoller` with `FOR UPDATE SKIP LOCKED` and fixed-delay scheduling, at-least-once delivery replacing fire-and-forget. See [ADR stream/0009](adr/stream/0009-outbox-pattern.md). Notification consumer: Redis SETNX dedup (24h TTL) + DLQ with 3-retry backoff. Commit range: `2409fc1`–`142f32b`. | 2.3 |
-| 6.1 | ✅ **Idempotency keys** — gateway `IdempotencyFilter` (WebFilter, @Order(2), fail-open, 2xx-only, Base64 body), frontend `IdempotencyService` (`newKey()` + static `options()`), 5 services + 8 components wired, auth interceptor POST retry enabled. See [blueprint](blueprints/phase-6.1-idempotency-keys.md), [pattern doc](IDEMPOTENCY-PATTERN.md). Commits: `741237d`..`cb7144c` (5 commits, 26 files). | — |
+| 6.1 | ✅ **Idempotency keys** — gateway `IdempotencyFilter` (WebFilter, @Order(3), fail-open, 2xx-only, Base64 body), frontend `IdempotencyService` (`newKey()` + static `options()`), 5 services + 8 components wired, auth interceptor POST retry enabled. See [blueprint](blueprints/phase-6.1-idempotency-keys.md), [pattern doc](IDEMPOTENCY-PATTERN.md). Commits: `741237d`..`cb7144c` (5 commits, 26 files). | — |
 | 6.2 | ✅ **Shared `pbac-common` library** — extracted duplicated `JwtProperties` + `ReactiveJwtDecoder` + `EntitlementMatcher` + `Structured401AuthenticationEntryPoint` from stream/chat/notification/gateway into a shared Gradle module (`pbac-common/`). Commit: `2f71586` (46 files, net -657 lines). | 2.2 |
 | 6.2a | ✅ **Authorization gap remediation** — closed 7 gaps (1 CRITICAL, 3 HIGH, 3 MEDIUM): SRS on_unpublish token validation, chat PBAC enabled-by-default with prod hard-fail, watch endpoint PBAC, participants endpoint PBAC, 403 handler for StreamAccessDeniedException, gateway webhook POST-only scoping, internal token audit logging. Commits: `4eeb252`..`20685e9` (6 commits, 13 files). See [retrospective](docs/plans/authorization-gap-remediation-retrospective.md). | 6.2 |
-| 6.3 | **Rate limiting** — gateway-level rate limits per endpoint, Redis-backed token bucket. See [ADR common/0002](adr/common/0002-redis-ephemeral-data-store.md) for design | 6.0a |
+| 6.3 | ✅ **Rate limiting** — gateway-level sliding-window-log rate limiter (`RateLimitFilter` @Order(2), Redis ZSET + Lua script, 200 req/60s per IP, fail-open, 429 structured JSON). See [retrospective](docs/plans/phase-6.3-rate-limiting-retrospective.md) and [ADR common/0002](adr/common/0002-redis-ephemeral-data-store.md). Uncommitted (3 new, 3 modified). | 6.0a |
 | 6.4 | **WebSocket upgrade for chat** — replace REST polling with WebSocket (STOMP or raw) for real-time messaging. Redis Pub/Sub for cross-instance message fan-out | 3.5 |
 | 6.5 | **Security hardening** — TLS everywhere, secrets management (env vars → vault), CSP headers, CSRF audit, dependency CVE scanning | — |
 | 6.6 | **Observability** — ~~structured JSON logging~~ ✅, Micrometer Tracing (traceId/spanId propagation), Micrometer metrics (Prometheus), Grafana dashboard, centralized log backend (Loki or ELK) | — |
@@ -1090,7 +1090,7 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 - [x] 6.1 — Idempotency keys (`741237d`..`cb7144c`)
 - [x] 6.2 — Shared `pbac-common` library (`2f71586`)
 - [x] 6.2a — Authorization gap remediation (`4eeb252`..`20685e9`)
-- [ ] 6.3 — Rate limiting
+- [x] 6.3 — Rate limiting (uncommitted — 3 new files, 3 modified)
 - [ ] 6.4 — WebSocket chat
 - [ ] 6.5 — Security hardening
 - [ ] 6.6 — Observability

@@ -43,3 +43,4 @@ node_modules/
 *.orig
 .env
 !.env.example
+main/source/backend/.idea/**

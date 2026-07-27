@@ -1,6 +1,6 @@
 # Implementation Plan
 
-**Last updated:** 2026-07-27 (session retro: Phase 6.1 idempotency keys implemented, uncommitted)
+**Last updated:** 2026-07-27 (session retro: Phase 6.1 idempotency keys committed — `741237d`..`cb7144c`)
 **Current phase:** 6 — Production Hardening ⚡ (6.0a–c ✅, 6.1 ✅, 6.2–6.6 planned)
 **Active blueprint:** None — next is Phase 6.2 Shared pbac-common
 
@@ -1063,7 +1063,7 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 
 ## Phase 6 — Production Hardening ⚡
 
-**Status:** In Progress — Redis infrastructure hardened, structured logging deployed, refresh tokens migrated to Redis. Kafka outbox pattern ✅ — transactional outbox with `FOR UPDATE SKIP LOCKED` poller shipped (`2409fc1`, `81ec12a`). Notification consumer idempotency (Redis SETNX + DLQ) shipped (`142f32b`). Idempotency keys ✅ — gateway `IdempotencyFilter` + frontend `IdempotencyService` + auth interceptor retry (22 files, uncommitted). Remaining items (6.2–6.6) are planned but not started.
+**Status:** In Progress — Redis infrastructure hardened, structured logging deployed, refresh tokens migrated to Redis. Kafka outbox pattern ✅ — transactional outbox with `FOR UPDATE SKIP LOCKED` poller shipped (`2409fc1`, `81ec12a`). Notification consumer idempotency (Redis SETNX + DLQ) shipped (`142f32b`). Idempotency keys ✅ — gateway `IdempotencyFilter` + frontend `IdempotencyService` + auth interceptor retry (5 commits, `741237d`..`cb7144c`). Remaining items (6.2–6.6) are planned but not started.
 
 **Goal:** The platform is safe, scalable, and maintainable for production use.
 
@@ -1074,7 +1074,7 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 | 6.0a | ✅ **Redis infrastructure hardening** — pinned image (7.2.4-alpine), AOF+RDB persistence, password auth, memory limits (256MB allkeys-lru), RedisInsight (2.44.0), json-file log rotation, restart policy | — |
 | 6.0b | ✅ **Refresh token → Redis migration** — replaced JPA pessimistic-lock rotation with atomic Lua script; deleted RefreshTokenEntity/Repository/MaintenanceService; auth-service now uses Redis as primary store for ephemeral credentials. See [ADR auth/0001](adr/auth/0001-redis-refresh-token-storage.md) | 6.0a |
 | 6.0c | ✅ **Kafka outbox pattern** — transactional outbox (`outbox` table in same TX as entity change), `OutboxPoller` with `FOR UPDATE SKIP LOCKED` and fixed-delay scheduling, at-least-once delivery replacing fire-and-forget. See [ADR stream/0009](adr/stream/0009-outbox-pattern.md). Notification consumer: Redis SETNX dedup (24h TTL) + DLQ with 3-retry backoff. Commit range: `2409fc1`–`142f32b`. | 2.3 |
-| 6.1 | ✅ **Idempotency keys** — gateway `IdempotencyFilter` (WebFilter, @Order(2), fail-open, 2xx-only, Base64 body), frontend `IdempotencyService` (`newKey()` + static `options()`), 5 services + 8 components wired, auth interceptor POST retry enabled. See [blueprint](blueprints/phase-6.1-idempotency-keys.md), [pattern doc](IDEMPOTENCY-PATTERN.md). Uncommitted — 22 files (4 new, 18 modified). | — |
+| 6.1 | ✅ **Idempotency keys** — gateway `IdempotencyFilter` (WebFilter, @Order(2), fail-open, 2xx-only, Base64 body), frontend `IdempotencyService` (`newKey()` + static `options()`), 5 services + 8 components wired, auth interceptor POST retry enabled. See [blueprint](blueprints/phase-6.1-idempotency-keys.md), [pattern doc](IDEMPOTENCY-PATTERN.md). Commits: `741237d`..`cb7144c` (5 commits, 26 files). | — |
 | 6.2 | **Shared `pbac-common` library** — extract duplicated `JwtProperties` + `ReactiveJwtDecoder` + `EntitlementMatcher` from stream/chat/notification into a shared Gradle module | 2.2 |
 | 6.3 | **Rate limiting** — gateway-level rate limits per endpoint, Redis-backed token bucket. See [ADR common/0002](adr/common/0002-redis-ephemeral-data-store.md) for design | 6.0a |
 | 6.4 | **WebSocket upgrade for chat** — replace REST polling with WebSocket (STOMP or raw) for real-time messaging. Redis Pub/Sub for cross-instance message fan-out | 3.5 |
@@ -1086,7 +1086,7 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 - [x] 6.0a — Redis infrastructure hardening
 - [x] 6.0b — Refresh token → Redis migration
 - [x] 6.0c — Kafka outbox pattern (stream-service) + consumer idempotency + DLQ (notification-service)
-- [x] 6.1 — Idempotency keys (uncommitted)
+- [x] 6.1 — Idempotency keys (`741237d`..`cb7144c`)
 - [ ] 6.2 — Shared `pbac-common` library
 - [ ] 6.3 — Rate limiting
 - [ ] 6.4 — WebSocket chat

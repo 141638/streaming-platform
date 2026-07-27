@@ -83,14 +83,14 @@
 ## 7. Key risks carried forward
 
 1. **Fan-out blocks Kafka listener thread** — Documented in Option A retro. Acceptable for MVP; needs monitoring at scale.
-2. **6.2–6.6 remain unstarted** — 6.1 (Idempotency Keys) is implemented but uncommitted. 6.2 (shared pbac-common) is the logical next step.
+2. **6.2–6.6 remain unstarted** — 6.1 (Idempotency Keys) is committed (`741237d`..`cb7144c`). 6.2 (shared pbac-common) is the logical next step.
 3. **All Phase 4/5 work is committed and stable** — No risks from the implementation itself. The only issues were documentation staleness, now resolved.
 
 ---
 
 ## 8. Phase 6.1 — Idempotency Keys (2026-07-27, afternoon session)
 
-**Status:** Implemented (uncommitted — 22 files changed: 18 modified, 4 new)
+**Status:** Implemented (committed — 5 commits, 26 files: `741237d`..`cb7144c`)
 **Blueprint:** [phase-6.1-idempotency-keys.md](../blueprints/phase-6.1-idempotency-keys.md)
 
 ### 8.1 What was implemented (vs the blueprint)

@@ -91,6 +91,9 @@ streaming:
   gateway:
     idempotency:
       ttl-seconds: ${IDEMPOTENCY_TTL_SECONDS:86400}
+    ratelimit:
+      limit: ${RATE_LIMIT_MAX_REQUESTS:200}
+      window-seconds: ${RATE_LIMIT_WINDOW_SECONDS:60}
 
 management:
   endpoints:

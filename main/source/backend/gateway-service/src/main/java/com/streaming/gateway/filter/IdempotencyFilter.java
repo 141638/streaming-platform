@@ -79,13 +79,12 @@ public class IdempotencyFilter implements WebFilter, Ordered {
 
     @Override
     public int getOrder() {
-        // Run after Spring Security (which uses its own SecurityWebFilterChain
-        // ordering via @Order on the chain beans at 0 and 1) so that the
-        // request is authenticated before we cache or replay any response.
-        // On cache hit, the response is short-circuited and security is
-        // never reached — but the key is a 128-bit UUID that only the
-        // original authenticated client possesses, so this is safe.
-        return 2;
+        // Run after Spring Security (@Order 0/1) and RateLimitFilter (@Order 2)
+        // so the request is authenticated and rate-checked before we cache or
+        // replay any response.  On cache hit, the response is short-circuited
+        // and security is never reached — but the key is a 128-bit UUID that
+        // only the original authenticated client possesses, so this is safe.
+        return 3;
     }
 
     @Override

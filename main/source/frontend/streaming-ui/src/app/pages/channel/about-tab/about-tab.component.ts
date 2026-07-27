@@ -18,6 +18,7 @@ import { ChannelAboutResponseDto } from '../../../core/contracts/channel-about-r
 import { SocialLinkDto } from '../../../core/contracts/social-link.dto';
 import { AuthService } from '../../../core/services/auth.service';
 import { StreamService } from '../../../core/services/stream.service';
+import { IdempotencyService } from '../../../core/services/idempotency.service';
 import { SocialLinksComponent } from '../../../shared/molecules/social-links/social-links.component';
 
 interface PlatformOption {
@@ -53,6 +54,7 @@ export class AboutTabComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly authService = inject(AuthService);
   private readonly streamService = inject(StreamService);
+  private readonly idempotencyService = inject(IdempotencyService);
 
   private readonly username = this.route.parent!.snapshot.paramMap.get('username')!;
 
@@ -116,7 +118,7 @@ export class AboutTabComponent implements OnInit {
     if (!ch) return;
     this.savingBio.set(true);
     this.streamService
-      .updateProfile(this.username, this.bioDraft(), ch.socialLinks)
+      .updateProfile(this.username, this.bioDraft(), ch.socialLinks, this.idempotencyService.newKey())
       .pipe(finalize(() => this.savingBio.set(false)))
       .subscribe({
         next: () => {
@@ -161,7 +163,7 @@ export class AboutTabComponent implements OnInit {
     if (!ch) return;
     this.savingLinks.set(true);
     this.streamService
-      .updateProfile(this.username, ch.bio ?? '', this.linksDraft())
+      .updateProfile(this.username, ch.bio ?? '', this.linksDraft(), this.idempotencyService.newKey())
       .pipe(finalize(() => this.savingLinks.set(false)))
       .subscribe({
         next: () => {

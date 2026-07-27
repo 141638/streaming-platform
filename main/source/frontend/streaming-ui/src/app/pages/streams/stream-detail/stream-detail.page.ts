@@ -23,6 +23,7 @@ import { ToggleButtonModule } from 'primeng/togglebutton';
 import { PublishKeyResponseDto } from '../../../core/contracts/publish-key-response.dto';
 import { StreamResponseDto } from '../../../core/contracts/stream-response.dto';
 import { StreamService } from '../../../core/services/stream.service';
+import { IdempotencyService } from '../../../core/services/idempotency.service';
 import { StreamSseService } from '../../../core/services/stream-sse.service';
 import { StreamStageComponent } from '../../../shared/organisms/stream-stage/stream-stage.component';
 import { StreamStatusBadgeComponent } from '../../../shared/molecules/stream-status-badge/stream-status-badge.component';
@@ -52,6 +53,7 @@ export class StreamDetailPage implements OnInit, OnDestroy {
 
   private readonly streamService = inject(StreamService);
   private readonly streamSseService = inject(StreamSseService);
+  private readonly idempotencyService = inject(IdempotencyService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -182,8 +184,9 @@ export class StreamDetailPage implements OnInit, OnDestroy {
     this.actionInProgress.set(true);
     this.errorMessage.set(undefined);
 
+    const idempotencyKey = this.idempotencyService.newKey();
     this.streamService
-      .goLive(this.id())
+      .goLive(this.id(), idempotencyKey)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (key) => {
@@ -200,7 +203,8 @@ export class StreamDetailPage implements OnInit, OnDestroy {
   }
 
   public onEnd(): void {
-    this.runLifecycle(this.streamService.endStream(this.id()));
+    const key = this.idempotencyService.newKey();
+    this.runLifecycle((k) => this.streamService.endStream(this.id(), k), key);
   }
 
   /** Opens the cancel confirmation dialog. */
@@ -215,8 +219,9 @@ export class StreamDetailPage implements OnInit, OnDestroy {
     this.actionInProgress.set(true);
     this.errorMessage.set(undefined);
 
+    const idempotencyKey = this.idempotencyService.newKey();
     this.streamService
-      .cancelStream(this.id())
+      .cancelStream(this.id(), idempotencyKey)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -254,10 +259,11 @@ export class StreamDetailPage implements OnInit, OnDestroy {
     this.stream.update((s) =>
       s ? { ...s, chatArchiveDelayMinutes: delay } : undefined,
     );
+    const idempotencyKey = this.idempotencyService.newKey();
     this.streamService
       .updateStream(this.id(), {
         chatArchiveDelayMinutes: delay,
-      } as Partial<StreamResponseDto>)
+      } as Partial<StreamResponseDto>, idempotencyKey)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => this.stream.set(data),
@@ -270,8 +276,9 @@ export class StreamDetailPage implements OnInit, OnDestroy {
     this.actionInProgress.set(true);
     this.errorMessage.set(undefined);
 
+    const idempotencyKey = this.idempotencyService.newKey();
     this.streamService
-      .archiveStream(this.id())
+      .archiveStream(this.id(), idempotencyKey)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -292,8 +299,9 @@ export class StreamDetailPage implements OnInit, OnDestroy {
     this.keyLoading.set(true);
     this.tokenRevealed.set(false);
 
+    const idempotencyKey = this.idempotencyService.newKey();
     this.streamService
-      .issuePublishKey(this.id())
+      .issuePublishKey(this.id(), idempotencyKey)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (key) => {
@@ -377,14 +385,17 @@ export class StreamDetailPage implements OnInit, OnDestroy {
   }
 
   /** Runs a lifecycle transition that returns StreamResponseDto, then refreshes state. */
-  private runLifecycle(action: ReturnType<StreamService['endStream']>): void {
+  private runLifecycle(
+    action: (key: string) => ReturnType<StreamService['endStream']>,
+    idempotencyKey: string,
+  ): void {
     if (this.actionInProgress()) {
       return;
     }
     this.actionInProgress.set(true);
     this.errorMessage.set(undefined);
 
-    action.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    action(idempotencyKey).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this.stream.set(data);
         this.actionInProgress.set(false);

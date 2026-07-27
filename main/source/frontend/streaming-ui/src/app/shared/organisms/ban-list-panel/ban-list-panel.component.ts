@@ -19,6 +19,7 @@ import { displayName } from '../../../core/lib/avatar';
 import { friendlyChatMessage, parseChatApiError } from '../../../core/lib/chat-error';
 import { formatExpiresIn } from '../../../core/lib/time';
 import { ChatModerationService } from '../../../core/services/chat-moderation.service';
+import { IdempotencyService } from '../../../core/services/idempotency.service';
 import {
   BanListItemComponent,
   DurationChange,
@@ -52,6 +53,7 @@ export class BanListPanelComponent implements OnInit {
   public readonly roomKey = input.required<string>();
 
   protected readonly mod = inject(ChatModerationService);
+  private readonly idempotencyService = inject(IdempotencyService);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly loading = signal(false);
@@ -117,7 +119,7 @@ export class BanListPanelComponent implements OnInit {
     }
     // The service removes optimistically and restores on error.
     this.mod
-      .unban(this.roomKey(), ban.bannedSubject)
+      .unban(this.roomKey(), ban.bannedSubject, this.idempotencyService.newKey())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         error: (err: unknown) => this.error.set(this.toMessage(err)),
@@ -127,7 +129,7 @@ export class BanListPanelComponent implements OnInit {
   /** Re-base a ban's duration from a row's inline ladder editor. */
   protected onDurationChange(change: DurationChange): void {
     this.mod
-      .updateDuration(this.roomKey(), change.subject, change.durationSeconds)
+      .updateDuration(this.roomKey(), change.subject, change.durationSeconds, this.idempotencyService.newKey())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         error: (err: unknown) => this.error.set(this.toMessage(err)),

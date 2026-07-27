@@ -22,6 +22,7 @@ import { ChannelIdentityResponseDto } from '../../core/contracts/channel-identit
 import { AuthService } from '../../core/services/auth.service';
 import { StreamService } from '../../core/services/stream.service';
 import { SubscriptionService } from '../../core/services/subscription.service';
+import { IdempotencyService } from '../../core/services/idempotency.service';
 import { ToastService } from '../../core/services/toast.service';
 import { ChannelHeaderComponent } from '../../shared/organisms/channel-header/channel-header.component';
 
@@ -57,6 +58,7 @@ export class ChannelPage implements OnInit {
   private readonly authService = inject(AuthService);
   private readonly streamService = inject(StreamService);
   private readonly subscriptionService = inject(SubscriptionService);
+  private readonly idempotencyService = inject(IdempotencyService);
   private readonly toastService = inject(ToastService);
 
   protected readonly channel = signal<ChannelIdentityResponseDto | null>(null);
@@ -174,7 +176,7 @@ export class ChannelPage implements OnInit {
     const subject = this.broadcasterSubject();
     if (!subject) return;
     this.isFollowLoading.set(true);
-    this.subscriptionService.follow('CHANNEL', subject).subscribe({
+    this.subscriptionService.follow('CHANNEL', subject, this.idempotencyService.newKey()).subscribe({
       next: (sub) => {
         this.isFollowing.set(true);
         this.subscriptionId.set(sub.id);
@@ -198,7 +200,7 @@ export class ChannelPage implements OnInit {
     const id = this.subscriptionId();
     if (!id) return;
     this.isFollowLoading.set(true);
-    this.subscriptionService.unfollow(id).subscribe({
+    this.subscriptionService.unfollow(id, this.idempotencyService.newKey()).subscribe({
       next: () => {
         this.isFollowing.set(false);
         this.subscriptionId.set(null);

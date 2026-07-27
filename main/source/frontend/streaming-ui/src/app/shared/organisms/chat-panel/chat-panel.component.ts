@@ -38,6 +38,7 @@ import {
 } from '../../../core/contracts/chat-message-response.dto';
 import { RoomResponseDto } from '../../../core/contracts/room-response.dto';
 import { dicebearAvatarUrl, truncateSub } from '../../../core/lib/avatar';
+import { IdempotencyService } from '../../../core/services/idempotency.service';
 import {
   friendlyChatMessage,
   parseChatApiError,
@@ -151,6 +152,7 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
 
   private readonly chatService = inject(ChatService);
   private readonly authService = inject(AuthService);
+  private readonly idempotencyService = inject(IdempotencyService);
   protected readonly mod = inject(ChatModerationService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly fb = inject(FormBuilder);
@@ -266,6 +268,8 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
   private clientIdCounter = 0;
   private isNearBottom = true;
   private oldestCursor: string | null = null;
+  /** Idempotency keys per clientId for safe retry after token refresh. */
+  private readonly idempotencyKeyByClientId = new Map<string, string>();
 
   // ── Lifecycle ──────────────────────────────────────────────────────────
 
@@ -333,14 +337,20 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
     this.messages.update((msgs) => [...msgs, temp]);
     this.scrollToBottom();
 
+    const idempotencyKey = this.idempotencyService.newKey();
+    this.idempotencyKeyByClientId.set(clientId, idempotencyKey);
+
     this.chatService
-      .sendMessage(this.roomKey, content)
+      .sendMessage(this.roomKey, content, idempotencyKey)
       .pipe(
         finalize(() => this.sending.set(false)),
         takeUntilDestroyed(this.destroyRef),
       )
       .subscribe({
-        next: (response) => this.replaceTempMessage(clientId, response),
+        next: (response) => {
+          this.idempotencyKeyByClientId.delete(clientId);
+          this.replaceTempMessage(clientId, response);
+        },
         error: (err: unknown) => {
           if (parseChatApiError(err)?.code === 'CHAT_USER_BANNED') {
             this.messages.update((msgs) =>
@@ -371,14 +381,23 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
     this.errorMessage.set(null);
     this.sending.set(true);
 
+    // Reuse the original idempotency key so the gateway returns the cached
+    // response if the first attempt actually succeeded.
+    const idempotencyKey =
+      this.idempotencyKeyByClientId.get(clientId) ??
+      this.idempotencyService.newKey();
+
     this.chatService
-      .sendMessage(this.roomKey, failed.body)
+      .sendMessage(this.roomKey, failed.body, idempotencyKey)
       .pipe(
         finalize(() => this.sending.set(false)),
         takeUntilDestroyed(this.destroyRef),
       )
       .subscribe({
-        next: (response) => this.addServerMessage(response),
+        next: (response) => {
+          this.idempotencyKeyByClientId.delete(clientId);
+          this.addServerMessage(response);
+        },
         error: (err: unknown) => {
           if (parseChatApiError(err)?.code === 'CHAT_USER_BANNED') {
             this.bannedState.set(true);

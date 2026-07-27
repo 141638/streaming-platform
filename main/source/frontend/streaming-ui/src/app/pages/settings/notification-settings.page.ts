@@ -16,6 +16,7 @@ import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { PreferenceResponseDto } from '../../core/contracts/preference-response.dto';
 import { SubscriptionResponseDto } from '../../core/contracts/subscription-response.dto';
 import { SubscriptionService } from '../../core/services/subscription.service';
+import { IdempotencyService } from '../../core/services/idempotency.service';
 import { ToastService } from '../../core/services/toast.service';
 
 /**
@@ -44,6 +45,7 @@ import { ToastService } from '../../core/services/toast.service';
 export class NotificationSettingsPage implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
   private readonly subscriptionService = inject(SubscriptionService);
+  private readonly idempotencyService = inject(IdempotencyService);
   private readonly toastService = inject(ToastService);
 
   // ── Following section ────────────────────────────────────────────────────
@@ -98,7 +100,7 @@ export class NotificationSettingsPage implements OnInit {
   // ── Actions ──────────────────────────────────────────────────────────────
 
   public unfollow(sub: SubscriptionResponseDto): void {
-    this.subscriptionService.unfollow(sub.id).subscribe({
+    this.subscriptionService.unfollow(sub.id, this.idempotencyService.newKey()).subscribe({
       next: () => {
         this.subscriptions.update((list) =>
           list.filter((s) => s.id !== sub.id),

@@ -18,6 +18,7 @@ import { ButtonModule } from 'primeng/button';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
 import { NotificationDto } from '../../../core/contracts/notification.dto';
 import { NotificationService } from '../../../core/services/notification.service';
+import { IdempotencyService } from '../../../core/services/idempotency.service';
 import { NotificationCardComponent } from '../notification-card/notification-card.component';
 
 /**
@@ -60,6 +61,7 @@ export class NotificationDropdownComponent implements OnInit {
   // ── Injections ───────────────────────────────────────────────────────────
 
   private readonly notificationService = inject(NotificationService);
+  private readonly idempotencyService = inject(IdempotencyService);
   private readonly router = inject(Router);
   private readonly cdr = inject(ChangeDetectorRef);
 
@@ -134,7 +136,7 @@ export class NotificationDropdownComponent implements OnInit {
   /** Mark as read on the server, refresh the badge, and navigate if actionable. */
   public onCardClick(notification: NotificationDto): void {
     if (!notification.read) {
-      this.notificationService.markAsRead(notification.id).subscribe(() => {
+      this.notificationService.markAsRead(notification.id, this.idempotencyService.newKey()).subscribe(() => {
         this.notificationService.refreshUnreadCount().subscribe();
       });
     }
@@ -153,7 +155,7 @@ export class NotificationDropdownComponent implements OnInit {
    */
   public markAllAsRead(): void {
     this.isMarkingAllRead.set(true);
-    this.notificationService.markAllAsRead().subscribe({
+    this.notificationService.markAllAsRead(this.idempotencyService.newKey()).subscribe({
       next: () => {
         // Mark every locally held notification as read so the UI updates
         // without needing a full re-fetch.

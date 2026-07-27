@@ -17,6 +17,7 @@ import { SelectModule } from 'primeng/select';
 import { ToggleButtonModule } from 'primeng/togglebutton';
 import { FormsModule } from '@angular/forms';
 import { StreamService } from '../../../core/services/stream.service';
+import { IdempotencyService } from '../../../core/services/idempotency.service';
 import { CategoryResponseDto } from '../../../core/contracts/category-response.dto';
 
 @Component({
@@ -41,6 +42,7 @@ import { CategoryResponseDto } from '../../../core/contracts/category-response.d
 export class StreamCreatePage {
   private readonly fb = inject(FormBuilder);
   private readonly streamService = inject(StreamService);
+  private readonly idempotencyService = inject(IdempotencyService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -101,13 +103,13 @@ export class StreamCreatePage {
         maxViewers: raw.maxViewers ?? 0,
         autoArchiveChat: raw.autoArchiveChat ?? true,
         chatArchiveDelayMinutes: raw.chatArchiveDelayMinutes ?? 30,
-      })
+      }, this.idempotencyService.newKey())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (response) => {
           this.loading.set(false);
           // Immediately issue a publish key so the user has a ready-to-copy stream key
-          this.streamService.issuePublishKey(response.id).subscribe({
+          this.streamService.issuePublishKey(response.id, this.idempotencyService.newKey()).subscribe({
             next: (key) => {
               this.router.navigate(['/channel', response.id], {
                 state: { publishKey: key },

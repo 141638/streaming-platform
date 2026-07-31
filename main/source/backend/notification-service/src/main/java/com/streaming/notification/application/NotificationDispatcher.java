@@ -55,13 +55,15 @@ public class NotificationDispatcher {
      */
     public Mono<Void> deliver(Notification notification) {
         return repository.save(notification)
-                .doOnSuccess(saved -> {
+                .flatMap(saved -> {
                     log.info("Notification delivered: id={} category={} recipient={}",
                             saved.getId(), saved.getCategory(),
                             saved.getRecipientSubject());
+                    // SSE push — best-effort, fire-and-forget
                     sseRegistry.push(saved.getRecipientSubject(),
                             NotificationResponse.from(saved));
-                    outboxService.enqueue(saved);
+                    // Outbox enqueue — chained so errors are visible
+                    return outboxService.enqueue(saved).thenReturn(saved);
                 })
                 .then();
     }

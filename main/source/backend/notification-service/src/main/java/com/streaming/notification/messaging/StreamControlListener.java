@@ -14,6 +14,7 @@ import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Consumes stream lifecycle events from the {@code stream.control} Kafka topic.
@@ -89,6 +90,7 @@ public class StreamControlListener {
                         "Redis dedup check failed for eventId={} — processing anyway: {}",
                         event.eventId(), ex.getMessage()))
                 .onErrorResume(ex -> handle(event))
+                .subscribeOn(Schedulers.boundedElastic())
                 .blockOptional(Duration.ofSeconds(10));
     }
 

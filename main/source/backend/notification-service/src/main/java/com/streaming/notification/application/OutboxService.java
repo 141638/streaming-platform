@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
 
 /**
  * Writes notifications to the outbox for reliable delivery to downstream
@@ -35,15 +36,16 @@ public class OutboxService {
     /**
      * Write a notification to the outbox for non-in_app channel delivery.
      *
-     * <p>Fire-and-forget — uses {@code subscribe()} instead of chaining
-     * into the reactive pipeline. Outbox write failure does not roll back
-     * the notification persist or SSE push. The notification is durable
-     * in PostgreSQL and delivered via SSE; outbox delivery is additive
-     * and retryable.
+     * <p>Returns a {@link Mono} that the caller can chain into its reactive
+     * pipeline. Outbox write failure does not roll back the notification
+     * persist or SSE push — the error is logged and propagated so callers
+     * can observe it, but the notification is already durable in PostgreSQL
+     * and delivered via SSE.
      *
      * @param notification the persisted notification to deliver via outbox channels
+     * @return Mono that completes when the outbox entry is saved
      */
-    public void enqueue(Notification notification) {
+    public Mono<Void> enqueue(Notification notification) {
         String payload;
         try {
             payload = objectMapper.writeValueAsString(
@@ -51,7 +53,7 @@ public class OutboxService {
         } catch (Exception e) {
             log.warn("Failed to serialize outbox payload for notification {}: {}",
                     notification.getId(), e.getMessage());
-            return;
+            return Mono.empty();
         }
 
         OutboxEntry entry = OutboxEntry.create(
@@ -60,12 +62,11 @@ public class OutboxService {
                 payload,
                 OffsetDateTime.now(ZoneOffset.UTC));
 
-        outboxRepository.save(entry)
-                .subscribe(
-                        saved -> log.debug("Outbox entry created: id={} notificationId={}",
-                                saved.getId(), notification.getId()),
-                        err -> log.warn("Failed to write outbox entry for notification {}: {}",
-                                notification.getId(), err.getMessage())
-                );
+        return outboxRepository.save(entry)
+                .doOnSuccess(saved -> log.debug("Outbox entry created: id={} notificationId={}",
+                        saved.getId(), notification.getId()))
+                .doOnError(err -> log.warn("Failed to write outbox entry for notification {}: {}",
+                        notification.getId(), err.getMessage()))
+                .then();
     }
 }

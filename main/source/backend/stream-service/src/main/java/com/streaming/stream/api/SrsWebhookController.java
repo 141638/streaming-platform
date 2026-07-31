@@ -6,21 +6,22 @@ import com.streaming.stream.service.StreamService.InvalidPublishTokenException;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
 /**
  * Webhook endpoints called by SRS {@code http_hooks} on publish/unpublish events.
  *
- * <p>These endpoints are NOT protected by JWT auth — they use the publish
- * token embedded in the RTMP URL for authentication (validated by
- * {@link StreamService#handlePublish}). In Phase 2, both SRS and
- * stream-service run on the internal Docker network.
+ * <p>These endpoints are NOT protected by JWT auth — they use a shared secret
+ * query parameter ({@code ?secret=...}) for caller authentication, plus the
+ * publish token embedded in the RTMP URL for per-stream authorization.
  *
  * <p>Paths are under {@code /v1/webhooks/srs/} and must be permitted in
  * {@code SecurityConfig}.
@@ -34,6 +35,9 @@ public class SrsWebhookController {
 
     private final StreamService streamService;
 
+    @Value("${streaming.srs.webhook.secret}")
+    private String webhookSecret;
+
     /**
      * Called by SRS before accepting an RTMP connection.
      *
@@ -41,7 +45,14 @@ public class SrsWebhookController {
      * 200 = accept, any other status = reject.
      */
     @PostMapping(path = "/on_publish", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<Integer>> onPublish(@RequestBody SrsWebhookPayload body) {
+    public Mono<ResponseEntity<Integer>> onPublish(
+            @RequestBody SrsWebhookPayload body,
+            @RequestParam("secret") String secret) {
+        if (!webhookSecret.equals(secret)) {
+            log.warn("on_publish: invalid webhook secret");
+            return Mono.just(ResponseEntity.status(403).build());
+        }
+
         String token = body.extractToken();
         if (token == null) {
             log.warn("on_publish: missing token in param: {}", body.param());
@@ -62,7 +73,14 @@ public class SrsWebhookController {
 
     /** Called by SRS when an RTMP connection ends. */
     @PostMapping(path = "/on_unpublish", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<Integer>> onUnpublish(@RequestBody SrsWebhookPayload body) {
+    public Mono<ResponseEntity<Integer>> onUnpublish(
+            @RequestBody SrsWebhookPayload body,
+            @RequestParam("secret") String secret) {
+        if (!webhookSecret.equals(secret)) {
+            log.warn("on_unpublish: invalid webhook secret");
+            return Mono.just(ResponseEntity.status(403).build());
+        }
+
         String token = body.extractToken();
         if (token == null) {
             log.warn("on_unpublish: missing token in param: {}", body.param());

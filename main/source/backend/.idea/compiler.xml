@@ -32,6 +32,9 @@
       <module name="streaming-backend.notification-service" options="-parameters" />
       <module name="streaming-backend.notification-service.main" options="-parameters" />
       <module name="streaming-backend.notification-service.test" options="-parameters" />
+      <module name="streaming-backend.pbac-common" options="-parameters" />
+      <module name="streaming-backend.pbac-common.main" options="-parameters" />
+      <module name="streaming-backend.pbac-common.test" options="-parameters" />
       <module name="streaming-backend.stream-service" options="-parameters" />
       <module name="streaming-backend.stream-service.main" options="-parameters" />
       <module name="streaming-backend.stream-service.test" options="-parameters" />

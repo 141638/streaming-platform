@@ -1,7 +1,7 @@
 # Phase 2–5 Gap Remediation — Implementation Blueprint
 
-**Date:** 2026-07-28
-**Status:** Planning — awaiting approval
+**Date:** 2026-07-28 (updated 2026-07-31)
+**Status:** In Progress — Tier 1 complete (Tracks B, C, A6); Tier 2 pending (Tracks E partial, F)
 **Parent:** [Phase 2-5 Gap Analysis Retrospective](phase-2-5-production-gap-analysis-retrospective.md)
 **Depends on:** Phase 1-6.3 (all implemented), 6-agent audit findings (complete)
 
@@ -75,7 +75,9 @@ Each track lists specific files with `[CREATE]`, `[MODIFY]`, or `[DELETE]` marke
   - `[MODIFY]` `notification-service/.../api/error/NotificationExceptionHandler.java` — add catch-all handler returning `NotificationApiError("INTERNAL_ERROR", "An unexpected error occurred")`
 - **Validate:** Trigger an unexpected exception in each service (e.g., send malformed request that passes validation but causes NPE) → response body is generic, no stack trace.
 
-### Task A6: Add SRS Webhook HMAC Verification
+### Task A6: ✅ Add SRS Webhook Shared-Secret Verification (DONE — 2026-07-31)
+
+- **Implementation note:** SRS does not support custom HTTP headers on webhook URLs, so HMAC is infeasible. Instead, added `?secret=` query parameter to both webhook URLs in `custom.conf` and validated in `SrsWebhookController` against `streaming.srs.webhook.secret`. Returns 403 on mismatch. This is the SRS-compatible approach.
 
 - **Action:** Implement HMAC signature verification on incoming SRS webhook requests. Remove or implement the unused `srs.webhook.secret` config.
 - **Files:**
@@ -91,7 +93,9 @@ Each track lists specific files with `[CREATE]`, `[MODIFY]`, or `[DELETE]` marke
 **Goal:** Fix the transactional boundary in the outbox pattern, fix state machine edge cases, fix the double-subscribe bug in chat consumer.
 **Order:** After Track A (may touch same files).
 
-### Task B1: Wire @Transactional on Outbox Boundary
+### Task B1: ✅ Wire @Transactional on Outbox Boundary (DONE — 2026-07-31)
+
+- **Action:** ~~Add `@Transactional` to `StreamService` lifecycle methods~~ Implemented via R2DBC-native `TransactionalOperator` pattern (`R2dbcTransactionManager` + `TransactionalOperator` bean in `R2dbcConfig`). Spring's `@Transactional` does NOT work with R2DBC. Wrapped 5 lifecycle methods with `transactionalOperator.transactional(...)`: `createStream()`, `deleteStream()`, `lifecycleTransition()`, `handlePublish()`, `doHandleUnpublish()`.
 
 - **Action:** Add `@Transactional` to `StreamService` lifecycle methods that chain entity save + outbox write. OR implement the R2DBC `TransactionalOperator` pattern for reactive transactions. Note: Spring's `@Transactional` does NOT work with R2DBC repositories — use `TransactionalOperator` with `ConnectionFactory transactionManager`.
 - **Files:**
@@ -101,7 +105,7 @@ Each track lists specific files with `[CREATE]`, `[MODIFY]`, or `[DELETE]` marke
   - `[MODIFY]` `stream-service/src/test/java/.../service/StreamServiceTest.java` — add test: simulate crash after entity save → outbox row not committed → consumer does NOT receive event
 - **Validate:** `./gradlew :stream-service:compileJava` — BUILD SUCCESSFUL. Integration test (future): force crash between save and outbox write → entity rollback confirmed.
 
-### Task B2: Fix SCHEDULED Stream Cancel Gap
+### Task B2: ✅ Fix SCHEDULED Stream Cancel Gap (DONE — 2026-07-31)
 
 - **Action:** Add `SCHEDULED → CANCELLED` to `StreamStatus.allowedTransitions()`. This lets users cancel a scheduled stream without a 500 error.
 - **Files:**
@@ -109,7 +113,9 @@ Each track lists specific files with `[CREATE]`, `[MODIFY]`, or `[DELETE]` marke
   - `[MODIFY]` `stream-service/src/test/java/.../service/StreamServiceTest.java` — add test: create SCHEDULED stream → cancel → verify status is CANCELLED, verify 200 response
 - **Validate:** `./gradlew :stream-service:test` — new test passes. Manual: create scheduled stream → cancel → success.
 
-### Task B3: Fix goLiveFromSchedule() transitionTo() Bypass
+### Task B3: ✅ Fix goLiveFromSchedule() transitionTo() Bypass (DONE — 2026-07-31)
+
+- **Implementation note:** Instead of adding a new `transitionFromScheduled()` method, the fix was two-part: (1) add `DRAFT` to SCHEDULED's `allowedTransitions()` alongside `CANCELLED`, (2) replace `entity.setStatus(DRAFT)` with `entity.transitionTo(DRAFT)`. This is simpler and reuses the existing `transitionTo()` infrastructure rather than adding a one-off domain method.
 
 - **Action:** Instead of raw `setStatus(DRAFT)`, add a dedicated `transitionFromScheduled()` domain method that goes through the proper path with timestamp management.
 - **Files:**
@@ -117,14 +123,18 @@ Each track lists specific files with `[CREATE]`, `[MODIFY]`, or `[DELETE]` marke
   - `[MODIFY]` `stream-service/.../service/StreamService.java` — line 689: replace `entity.setStatus(StreamStatus.DRAFT)` with `entity.transitionFromScheduled()`
 - **Validate:** `./gradlew :stream-service:compileJava` — BUILD SUCCESSFUL. Test: go-live on scheduled stream → timestamps set correctly.
 
-### Task B4: Fix Chat StreamControlListener Double-Subscribe
+### Task B4: ❌ Fix Chat StreamControlListener Double-Subscribe (FALSE ALARM)
+
+- **Verdict:** The two `.subscribe()` calls in `StreamControlListener` are independent pipelines (system message notification vs. archive trigger), not duplicate work. Dropped from plan.
 
 - **Action:** Remove the second `.subscribe()` on line 101. Merge error handling into the first chain.
 - **Files:**
   - `[MODIFY]` `chat-service/.../messaging/StreamControlListener.java` — lines 94-101: merge into single chain: `.doOnSuccess(...).doOnError(...).subscribe()`. Remove the standalone `.doOnError().subscribe()`.
 - **Validate:** `./gradlew :chat-service:compileJava` — BUILD SUCCESSFUL. Manual: produce Kafka STREAM_ENDED event → verify room archived exactly once (not twice).
 
-### Task B5: Fix Fire-and-Forget Kafka Consumer in Chat Service
+### Task B5: ✅ Fix Fire-and-Forget Kafka Consumer in Chat Service (DONE — 2026-07-31)
+
+- **Implementation note:** Complete refactor of `StreamControlListener` — all handlers return `Mono<Void>`, assembled via switch expression, awaited with `blockOptional(Duration.ofSeconds(10))`. Each handler chains all operations with `.then()` instead of `.subscribe()`. This ensures Kafka offset is committed only after the reactive pipeline completes.
 
 - **Action:** Convert `StreamControlListener` from fire-and-forget `.subscribe()` to returning `Mono<Void>` that is awaited. Use `blockOptional()` with timeout (matching notification-service pattern) or switch to reactive Kafka listener.
 - **Files:**
@@ -148,7 +158,9 @@ Each track lists specific files with `[CREATE]`, `[MODIFY]`, or `[DELETE]` marke
   - `[CREATE]` `notification-service/src/test/java/.../application/SubscriptionServiceTest.java` — test: follow idempotency, duplicate detection (DataIntegrityViolationException), reactivation after unfollow, ownership enforcement
 - **Validate:** `./gradlew :notification-service:test` — all 4 test classes pass.
 
-### Task C2: Fix Fan-Out Blocking
+### Task C2: ✅ Fix Fan-Out Blocking (DONE — 2026-07-31)
+
+- **Implementation note:** Added `.subscribeOn(Schedulers.boundedElastic())` before `.blockOptional()` in `StreamControlListener` line 92. Pagination of `getSubscribers()` deferred to Tier 2.
 
 - **Action:** Offload the fan-out computation from the Kafka listener thread. Per ADR-0002 §4, use `.subscribeOn(Schedulers.boundedElastic())`. Also add pagination to `getSubscribers()` query.
 - **Files:**
@@ -167,7 +179,9 @@ Each track lists specific files with `[CREATE]`, `[MODIFY]`, or `[DELETE]` marke
   - `[MODIFY]` `notification-service/.../email/EmailAdapter.java` — change `log.debug(...)` to `log.error("EmailAdapter not implemented — outbox entries are NOT being delivered. Set NOTIFICATION_EMAIL_ENABLED=false to suppress.")`. Add `email.enabled` config flag defaulting to `false`. OutboxPoller skips email entries when disabled.
 - **Validate:** Option A: send test email → arrives in inbox. Option B: start with `email.enabled=false` → outbox entries accumulate with warning log; start with `email.enabled=true` but no SMTP → entries retry and go DEAD.
 
-### Task C4: Fix OutboxService.enqueue() Fire-and-Forget
+### Task C4: ✅ Fix OutboxService.enqueue() Fire-and-Forget (DONE — 2026-07-31)
+
+- **Implementation note:** Changed `enqueue()` signature from `void` to `Mono<Void>`, replaced internal `.subscribe()` with `.then()`. Chained into `NotificationDispatcher.deliver()` via `flatMap(saved -> outboxService.enqueue(saved).thenReturn(saved))` instead of `doOnSuccess()`.
 
 - **Action:** Return `Mono<Void>` from `enqueue()` and chain it in `NotificationDispatcher.deliver()` so the caller can await the outbox write.
 - **Files:**
@@ -175,7 +189,9 @@ Each track lists specific files with `[CREATE]`, `[MODIFY]`, or `[DELETE]` marke
   - `[MODIFY]` `notification-service/.../application/NotificationDispatcher.java` — line 64: replace `outboxService.enqueue(saved)` with `.then(outboxService.enqueue(saved))` in the reactive chain
 - **Validate:** `./gradlew :notification-service:compileJava` — BUILD SUCCESSFUL. Test: enqueue failure → error propagated to caller, logged, not silently dropped.
 
-### Task C5: Add Validation to DTOs and Controllers
+### Task C5: ✅ Add Validation to DTOs and Controllers (DONE — 2026-07-31)
+
+- **Implementation note:** Created `UpdatePreferenceRequest` record (`Boolean active`, `String topicGlob`) replacing `Map<String,Object>`. Added `@NotBlank` to `SubscriptionRequest` and `PreferenceRequest` fields. Added `@Valid` to controller methods. Added `WebExchangeBindException` handler returning structured 400 with field errors. Added `spring-boot-starter-validation` dependency. Also added catch-all `@ExceptionHandler(Exception.class)` returning generic 500.
 
 - **Action:** Add `@NotBlank @Size(max=255)` to `SubscriptionRequest` and `PreferenceRequest` fields. Replace raw `Map<String,Object>` in `PreferenceController.updatePreference()` with a typed DTO. Add `@Valid` where missing.
 - **Files:**

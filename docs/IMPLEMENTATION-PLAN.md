@@ -1,7 +1,7 @@
 # Implementation Plan
 
-**Last updated:** 2026-07-28 (Phase 2-5 production gap analysis completed; remediation blueprint active)
-**Current phase:** 6 — Production Hardening ⚡ (6.0a–c ✅, 6.1 ✅, 6.2 ✅, 6.2a ✅, 6.3 ✅, 6.4–6.6 planned, **6.7 — Gap Remediation ⚡ active**)
+**Last updated:** 2026-07-31 (Phase 6.7 Tier 1 complete — 8 functional correctness fixes across stream/chat/notification services)
+**Current phase:** 6 — Production Hardening ⚡ (6.0a–c ✅, 6.1 ✅, 6.2 ✅, 6.2a ✅, 6.3 ✅, 6.4–6.6 planned, **6.7 — Gap Remediation ⚡ Tier 1 ✅, Tier 2 ⏳**)
 **Active blueprint:** [phase-2-5-gap-remediation-blueprint.md](plans/phase-2-5-gap-remediation-blueprint.md)
 **Gap analysis:** [phase-2-5-production-gap-analysis-retrospective.md](plans/phase-2-5-production-gap-analysis-retrospective.md) — 50+ findings across phases 2-5
 
@@ -1131,13 +1131,17 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 
 #### Phase 6.7 Checklist
 
-- [ ] Track A — Security triage
-- [ ] Track B — Outbox & state machine integrity
-- [ ] Track C — Notification hardening
+- [ ] Track A — Security triage (skipped per user directive — pet project; hardcoded secrets acceptable risk)
+- [x] Track B — Outbox & state machine integrity ✅ **Tier 1 complete** (B1: R2DBC TransactionalOperator wired; B2: SCHEDULED cancel gap fixed; B3: goLiveFromSchedule bypass fixed; B4: dropped — false alarm; B5: chat consumer refactored to Mono<Void> + blockOptional)
+- [x] Track C — Notification hardening ✅ **Tier 1 complete** (C2: fan-out offloading via subscribeOn(boundedElastic); C4: OutboxService.enqueue() returns Mono<Void>; C5: DTO validation + catch-all + WebExchangeBindException handlers)
 - [ ] Track D — Observability foundation
-- [ ] Track E — Infrastructure maturity
-- [ ] Track F — Error handling standardization
+- [ ] Track E — Infrastructure maturity (E3: Redis SCAN chunked; E4: SSE backpressure bounds) — Tier 2 ⏳
+- [ ] Track F — Error handling standardization (F1: logging in handlers; F2: getMessage() → pass ex; F3: shared base handler in pbac-common) — Tier 2 ⏳
 - [ ] Track G — Test execution pipeline
+- [x] Track A partial — A6: SRS webhook shared-secret validation (query-param secret) ✅
+- [ ] Track A remaining — A1-A5 skipped (pet project)
+
+**Tier 1 retrospective:** [phase-6.7-tier1-retrospective.md](plans/phase-6.7-tier1-retrospective.md)
 
 ---
 

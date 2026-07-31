@@ -151,5 +151,49 @@ A detailed remediation blueprint will be written as `docs/plans/phase-2-5-gap-re
 
 ---
 
+## 8. Resolution status (updated 2026-07-31)
+
+### Tier 1 — Fixed (uncommitted)
+
+| Finding | Severity | Status | Fix |
+|---------|----------|--------|-----|
+| C-3 — Outbox no `@Transactional` | CRITICAL | ✅ Fixed | R2DBC `TransactionalOperator` wired in `R2dbcConfig`; 5 lifecycle methods wrapped |
+| H-1 — SCHEDULED can't cancel | HIGH | ✅ Fixed | `allowedTransitions()` now returns `Set.of(CANCELLED, DRAFT)` |
+| H-5 — Chat fire-and-forget consumer | HIGH | ✅ Fixed | Refactored to `Mono<Void>` + `blockOptional(10s)` |
+| H-6 — Outbox fire-and-forget | HIGH | ✅ Fixed | `enqueue()` returns `Mono<Void>`, chained into dispatcher pipeline |
+| H-15 — goLiveFromSchedule bypasses transitionTo | HIGH | ✅ Fixed | Uses `entity.transitionTo(DRAFT)` after adding DRAFT to allowed transitions |
+| M-13 — Map<String,Object> unsafe casts | MEDIUM | ✅ Fixed | `UpdatePreferenceRequest` record with `Boolean active` + `String topicGlob` |
+| M-19 — Missing catch-all handlers | MEDIUM | ✅ Fixed | Catch-all added to notification-service; auth + chat pending Tier 2 |
+| C-5 — Fan-out blocks Kafka thread | CRITICAL | ✅ Fixed | `.subscribeOn(Schedulers.boundedElastic())` added |
+| — SRS webhook no authentication | — | ✅ Fixed | Query-param `?secret=` validation on both webhook endpoints |
+
+### Tier 2 — Pending
+
+| Finding | Severity | Status |
+|---------|----------|--------|
+| C-7 — auth-service no catch-all handler | CRITICAL | ⏳ Tier 2 |
+| H-11 — chat no catch-all handler | HIGH | ⏳ Tier 2 |
+| F1 — No logging in exception handlers | HIGH | ⏳ Tier 2 |
+| F2 — `ex.getMessage()` without stack trace (~15 locations) | MEDIUM | ⏳ Tier 2 |
+| F3 — No shared exception handler base class | MEDIUM | ⏳ Tier 2 |
+| E3 — Redis SCAN memory safety | MEDIUM | ⏳ Tier 2 |
+| E4 — SSE backpressure buffer bounds | HIGH | ⏳ Tier 2 |
+
+### Skipped (pet project)
+
+| Finding | Severity | Reason |
+|---------|----------|--------|
+| C-1 — Hardcoded JWT secret | CRITICAL | Pet project — acceptable risk |
+| C-2 — Hardcoded Gmail password | CRITICAL | Pet project — acceptable risk |
+| H-7 — Health endpoint exposure | HIGH | Pet project — acceptable risk |
+
+### False alarms
+
+| Finding | Severity | Verdict |
+|---------|----------|---------|
+| C-8 — Chat double-subscribe | CRITICAL | False alarm — two independent pipelines (system message vs. archive) |
+
+---
+
 *Generated from the 2026-07-28 6-agent production readiness audit.
-Remediation blueprint follows.*
+Tier 1 remediation completed 2026-07-31. Tier 2 pending.*

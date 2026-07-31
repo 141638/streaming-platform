@@ -24,7 +24,7 @@ import com.streaming.stream.config.ViewCountProperties;
 import com.streaming.stream.sse.SseConnectionRegistry;
 import com.streaming.common.messaging.StreamEvent;
 import com.streaming.stream.messaging.StreamEventPublisher;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.reactive.TransactionalOperator;
 import com.streaming.stream.persistence.entity.BroadcasterProfileEntity;
 import com.streaming.stream.persistence.entity.StreamSessionEntity;
 import com.streaming.stream.persistence.entity.StreamStatus;
@@ -82,6 +82,7 @@ public class StreamService {
     private final ReactiveRedisTemplate<String, String> redisTemplate;
     private final ViewCountProperties viewCountProperties;
     private final SseConnectionRegistry sseRegistry;
+    private final TransactionalOperator transactionalOperator;
 
     public StreamService(StreamSessionRepository repository,
                          StreamCategoryRepository categoryRepository,
@@ -95,7 +96,8 @@ public class StreamService {
                          DatabaseClient databaseClient,
                          ReactiveRedisTemplate<String, String> redisTemplate,
                          ViewCountProperties viewCountProperties,
-                         SseConnectionRegistry sseRegistry) {
+                         SseConnectionRegistry sseRegistry,
+                         TransactionalOperator transactionalOperator) {
         this.repository = repository;
         this.categoryRepository = categoryRepository;
         this.profileRepository = profileRepository;
@@ -109,6 +111,7 @@ public class StreamService {
         this.redisTemplate = redisTemplate;
         this.viewCountProperties = viewCountProperties;
         this.sseRegistry = sseRegistry;
+        this.transactionalOperator = transactionalOperator;
     }
 
     // ── Create ──────────────────────────────────────────────────────────────
@@ -128,7 +131,8 @@ public class StreamService {
         return authorization.requireAccess(jwt, new RequiredAuthority(
                         AuthResourceDomain.STREAM, AuthResourceKind.SESSION,
                         AuthAction.CREATE, sub))
-                .then(Mono.defer(() -> {
+                .then(transactionalOperator.transactional(
+                        Mono.defer(() -> {
                     StreamSessionEntity entity = buildEntity(id, sub, username, verified,
                             request, now);
                     // Always generate srsName and streamKeyHash — even SCHEDULED
@@ -155,20 +159,20 @@ public class StreamService {
                     if (request.category() != null && !request.category().isBlank()) {
                         entity.setCategory(request.category());
                     }
-                    return repository.save(entity);
-                }))
-                .flatMap(saved -> {
-                    StreamEvent event = request.scheduledAt() != null
-                            ? StreamEvent.scheduled(saved.getId(), sub,
-                                    saved.getBroadcasterUsername())
-                            : StreamEvent.created(saved.getId(), sub,
-                                    saved.getBroadcasterUsername());
-                    return outboxWriter.write(event)
-                            .doOnSuccess(oe -> log.info(
-                                    "Stream created: id={} status={} subject={}",
-                                    saved.getId(), saved.getStatus().wireValue(), sub))
-                            .thenReturn(saved);
-                })
+                    return repository.save(entity)
+                            .flatMap(saved -> {
+                                StreamEvent event = request.scheduledAt() != null
+                                        ? StreamEvent.scheduled(saved.getId(), sub,
+                                                saved.getBroadcasterUsername())
+                                        : StreamEvent.created(saved.getId(), sub,
+                                                saved.getBroadcasterUsername());
+                                return outboxWriter.write(event)
+                                        .doOnSuccess(oe -> log.info(
+                                                "Stream created: id={} status={} subject={}",
+                                                saved.getId(), saved.getStatus().wireValue(), sub))
+                                        .thenReturn(saved);
+                            });
+                })))
                 .map(StreamResponse::from);
     }
 
@@ -584,16 +588,17 @@ public class StreamService {
                         .thenReturn(entity))
                 .flatMap(entity -> {
                     entity.cancel();
-                    return repository.save(entity);
+                    return transactionalOperator.transactional(
+                            repository.save(entity)
+                                    .flatMap(saved ->
+                                            outboxWriter.write(StreamEvent.cancelled(saved.getId(),
+                                                    saved.getBroadcasterSubject(),
+                                                    saved.getBroadcasterUsername()))
+                                                    .doOnSuccess(oe -> log.info(
+                                                            "Stream cancelled via delete: id={}",
+                                                            saved.getId()))
+                                                    .thenReturn(saved)));
                 })
-                .flatMap(saved ->
-                        outboxWriter.write(StreamEvent.cancelled(saved.getId(),
-                                saved.getBroadcasterSubject(),
-                                saved.getBroadcasterUsername()))
-                                .doOnSuccess(oe -> log.info(
-                                        "Stream cancelled via delete: id={}",
-                                        saved.getId()))
-                                .thenReturn(saved))
                 .then();
     }
 
@@ -686,9 +691,8 @@ public class StreamService {
 
                     entity.setSrsName(srsName);
                     entity.setStreamKeyHash(HashUtils.sha256Hex(srsName));
-                    entity.setStatus(StreamStatus.DRAFT);
+                    entity.transitionTo(StreamStatus.DRAFT);
                     entity.setScheduledAt(null);
-                    entity.setUpdatedAt(now);
 
                     return repository.save(entity)
                             .map(saved -> buildPublishKeyResponse(
@@ -720,7 +724,8 @@ public class StreamService {
 
                     return publishTokenService.validateForPublish(
                                     rawToken, srsName, status)
-                            .then(Mono.defer(() -> {
+                            .then(transactionalOperator.transactional(
+                                    Mono.defer(() -> {
                                 if (status == StreamStatus.DRAFT) {
                                     return repository
                                             .existsByBroadcasterSubjectAndStatus(
@@ -765,7 +770,7 @@ public class StreamService {
                                 log.info("Stream reconnect via webhook: id={}",
                                         entity.getId());
                                 return Mono.<StreamSessionEntity>just(entity);
-                            }));
+                            })));
                 })
                 .then();
     }
@@ -804,14 +809,15 @@ public class StreamService {
                     if (autoArchive && delay == 0) {
                         entity.setChatArchivedAt(OffsetDateTime.now(ZoneOffset.UTC));
                     }
-                    return repository.save(entity)
-                            .flatMap(saved ->
-                                    outboxWriter.write(
-                                            StreamEvent.ended(saved.getId(),
-                                                    saved.getBroadcasterSubject(),
-                                                    saved.getBroadcasterUsername(),
-                                                    autoArchive, delay))
-                                            .doOnSuccess(oe -> {
+                    return transactionalOperator.transactional(
+                            repository.save(entity)
+                                    .flatMap(saved ->
+                                            outboxWriter.write(
+                                                    StreamEvent.ended(saved.getId(),
+                                                            saved.getBroadcasterSubject(),
+                                                            saved.getBroadcasterUsername(),
+                                                            autoArchive, delay))
+                                                    .doOnSuccess(oe -> {
                                                 log.info(
                                                         "Stream ended via webhook: id={} autoArchiveChat={} delay={}",
                                                         saved.getId(), autoArchive, delay);
@@ -829,7 +835,7 @@ public class StreamService {
                                                         saved.getBroadcasterSubject(),
                                                         endedEvent);
                                             })
-                                            .thenReturn(saved));
+                                            .thenReturn(saved)));
                 })
                 .onErrorResume(e -> {
                     log.warn("on_unpublish lookup failed (idempotent no-op): {}",
@@ -1275,32 +1281,33 @@ public class StreamService {
                         .thenReturn(entity))
                 .flatMap(entity -> {
                     transition.accept(entity);
-                    return repository.save(entity);
+                    return transactionalOperator.transactional(
+                            repository.save(entity)
+                                    .flatMap(saved ->
+                                            outboxWriter.write(eventFactory.apply(saved))
+                                                    .doOnSuccess(oe -> {
+                                                        log.info("Stream {}: id={}", actionLabel,
+                                                                saved.getId());
+                                                        // Push SSE for end transitions so viewers and
+                                                        // the broadcaster see the change in real time.
+                                                        // The on_unpublish webhook path also pushes,
+                                                        // but the explicit endStream API path was
+                                                        // missing this — SSE only went through Kafka.
+                                                        if ("ended".equals(actionLabel)) {
+                                                            StreamSseEvent endedEvent = new StreamSseEvent(
+                                                                    "stream:ended",
+                                                                    saved.getId(),
+                                                                    "ENDED",
+                                                                    null);
+                                                            sseRegistry.pushToStreamViewers(
+                                                                    saved.getId(), endedEvent);
+                                                            sseRegistry.push(
+                                                                    saved.getBroadcasterSubject(),
+                                                                    endedEvent);
+                                                        }
+                                                    })
+                                                    .thenReturn(saved)));
                 })
-                .flatMap(saved ->
-                        outboxWriter.write(eventFactory.apply(saved))
-                                .doOnSuccess(oe -> {
-                                    log.info("Stream {}: id={}", actionLabel,
-                                            saved.getId());
-                                    // Push SSE for end transitions so viewers and
-                                    // the broadcaster see the change in real time.
-                                    // The on_unpublish webhook path also pushes,
-                                    // but the explicit endStream API path was
-                                    // missing this — SSE only went through Kafka.
-                                    if ("ended".equals(actionLabel)) {
-                                        StreamSseEvent endedEvent = new StreamSseEvent(
-                                                "stream:ended",
-                                                saved.getId(),
-                                                "ENDED",
-                                                null);
-                                        sseRegistry.pushToStreamViewers(
-                                                saved.getId(), endedEvent);
-                                        sseRegistry.push(
-                                                saved.getBroadcasterSubject(),
-                                                endedEvent);
-                                    }
-                                })
-                                .thenReturn(saved))
                 .map(StreamResponse::from)
                 .onErrorMap(OptimisticLockingFailureException.class,
                         ex -> new StreamConflictException(

@@ -19,8 +19,12 @@ import reactor.core.publisher.Mono;
  * transaction as the entity change that triggered it.
  *
  * <p>Callers (e.g. {@link StreamService}) MUST invoke {@link #write} within
- * a {@code @Transactional} reactive chain so the outbox insert and the entity
- * save share a single transaction.
+ * a {@link org.springframework.transaction.reactive.TransactionalOperator#transactional
+ * TransactionalOperator.transactional()} reactive chain so the outbox insert
+ * and the entity save share a single R2DBC transaction.
+ *
+ * <p>The {@code TransactionalOperator} bean is registered in
+ * {@link com.streaming.stream.config.R2dbcConfig}.
  *
  * <p>This replaces the fire-and-forget {@code eventPublisher.publish(event).subscribe()}
  * pattern with a durable, transactionally-guaranteed event record.

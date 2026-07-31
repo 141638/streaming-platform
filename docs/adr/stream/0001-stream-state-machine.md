@@ -14,16 +14,17 @@ During Phase 2.3 implementation, SCHEDULED was initially modeled as a state reac
 
 Implement the state machine as **rich domain methods on `StreamSessionEntity`**, with transition rules defined on the `StreamStatus` enum using Java 21 switch expressions.
 
-### Transition Map (Revised)
+### Transition Map (Revised — Phase 6.7 Tier 1, 2026-07-31)
 
 ```
 DRAFT     ──→ LIVE, CANCELLED
-SCHEDULED ──→ DRAFT (only via dedicated go-live action — not a generic transition)
+SCHEDULED ──→ DRAFT, CANCELLED
 LIVE      ──→ ENDED
 ENDED     ──→ (terminal)
 CANCELLED ──→ (terminal)
-SCHEDULED ──→ (terminal — except for the go-live action)
 ```
+
+> **Phase 6.7 revision:** SCHEDULED → DRAFT is now a generic transition (used by `goLiveFromSchedule()` via `entity.transitionTo(DRAFT)` instead of raw `setStatus()`). SCHEDULED → CANCELLED was added to fix the "uncancellable scheduled stream" bug (500 error on cancel). The go-live business logic (fresh publish key, null `scheduledAt`) remains unchanged.
 
 ### Semantic Boundary (Revised)
 
@@ -50,7 +51,8 @@ This avoids cloning/duplication while keeping the schedule as a reusable plan. A
 |---------|--------|
 | `DRAFT → SCHEDULED` transition | SCHEDULED is now a creation-time state only (via `CreateStreamRequest.scheduledAt`) |
 | `SCHEDULED → LIVE` transition | SCHEDULED cannot go directly live — must go through DRAFT first |
-| `SCHEDULED → CANCELLED` transition | SCHEDULED is terminal; cancel by going to DRAFT first then cancelling |
+| `SCHEDULED → CANCELLED` transition | ✅ Reinstated in Phase 6.7 Tier 1 (2026-07-31) — SCHEDULED→CANCELLED is now a valid generic transition to fix the uncancellable scheduled stream bug |
+| `SCHEDULED → LIVE` transition | SCHEDULED cannot go directly live — must go through DRAFT first |
 | `entity.schedule()` domain method | No longer needed |
 | `StreamService.scheduleStream()` | No longer needed |
 | `POST /v1/streams/{id}/schedule` endpoint | No longer needed |
@@ -101,7 +103,7 @@ All lifecycle transitions use `AuthAction.LIFECYCLE`. Each method follows: `find
 - **Positive**: SCHEDULED as terminal simplifies the transition map (fewer paths to reason about)
 - **Negative**: `@Setter`-generated `setStatus()` still exists on the entity; discipline required
 - **Negative**: `OptimisticLockingFailureException` requires client retry logic
-- **Negative**: Go-live action (SCHEDULED→DRAFT) is not expressible in `StreamStatus.allowedTransitions()` — it's a dedicated service method, not a generic transition
+- **Positive**: Go-live action (SCHEDULED→DRAFT) is now expressible in `StreamStatus.allowedTransitions()` as of Phase 6.7 Tier 1 (2026-07-31). The transition map was expanded from `Set.of()` to `Set.of(CANCELLED, DRAFT)` to fix two gaps: (1) SCHEDULED streams couldn't be cancelled without a 500 error, and (2) `goLiveFromSchedule()` was using raw `setStatus(DRAFT)` bypassing `transitionTo()`'s timestamp management. The go-live business logic is unchanged — it still issues a fresh publish key and nullifies `scheduledAt` — it simply uses the proper `transitionTo()` API now.
 
 ## References
 

@@ -113,7 +113,7 @@ The notification-service consumer is configured with a `DefaultErrorHandler` + `
 - **Positive**: DLQ captures poison-pill messages for manual inspection instead of silent loss
 - **Negative**: ~5-second latency from entity change to Kafka delivery (acceptable for lifecycle events, not suitable for real-time chat — which uses Redis/REST)
 - **Negative**: Outbox table is an additional write per lifecycle transition (mitigated by DELETE-on-success keeping the table small)
-- **Negative**: Requires `@Transactional` on service methods for correct atomicity (not yet wired — entity save and outbox write are in separate auto-commit transactions in the initial implementation; this is a known limitation to be addressed in a follow-up)
+- **Negative**: Requires `TransactionalOperator` on service methods for correct atomicity ✅ **Resolved 2026-07-31** — `R2dbcTransactionManager` + `TransactionalOperator` beans registered in `R2dbcConfig`; 5 lifecycle methods wrapped in `transactionalOperator.transactional(...)`. Note: Spring's `@Transactional` does not work with R2DBC — the fix uses the R2DBC-native `TransactionalOperator` API.
 
 ## References
 
@@ -124,5 +124,5 @@ The notification-service consumer is configured with a `DefaultErrorHandler` + `
 - `V13__create_outbox.sql` — outbox table migration
 - `OutboxEvent.java`, `OutboxEventRepository.java` — persistence layer
 - `OutboxWriter.java`, `OutboxPoller.java` — application layer
-- `StreamControlListener.java` (notification-service) — consumer with dedup
-- `KafkaConsumerConfig.java` (notification-service) — DLQ error handler
+- [Phase 6.7 Tier 1 Retrospective](../../plans/phase-6.7-tier1-retrospective.md) — transactional boundary fix (2026-07-31)
+- [R2DBC TransactionalOperator Pattern](../../R2DBC-TRANSACTIONAL-PATTERN.md) — bean registration + usage template

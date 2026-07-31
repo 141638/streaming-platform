@@ -146,7 +146,9 @@ SRS ──POST /api/streams/v1/webhooks/srs/on_unpublish──→ Gateway ──
 
 Gateway and stream-service security configs both permit `/v1/webhooks/**` without JWT validation. The webhook paths are in the gateway's public filter chain (`@Order(0)`).
 
-**Authentication (Phase 2):** Publish JWT validation + internal Docker network isolation. The `X-Webhook-Secret` shared secret described in the original version of this ADR was deferred — SRS does not support custom HTTP headers in `http_hooks` natively. A shared secret in a query parameter would be logged in URLs. For Phase 2, the JWT publish token (validated by `PublishTokenService.validateForPublish()`) is the authentication mechanism. Both SRS and stream-service run on the internal Docker network.
+**Authentication (Phase 2):** Publish JWT validation + internal Docker network isolation. The `X-Webhook-Secret` shared secret described in the original version of this ADR was deferred — SRS does not support custom HTTP headers in `http_hooks` natively.
+
+**Authentication (Phase 6.7, 2026-07-31):** ✅ Query-param shared secret implemented. SRS webhook URLs in `custom.conf` include `?secret=${SRS_WEBHOOK_SECRET}`. `SrsWebhookController` validates the `secret` query parameter against `streaming.srs.webhook.secret` before processing — returns 403 on mismatch. This is the SRS-compatible approach: query params (not custom headers) are the only metadata SRS forwards on webhook requests.
 
 **Future path (Phase 4+):** Deploy a lightweight sidecar in front of SRS that fetches a service-account JWT from auth-service and injects it as an `Authorization: Bearer` header on webhook requests. The existing service-account token infrastructure (`AccessTokenIssuanceService.issueForServiceAccount()`) is already built for this.
 
@@ -211,7 +213,7 @@ The V3 migration (`DROP NOT NULL on stream_key_hash`) is reversed via V5. The `s
 - **Positive**: Gateway routing provides retry resilience for webhook calls
 - **Positive**: Plaintext `srs_name` column enables URL reconstruction without reversing SHA-256
 - **Negative**: Sol3 breaks JWT semantic purity — `exp` is contextual rather than absolute. A token that is "expired" can still reconnect to a LIVE stream. Some security auditors may object.
-- **Negative**: No shared secret on webhook endpoints in Phase 2 (mitigated by internal Docker network isolation + JWT publish token validation on both on_publish and on_unpublish)
+- **Negative**: No shared secret on webhook endpoints in Phase 2 (mitigated by internal Docker network isolation + JWT publish token validation on both on_publish and on_unpublish). ✅ **Resolved 2026-07-31** — query-param `?secret=` shared secret added in Phase 6.7 Tier 1.
 - **Negative**: srsName UUID is visible in HLS URLs (acceptable — it's a UUID, not a secret, and is rotatable in DRAFT)
 - **Negative**: `stream_key_hash` is irreversible — DB-level queries by srsName go through the hash, not the plaintext
 

@@ -3,6 +3,7 @@ package com.streaming.notification.api;
 import com.streaming.notification.api.dto.SubscriptionRequest;
 import com.streaming.notification.api.dto.SubscriptionResponse;
 import com.streaming.notification.application.SubscriptionService;
+import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -43,7 +44,7 @@ public class SubscriptionController {
     @ResponseStatus(HttpStatus.CREATED)
     public Mono<SubscriptionResponse> follow(
             @AuthenticationPrincipal Jwt jwt,
-            @RequestBody SubscriptionRequest request) {
+            @Valid @RequestBody SubscriptionRequest request) {
         String subscriberSubject = jwt.getSubject();
         return subscriptionService.follow(
                 subscriberSubject, request.targetType(), request.targetId());

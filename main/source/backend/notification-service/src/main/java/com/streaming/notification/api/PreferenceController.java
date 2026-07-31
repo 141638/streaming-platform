@@ -2,9 +2,10 @@ package com.streaming.notification.api;
 
 import com.streaming.notification.api.dto.PreferenceRequest;
 import com.streaming.notification.api.dto.PreferenceResponse;
+import com.streaming.notification.api.dto.UpdatePreferenceRequest;
 import com.streaming.notification.application.PreferenceService;
+import jakarta.validation.Valid;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -43,7 +44,7 @@ public class PreferenceController {
     @PutMapping("/preferences")
     public Mono<PreferenceResponse> upsertPreference(
             @AuthenticationPrincipal Jwt jwt,
-            @RequestBody PreferenceRequest request) {
+            @Valid @RequestBody PreferenceRequest request) {
         String subscriberSubject = jwt.getSubject();
         return preferenceService.upsertPreference(
                 subscriberSubject, request.channel(), request.topicGlob());
@@ -60,19 +61,16 @@ public class PreferenceController {
 
     /**
      * Update a specific preference — ownership-scoped.
-     * Body: {@code {"active": true, "topicGlob": "STREAM_*"}} — both fields optional.
+     * Both fields are optional — only provided fields are applied.
      */
     @PatchMapping("/preferences/{id}")
     public Mono<PreferenceResponse> updatePreference(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID id,
-            @RequestBody Map<String, Object> body) {
+            @Valid @RequestBody UpdatePreferenceRequest request) {
         String subscriberSubject = jwt.getSubject();
-        Boolean active = body.containsKey("active")
-                ? (Boolean) body.get("active") : null;
-        String topicGlob = body.containsKey("topicGlob")
-                ? (String) body.get("topicGlob") : null;
-        return preferenceService.updatePreference(id, subscriberSubject, active, topicGlob);
+        return preferenceService.updatePreference(id, subscriberSubject,
+                request.active(), request.topicGlob());
     }
 
     /** Delete a preference — ownership-scoped. */

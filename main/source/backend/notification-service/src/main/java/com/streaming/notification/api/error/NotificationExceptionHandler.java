@@ -10,6 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.bind.support.WebExchangeBindException;
 
 /**
  * Maps notification domain exceptions to HTTP responses carrying a
@@ -49,5 +50,32 @@ public class NotificationExceptionHandler {
         log.debug("Preference not found: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(new NotificationApiError("PREFERENCE_NOT_FOUND", ex.getMessage()));
+    }
+
+    /**
+     * Handles validation failures from {@code @Valid} on request bodies.
+     * Returns a structured 400 with field-level error details.
+     */
+    @ExceptionHandler(WebExchangeBindException.class)
+    public ResponseEntity<NotificationApiError> handleValidation(WebExchangeBindException ex) {
+        String detail = ex.getFieldErrors().stream()
+                .map(e -> e.getField() + ": " + e.getDefaultMessage())
+                .reduce((a, b) -> a + "; " + b)
+                .orElse("Validation failed");
+        log.debug("Validation error: {}", detail);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new NotificationApiError("VALIDATION_ERROR", detail));
+    }
+
+    /**
+     * Catch-all for unexpected exceptions — logs the full stack trace
+     * server-side but returns a generic message to the client.
+     */
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<NotificationApiError> handleUnexpected(Exception ex) {
+        log.error("Unhandled exception: {}", ex.getMessage(), ex);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(new NotificationApiError("INTERNAL_ERROR",
+                        "An unexpected error occurred"));
     }
 }

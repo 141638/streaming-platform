@@ -1,5 +1,7 @@
 package com.streaming.notification.api.dto;
 
+import jakarta.validation.constraints.NotBlank;
+
 /**
  * Request body for creating a subscription (following a target).
  *
@@ -7,6 +9,6 @@ package com.streaming.notification.api.dto;
  * @param targetId   the target identifier (broadcaster subject, room key, stream ID)
  */
 public record SubscriptionRequest(
-        String targetType,
-        String targetId
+        @NotBlank String targetType,
+        @NotBlank String targetId
 ) {}

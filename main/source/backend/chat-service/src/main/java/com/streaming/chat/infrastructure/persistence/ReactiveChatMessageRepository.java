@@ -6,6 +6,7 @@ import java.util.UUID;
 import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.repository.reactive.ReactiveCrudRepository;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * R2DBC repository for {@link ChatMessage} entities.
@@ -34,4 +35,15 @@ public interface ReactiveChatMessageRepository extends ReactiveCrudRepository<Ch
             + "AND author_username ILIKE :query || '%' "
             + "ORDER BY author_username LIMIT :limit")
     Flux<String> findDistinctAuthorUsernamesByRoomId(UUID roomId, String query, int limit);
+
+    /**
+     * Find a message by its client-provided idempotency key.
+     *
+     * <p>Used to resolve the existing message on a duplicate-key violation —
+     * returns the already-persisted message so the caller gets the same
+     * confirmed response as the original send.
+     *
+     * <p>See ADR-0011: Message Idempotency via client_id Unique Constraint.
+     */
+    Mono<ChatMessage> findByClientId(String clientId);
 }

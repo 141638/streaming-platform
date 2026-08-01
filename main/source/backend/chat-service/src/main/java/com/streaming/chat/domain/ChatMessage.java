@@ -81,9 +81,41 @@ public class ChatMessage implements Persistable<UUID> {
     @Column("mentions")
     private String[] mentions = new String[0];
 
+    /**
+     * Client-provided idempotency key.
+     *
+     * <p>WebSocket send frames carry {@code clientId} ({@code client-{ts}-{counter}});
+     * REST requests forward the {@code Idempotency-Key} header. Stored on the entity
+     * so the database unique constraint ({@code uq_chat_message_client_id}) rejects
+     * duplicate sends at the persistence layer.
+     *
+     * <p>Nullable — historical rows (pre-V7) and system messages without a Kafka
+     * event identifier skip idempotency with a null value. The partial unique index
+     * ({@code WHERE client_id IS NOT NULL}) ensures nulls coexist freely.
+     *
+     * <p>See ADR-0011: Message Idempotency via client_id Unique Constraint.
+     */
+    @Column("client_id")
+    private String clientId;
+
     // -- factory -----------------------------------------------------------
 
     public static ChatMessage create(UUID roomId, String authorSubject, String authorUsername, String body, OffsetDateTime now) {
+        return create(roomId, authorSubject, authorUsername, body, now, new String[0], null);
+    }
+
+    public static ChatMessage create(UUID roomId, String authorSubject, String authorUsername, String body, OffsetDateTime now, String[] mentions) {
+        return create(roomId, authorSubject, authorUsername, body, now, mentions, null);
+    }
+
+    /**
+     * Full factory with optional client-provided idempotency key.
+     *
+     * @param clientId the idempotency key from the WebSocket frame or REST header;
+     *                 null for legacy callers or non-idempotent sends
+     */
+    public static ChatMessage create(UUID roomId, String authorSubject, String authorUsername, String body,
+                                      OffsetDateTime now, String[] mentions, @jakarta.annotation.Nullable String clientId) {
         ChatMessage msg = new ChatMessage();
         msg.setId(UUID.randomUUID());
         msg.setNew(true);
@@ -93,13 +125,8 @@ public class ChatMessage implements Persistable<UUID> {
         msg.setBody(body);
         msg.setCreatedAt(now);
         msg.setMessageType(MessageType.NORMAL);
-        msg.setMentions(new String[0]);
-        return msg;
-    }
-
-    public static ChatMessage create(UUID roomId, String authorSubject, String authorUsername, String body, OffsetDateTime now, String[] mentions) {
-        ChatMessage msg = create(roomId, authorSubject, authorUsername, body, now);
         msg.setMentions(mentions);
+        msg.setClientId(clientId);
         return msg;
     }
 

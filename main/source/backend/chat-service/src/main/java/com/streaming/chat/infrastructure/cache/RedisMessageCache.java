@@ -5,15 +5,21 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.streaming.chat.api.dto.MessageResponse;
 import com.streaming.chat.config.ChatCacheProperties;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.domain.Range;
 import org.springframework.data.domain.Range.Bound;
 import org.springframework.data.redis.connection.Limit;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
@@ -41,17 +47,31 @@ public class RedisMessageCache {
     private final ReactiveStringRedisTemplate redis;
     private final ObjectMapper objectMapper;
     private final ChatCacheProperties cacheProperties;
+    private final RedisScript<Long> addToRecentScript;
 
     public RedisMessageCache(ReactiveStringRedisTemplate redis, ChatCacheProperties cacheProperties) {
         this.redis = redis;
         this.cacheProperties = cacheProperties;
         this.objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        String lua;
+        try {
+            lua = new ClassPathResource("redis/add_to_recent.lua")
+                    .getContentAsString(StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to load add_to_recent.lua", e);
+        }
+        this.addToRecentScript = new DefaultRedisScript<>(lua, Long.class);
     }
 
     // -- write -------------------------------------------------------------
 
     /**
      * Add a message to the hot cache for its room and trim to the retention cap.
+     *
+     * <p>The write is executed atomically via a Lua script (ZADD + ZREMRANGEBYRANK
+     * + EXPIRE in a single EVALSHA call), replacing the previous 3-round-trip Java
+     * pipeline. This eliminates the race window where two concurrent writers could
+     * interleave ZADD and ZREMRANGEBYRANK (see ADR-0001 §2026-08-01 refinement).
      *
      * @param roomKey the room's external key
      * @param message the message to cache
@@ -65,45 +85,20 @@ public class RedisMessageCache {
             return Mono.just(false);
         }
         double score = message.createdAt().toInstant().toEpochMilli();
-        return redis.opsForZSet()
-                .add(key, json, score)
-                .flatMap(added -> trimToRetention(key).thenReturn(added))
-                .flatMap(added -> applyTtl(key).thenReturn(added))
+        return redis.execute(addToRecentScript,
+                        List.of(key),
+                        List.of(
+                                String.valueOf((long) score),
+                                json,
+                                String.valueOf(MAX_RECENT),
+                                String.valueOf(cacheProperties.roomTtl().getSeconds())))
+                .next()  // Flux<Long> → Mono<Long> (script returns a single value)
+                .map(result -> result != null && result > 0)
                 .timeout(REDIS_TIMEOUT)
                 .onErrorResume(ex -> {
                     log.warn("Redis write failed for key={}, message already persisted to PG. Error: {}",
                             key, ex.getMessage());
                     return Mono.just(false);
-                });
-    }
-
-    /**
-     * Refresh the key's TTL on each write so an actively-used room key never
-     * expires, while an idle room key eventually does — bounding staleness after
-     * a Redis restart with persisted-but-stale data (ADR-0003).
-     */
-    private Mono<Boolean> applyTtl(String key) {
-        return redis.expire(key, cacheProperties.roomTtl())
-                .timeout(REDIS_TIMEOUT)
-                .onErrorResume(ex -> {
-                    log.debug("Redis EXPIRE failed for key={}: {}", key, ex.getMessage());
-                    return Mono.just(false);
-                });
-    }
-
-    private Mono<Long> trimToRetention(String key) {
-        long stop = -(MAX_RECENT + 1L); // remove elements from rank 0 down to -101 (keep last 100)
-        return redis.opsForZSet()
-                .removeRange(key, Range.closed(0L, stop))
-                .timeout(REDIS_TIMEOUT)
-                .onErrorResume(ex -> {
-                    log.debug("Redis trim failed for key={}: {}", key, ex.getMessage());
-                    return Mono.just(0L);
-                })
-                .doOnNext(removed -> {
-                    if (removed > 0) {
-                        log.debug("Trimmed {} old messages from cache key={}", removed, key);
-                    }
                 });
     }
 

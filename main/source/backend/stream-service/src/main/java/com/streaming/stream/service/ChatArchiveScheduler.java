@@ -3,6 +3,7 @@ package com.streaming.stream.service;
 import com.streaming.common.messaging.StreamEvent;
 import com.streaming.stream.persistence.entity.StreamSessionEntity;
 import com.streaming.stream.persistence.entity.StreamStatus;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import org.slf4j.Logger;
@@ -72,8 +73,8 @@ public class ChatArchiveScheduler {
                                 return reactor.core.publisher.Mono.empty();
                             });
                 })
-                .doOnError(e -> log.warn("ChatArchiveScheduler error: {}", e.getMessage()))
-                .onErrorComplete()
-                .subscribe();
+                .doOnError(e -> log.error("ChatArchiveScheduler error", e))
+                .then()
+                .blockOptional(Duration.ofSeconds(55));
     }
 }

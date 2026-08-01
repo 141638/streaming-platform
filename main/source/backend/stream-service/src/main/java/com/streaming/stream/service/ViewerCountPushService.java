@@ -2,6 +2,7 @@ package com.streaming.stream.service;
 
 import com.streaming.stream.api.dto.StreamSseEvent;
 import com.streaming.stream.sse.SseConnectionRegistry;
+import java.time.Duration;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -77,10 +78,10 @@ public class ViewerCountPushService {
                     sseRegistry.pushToStreamViewers(streamId, event);
                     log.trace("Pushed viewer count: streamId={} count={}", streamId, count);
                 })
-                .doOnError(ex -> log.warn(
-                        "Viewer count push cycle failed: {}", ex.getMessage()))
-                .onErrorComplete()
-                .subscribe();
+                .doOnError(ex -> log.error(
+                        "Viewer count push cycle failed", ex))
+                .then()
+                .blockOptional(Duration.ofSeconds(8));
     }
 
     /**

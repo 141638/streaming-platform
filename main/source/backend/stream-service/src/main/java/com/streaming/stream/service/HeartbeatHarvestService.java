@@ -2,6 +2,7 @@ package com.streaming.stream.service;
 
 import com.streaming.stream.config.HeartbeatHarvestProperties;
 import com.streaming.stream.persistence.repository.StreamViewerSnapshotRepository;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
@@ -102,9 +103,9 @@ public class HeartbeatHarvestService {
                                             entry.getValue().get()),
                                     8); // concurrency 8 for batch writes
                 })
-                .doOnError(ex -> log.warn(
-                        "Heartbeat harvest cycle failed: {}", ex.getMessage()))
-                .onErrorComplete()
-                .subscribe();
+                .doOnError(ex -> log.error(
+                        "Heartbeat harvest cycle failed", ex))
+                .then()
+                .blockOptional(Duration.ofSeconds(25));
     }
 }

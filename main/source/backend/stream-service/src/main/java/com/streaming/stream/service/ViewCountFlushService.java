@@ -1,5 +1,6 @@
 package com.streaming.stream.service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
@@ -63,17 +64,18 @@ public class ViewCountFlushService {
      * Runs every {@code streaming.view-count.flush-interval-ms} (default 5 min).
      */
     @Scheduled(fixedDelayString = "${streaming.view-count.flush-interval-ms:300000}")
-    public Mono<Void> flushViewCounts() {
+    public void flushViewCounts() {
         log.debug("Starting view-event flush…");
 
-        return redisTemplate.scan(ScanOptions.scanOptions()
+        redisTemplate.scan(ScanOptions.scanOptions()
                         .match(KEY_PREFIX + "*")
                         .build())
                 .flatMap(this::flushOne, 16) // concurrency = 16
                 .doOnComplete(() -> log.debug("View-event flush complete."))
-                .doOnError(ex -> log.warn("View-event flush failed: {}", ex.getMessage()))
+                .doOnError(ex -> log.error("View-event flush failed", ex))
                 .onErrorComplete()
-                .then();
+                .then()
+                .blockOptional(Duration.ofSeconds(290));
     }
 
     /**

@@ -12,6 +12,7 @@ import com.streaming.chat.infrastructure.cache.RedisMessageCache;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatBanRepository;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatMessageRepository;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatRoomRepository;
+import com.streaming.chat.infrastructure.pubsub.RoomPubSubService;
 import com.streaming.chat.security.ChatAuthorization;
 import com.streaming.chat.support.AbstractCacheIntegrationTest;
 import java.time.Duration;
@@ -65,6 +66,8 @@ class ChatServiceTest extends AbstractCacheIntegrationTest {
 
     /** Mocked because ChatAuthorization's PBAC gating is Track A's concern. */
     private final ChatAuthorization authz = Mockito.mock(ChatAuthorization.class);
+    /** Mocked — Pub/Sub is infrastructure; these tests verify cache-aside, not fan-out. */
+    private final RoomPubSubService pubSubService = Mockito.mock(RoomPubSubService.class);
 
     private ChatService service;
 
@@ -72,7 +75,8 @@ class ChatServiceTest extends AbstractCacheIntegrationTest {
     void setUp() {
         // PBAC disabled → requireAccess short-circuits to Mono.empty()
         Mockito.when(authz.requireAccess(any(), any())).thenReturn(Mono.empty());
-        service = new ChatService(roomRepository, messageRepository, cache, noOpGuard, authz, banRepository);
+        Mockito.when(pubSubService.publish(any(), any())).thenReturn(Mono.empty());
+        service = new ChatService(roomRepository, messageRepository, cache, noOpGuard, authz, banRepository, pubSubService);
         // clean slate — PG then Redis
         messageRepository.deleteAll().block(Duration.ofSeconds(10));
         roomRepository.deleteAll().block(Duration.ofSeconds(10));
@@ -174,7 +178,7 @@ class ChatServiceTest extends AbstractCacheIntegrationTest {
                     new ReactiveStringRedisTemplate(brokenFactory),
                     new ChatCacheProperties(Duration.ofSeconds(1)));
             ChatService brokenService = new ChatService(
-                    roomRepository, messageRepository, brokenCache, noOpGuard, authz, banRepository);
+                    roomRepository, messageRepository, brokenCache, noOpGuard, authz, banRepository, pubSubService);
 
             // Act + Assert
             StepVerifier.create(brokenService.getRecentMessages(JWT, roomKey))
@@ -195,7 +199,7 @@ class ChatServiceTest extends AbstractCacheIntegrationTest {
         saveRoom(roomKey, false);
 
         // Act + Assert
-        StepVerifier.create(service.sendMessage(JWT, roomKey, SUB, USERNAME, "should fail"))
+        StepVerifier.create(service.sendMessage(JWT, roomKey, SUB, USERNAME, "should fail", null))
                 .expectError(ChatService.RoomArchivedException.class)
                 .verify();
     }
@@ -204,7 +208,7 @@ class ChatServiceTest extends AbstractCacheIntegrationTest {
     @DisplayName("sendMessage to a missing room errors with RoomNotFoundException")
     void sendToMissingRoomIsRejected() {
         // Act + Assert
-        StepVerifier.create(service.sendMessage(JWT, "ghost", SUB, USERNAME, "no room"))
+        StepVerifier.create(service.sendMessage(JWT, "ghost", SUB, USERNAME, "no room", null))
                 .expectError(ChatService.RoomNotFoundException.class)
                 .verify();
     }
@@ -223,10 +227,10 @@ class ChatServiceTest extends AbstractCacheIntegrationTest {
         // Spy cache: addToRecent silently fails; evictRoom delegates to the real impl
         RedisMessageCache spyCache = Mockito.spy(cache);
         Mockito.doReturn(Mono.just(false)).when(spyCache).addToRecent(anyString(), any());
-        ChatService svc = new ChatService(roomRepository, messageRepository, spyCache, noOpGuard, authz, banRepository);
+        ChatService svc = new ChatService(roomRepository, messageRepository, spyCache, noOpGuard, authz, banRepository, pubSubService);
 
         // Act — the send persists to PG but the cache write "fails"
-        MessageResponse sent = svc.sendMessage(JWT, roomKey, SUB, USERNAME, "real message")
+        MessageResponse sent = svc.sendMessage(JWT, roomKey, SUB, USERNAME, "real message", null)
                 .block(Duration.ofSeconds(10));
 
         // Assert — message is durable in PG

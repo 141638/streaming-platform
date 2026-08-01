@@ -65,7 +65,7 @@ class ChatControllerTest {
     @Test
     @DisplayName("POST to archived room → 409 with code CHAT_ROOM_ARCHIVED")
     void archivedRoomReturns409() {
-        when(chatService.sendMessage(any(), eq("archived-room"), anyString(), any(), eq("hi")))
+        when(chatService.sendMessage(any(), eq("archived-room"), anyString(), any(), eq("hi"), any()))
                 .thenReturn(Mono.error(new RoomArchivedException("archived-room")));
 
         client.mutateWith(mockJwt().jwt(jwt -> jwt

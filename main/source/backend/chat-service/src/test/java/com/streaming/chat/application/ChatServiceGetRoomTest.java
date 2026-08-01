@@ -14,6 +14,7 @@ import com.streaming.chat.infrastructure.cache.RedisMessageCache;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatBanRepository;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatMessageRepository;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatRoomRepository;
+import com.streaming.chat.infrastructure.pubsub.RoomPubSubService;
 import com.streaming.chat.security.ChatAuthorization;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -70,6 +71,8 @@ class ChatServiceGetRoomTest {
     private RedisMessageCache cache;
     @Mock
     private ReactiveChatBanRepository banRepository;
+    @Mock
+    private RoomPubSubService roomPubSubService;
 
     private final SendGuard noOpGuard = (room, authorSubject) -> Mono.empty();
 
@@ -89,7 +92,7 @@ class ChatServiceGetRoomTest {
     private boolean viewerCanModerate(Jwt jwt, boolean pbacEnabled) {
         ChatAuthorization authz = new ChatAuthorization(new ChatPbacProperties(pbacEnabled));
         ChatService service = new ChatService(
-                roomRepository, messageRepository, cache, noOpGuard, authz, banRepository);
+                roomRepository, messageRepository, cache, noOpGuard, authz, banRepository, roomPubSubService);
         when(roomRepository.findByExternalKey(ROOM_KEY)).thenReturn(Mono.just(room()));
         // The capability tests only assert viewerCanModerate — the caller has no ban.
         // lenient: the null-principal path short-circuits before the ban lookup runs.
@@ -104,7 +107,7 @@ class ChatServiceGetRoomTest {
     private boolean viewerBanned(Jwt jwt, ChatBan existingBan) {
         ChatAuthorization authz = new ChatAuthorization(new ChatPbacProperties(false));
         ChatService service = new ChatService(
-                roomRepository, messageRepository, cache, noOpGuard, authz, banRepository);
+                roomRepository, messageRepository, cache, noOpGuard, authz, banRepository, roomPubSubService);
         ChatRoom room = room();
         when(roomRepository.findByExternalKey(ROOM_KEY)).thenReturn(Mono.just(room));
         // lenient: a null principal short-circuits resolveViewerBanned before this lookup.

@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.streaming.chat.api.dto.MessageResponse;
+import com.streaming.chat.api.ws.WebSocketFrame;
 import com.streaming.chat.config.ChatPbacProperties;
 import com.streaming.chat.domain.ChatMessage;
 import com.streaming.chat.domain.ChatRoom;
@@ -16,6 +17,7 @@ import com.streaming.chat.infrastructure.cache.RedisMessageCache;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatBanRepository;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatMessageRepository;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatRoomRepository;
+import com.streaming.chat.infrastructure.pubsub.RoomPubSubService;
 import com.streaming.chat.security.ChatAuthorization;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -51,6 +53,8 @@ class ChatServiceSystemMessageTest {
     private RedisMessageCache cache;
     @Mock
     private ReactiveChatBanRepository banRepository;
+    @Mock
+    private RoomPubSubService roomPubSubService;
 
     private final SendGuard noOpGuard = (room, authorSubject) -> Mono.empty();
 
@@ -63,7 +67,8 @@ class ChatServiceSystemMessageTest {
         // ChatService constructor requires a real ChatAuthorization instance.
         chatAuthorization = new ChatAuthorization(new ChatPbacProperties(false));
         chatService = new ChatService(
-                roomRepository, messageRepository, cache, noOpGuard, chatAuthorization, banRepository);
+                roomRepository, messageRepository, cache, noOpGuard, chatAuthorization, banRepository,
+                roomPubSubService);
     }
 
     private static ChatRoom activeRoom() {
@@ -94,6 +99,9 @@ class ChatServiceSystemMessageTest {
             // cache.addToRecent returns true (success)
             when(cache.addToRecent(any(String.class), any(MessageResponse.class)))
                     .thenReturn(Mono.just(true));
+            // roomPubSubService.publish returns success (fire-and-forget)
+            when(roomPubSubService.publish(any(String.class), any(WebSocketFrame.Message.class)))
+                    .thenReturn(Mono.empty());
             // These are never called by sendSystemMessage but Mockito strict mode
             // verifies all stubs — lenient prevents UnnecessaryStubbingException.
             lenient().when(banRepository.findByRoomIdAndBannedSubject(any(), any()))
@@ -103,7 +111,7 @@ class ChatServiceSystemMessageTest {
         @Test
         @DisplayName("returns a MessageResponse with type SYSTEM")
         void postsSystemMessage() {
-            Mono<MessageResponse> result = chatService.sendSystemMessage(ROOM_KEY, "Stream started");
+            Mono<MessageResponse> result = chatService.sendSystemMessage(ROOM_KEY, "Stream started", "test-event:system-test-room");
 
             StepVerifier.create(result)
                     .assertNext(msg -> {
@@ -119,7 +127,7 @@ class ChatServiceSystemMessageTest {
         @Test
         @DisplayName("writes to the cache after persisting")
         void writesToCache() {
-            StepVerifier.create(chatService.sendSystemMessage(ROOM_KEY, "test"))
+            StepVerifier.create(chatService.sendSystemMessage(ROOM_KEY, "test", null))
                     .expectNextCount(1)
                     .verifyComplete();
 
@@ -129,7 +137,7 @@ class ChatServiceSystemMessageTest {
         @Test
         @DisplayName("does NOT invoke PBAC authorization or ban guard")
         void bypassesAuthAndGuard() {
-            StepVerifier.create(chatService.sendSystemMessage(ROOM_KEY, "test"))
+            StepVerifier.create(chatService.sendSystemMessage(ROOM_KEY, "test", null))
                     .expectNextCount(1)
                     .verifyComplete();
 
@@ -152,7 +160,7 @@ class ChatServiceSystemMessageTest {
         @Test
         @DisplayName("errors with RoomNotFoundException")
         void throwsRoomNotFound() {
-            StepVerifier.create(chatService.sendSystemMessage(ROOM_KEY, "test"))
+            StepVerifier.create(chatService.sendSystemMessage(ROOM_KEY, "test", null))
                     .verifyError(ChatService.RoomNotFoundException.class);
         }
     }
@@ -169,7 +177,7 @@ class ChatServiceSystemMessageTest {
         @Test
         @DisplayName("errors with RoomArchivedException")
         void throwsRoomArchived() {
-            StepVerifier.create(chatService.sendSystemMessage(ROOM_KEY, "test"))
+            StepVerifier.create(chatService.sendSystemMessage(ROOM_KEY, "test", null))
                     .verifyError(ChatService.RoomArchivedException.class);
         }
     }

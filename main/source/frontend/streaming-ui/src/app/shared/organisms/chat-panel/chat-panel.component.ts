@@ -46,6 +46,7 @@ import {
 import { AuthService } from '../../../core/services/auth.service';
 import { ChatModerationService } from '../../../core/services/chat-moderation.service';
 import { ChatService } from '../../../core/services/chat.service';
+import { ChatWebsocketService } from '../../../core/services/chat-websocket.service';
 import { BanUserDialogComponent } from '../../molecules/ban-user-dialog/ban-user-dialog.component';
 import { MessageModActionsComponent } from '../../molecules/message-mod-actions/message-mod-actions.component';
 import { BanListPanelComponent } from '../ban-list-panel/ban-list-panel.component';
@@ -154,6 +155,7 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
   private readonly authService = inject(AuthService);
   private readonly idempotencyService = inject(IdempotencyService);
   protected readonly mod = inject(ChatModerationService);
+  private readonly wsService = inject(ChatWebsocketService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly fb = inject(FormBuilder);
 
@@ -279,7 +281,7 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
   }
 
   public ngOnDestroy(): void {
-    // polling stops via takeUntilDestroyed — nothing manual needed
+    this.wsService.disconnect();
   }
 
   // ── Public API ─────────────────────────────────────────────────────────
@@ -340,8 +342,8 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
     const idempotencyKey = this.idempotencyService.newKey();
     this.idempotencyKeyByClientId.set(clientId, idempotencyKey);
 
-    this.chatService
-      .sendMessage(this.roomKey, content, idempotencyKey)
+    this.wsService
+      .send(content)
       .pipe(
         finalize(() => this.sending.set(false)),
         takeUntilDestroyed(this.destroyRef),
@@ -352,7 +354,7 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
           this.replaceTempMessage(clientId, response);
         },
         error: (err: unknown) => {
-          if (parseChatApiError(err)?.code === 'CHAT_USER_BANNED') {
+          if ((err as {code?:string})?.code === "CHAT_USER_BANNED") {
             this.messages.update((msgs) =>
               msgs.filter((m) => m.clientId !== clientId),
             );
@@ -360,11 +362,7 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
             return;
           }
           this.markMessageFailed(clientId);
-          const message =
-            err instanceof HttpErrorResponse && err.status === 400
-              ? 'Failed to send message. The room may be archived.'
-              : 'Network error. Please try again.';
-          this.errorMessage.set(message);
+          this.errorMessage.set('Network error. Please try again.');
         },
       });
   }
@@ -596,7 +594,7 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
           } else {
             this.roomStatus.set('active');
             this.loadInitialMessages();
-            this.startPolling();
+            this.startWebSocket();
           }
         },
         error: (err: unknown) => {
@@ -606,7 +604,7 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
           } else {
             this.roomStatus.set('active');
             this.loadInitialMessages();
-            this.startPolling();
+            this.startWebSocket();
           }
         },
       });
@@ -751,6 +749,22 @@ export class ChatPanelComponent implements AfterViewInit, OnDestroy {
         const wasNearBottom = this.isNearBottom;
         const reversed = [...data].reverse();
         this.mergeServerMessages(reversed, wasNearBottom);
+      });
+  }
+
+  private startWebSocket(): void {
+    this.wsService.connect(this.roomKey);
+    this.wsService.message$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((msg: ChatMessageResponseDto) => {
+        const wasNearBottom = this.isNearBottom;
+        this.mergeServerMessages([msg], wasNearBottom);
+      });
+    this.wsService.fallback$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        console.warn("[ChatPanel] WebSocket failed, switching to REST polling");
+        this.startPolling();
       });
   }
 

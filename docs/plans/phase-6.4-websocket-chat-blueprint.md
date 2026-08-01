@@ -1,7 +1,8 @@
 # Phase 6.4 WebSocket Chat Upgrade — Implementation Blueprint
 
 **Date:** 2026-08-01
-**Status:** proposed
+**Status:** implemented (commits: `37ab6c8`, `dd896ad`, `fa16ae9`, `d61a2f5`)
+**Retro:** [websocket-6.4-implementation-retrospective.md](websocket-6.4-implementation-retrospective.md)
 **Parent:** [IMPLEMENTATION-PLAN.md](../IMPLEMENTATION-PLAN.md) (Phase 6.4)
 **ADR:** [ADR-chat-0010](../adr/chat/0010-websocket-real-time-messaging.md)
 

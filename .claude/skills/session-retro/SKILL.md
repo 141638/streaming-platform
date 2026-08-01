@@ -331,6 +331,28 @@ For each document, consult the **trigger** column to decide whether the session'
 
 ---
 
+**P. KAFKA-INFRASTRUCTURE.md — Kafka Topology & Integration Reference**
+
+| Trigger | Update Scope |
+|---------|-------------|
+| New Kafka topic created or topic config changed (partitions, RF, retention) | Update §2 Topic Catalog + §10 Configuration Reference |
+| New event type added to an existing topic | Update §3 Event Type Catalog + reaction columns |
+| New producer added (any service) | Add to §4 Producer Inventory |
+| New consumer or consumer group added | Add to §5 Consumer Inventory; update §1 Topology Diagram |
+| DLQ config changed (retry count, backoff, non-retryable exceptions) | Update §6 DLQ Configuration |
+| Outbox pattern implemented in a new service or existing outbox modified | Update §7 Outbox Pattern Status |
+| Saga/choreography step added or compensation logic introduced | Update §8 Saga / Choreography Map |
+| Serialization format changed (e.g., JSON → Avro) or schema registry adopted | Update §9 Serialization |
+| Gap closed (any G# item) | Mark gap ✅ Done with date in §11 Gaps & Debt |
+| New gap identified | Add to §11 Gaps & Debt with severity |
+| New env var, config property, or bootstrap-server change | Update §10 Configuration Reference |
+| Service starts/stops using Kafka (new dependency or removal) | Update §1 Topology Diagram + relevant inventory sections |
+| **Any Kafka-related code change** — re-read the doc to verify accuracy | Spot-check and fix any stale descriptions |
+
+**Decision rule:** Check whenever Kafka code, config, or compose files change. This is the single source of truth for the Kafka topology — it should never describe a topic, consumer, or event type that doesn't match reality.
+
+---
+
 #### Reconciliation Workflow
 
 For each document flagged by the Phase 1 survey (step 7) as having a matched trigger:
@@ -407,8 +429,13 @@ When surveying, look for these stale-document signals:
 | New infrastructure service added to Compose | ARCHITECTURE.md | Update §3 infrastructure table |
 | New Gradle module created | SERVICE-ARCHITECTURE.md | Add §1 style table row |
 | Observability work shipped (logging, tracing, metrics) | LOGGING-ARCHITECTURE.md, TRACE-PROPAGATION.md | Update phase status + checklists |
-| Redis or Kafka code changed this session | REDIS-KAFKA-PRODUCTION-GAP.md | Check if any gap was closed |
+| Redis or Kafka code changed this session | REDIS-KAFKA-PRODUCTION-GAP.md, KAFKA-INFRASTRUCTURE.md | Check if any gap was closed; verify topic/consumer/event catalog still accurate |
 | Production gap closed (any R# or K# resolved) | REDIS-KAFKA-PRODUCTION-GAP.md | Mark gap ✅ Done with commit hash |
+| New Kafka topic, consumer, producer, or event type added | KAFKA-INFRASTRUCTURE.md | Add to relevant catalog section |
+| Kafka config changed (bootstrap servers, consumer group, DLQ, ack-mode) | KAFKA-INFRASTRUCTURE.md | Update §10 Configuration Reference |
+| New outbox implementation or outbox pattern change | KAFKA-INFRASTRUCTURE.md | Update §7 Outbox Pattern Status |
+| Kafka topic provisioning changed (C3 or similar) | KAFKA-INFRASTRUCTURE.md | Update §2 Topic Catalog + §11 Gaps & Debt |
+| Saga/choreography step added or compensation introduced | KAFKA-INFRASTRUCTURE.md | Update §8 Saga / Choreography Map |
 | PBAC grammar or auth model changed | PBAC-AUTHORIZATION.md | Update resource types / policies |
 | New service adopts PBAC enforcement | PBAC-AUTHORIZATION.md, PBAC-ENFORCEMENT-PATTERN.md | Add to enforcement matrix + implementations |
 | JSONB column added via Flyway migration | R2DBC-JSONB-CONVERTER-PATTERN.md | Verify converter exists; add to implementations |

@@ -23,6 +23,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import jakarta.annotation.Nullable;
 import java.time.Instant;
@@ -275,6 +276,7 @@ public class ChatService {
                                 // async backfill — don't block the response
                                 Flux.fromIterable(fromPg)
                                         .flatMap(m -> cache.addToRecent(roomKey, m))
+                                        .subscribeOn(Schedulers.boundedElastic())
                                         .subscribe(
                                                 count -> {
                                                 },
@@ -367,6 +369,7 @@ public class ChatService {
                                 // async backfill — don't block the response
                                 Flux.fromIterable(fromPg)
                                         .flatMap(m -> cache.addToRecent(roomKey, m))
+                                        .subscribeOn(Schedulers.boundedElastic())
                                         .subscribe(
                                                 count -> {},
                                                 err -> log.warn("Backfill cache write failed for roomKey={}", roomKey,

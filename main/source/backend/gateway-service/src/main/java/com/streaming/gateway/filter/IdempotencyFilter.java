@@ -19,6 +19,7 @@ import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilter;
 import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.time.Duration;
 import java.util.Base64;
@@ -199,6 +200,7 @@ public class IdempotencyFilter implements WebFilter, Ordered {
 
             redisTemplate.opsForValue()
                     .set(redisKey, json, Duration.ofSeconds(properties.ttlSeconds()))
+                    .subscribeOn(Schedulers.boundedElastic())
                     .subscribe(
                             success -> log.debug("Cached idempotent response key={}", redisKey),
                             err -> log.warn("Failed to cache idempotent response key={}", redisKey, err)

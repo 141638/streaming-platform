@@ -31,7 +31,7 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
     admin:
-      auto-create: true
+      auto-create: false
   data:
     redis:
       host: ${REDIS_HOST:localhost}

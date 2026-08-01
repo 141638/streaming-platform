@@ -1,6 +1,6 @@
 # Implementation Plan
 
-**Last updated:** 2026-08-01 (C1 Lua atomic cache + ADR-0011 chat idempotency shipped)
+**Last updated:** 2026-08-01 (C1 Lua atomic cache + ADR-0011 chat idempotency + C3 Kafka topic provisioning shipped)
 **Current phase:** 6 — Production Hardening ⚡ (6.0a–c ✅, 6.1 ✅, 6.2 ✅, 6.2a ✅, 6.3 ✅, 6.4 ✅, 6.5–6.6 🔵 deferred, **6.7 Tier 1 ✅, Tier 2 🔵 deferred**, **C1 ✅, ADR-0011 ✅**)
 **Active blueprint:** None (Phase C quick wins + 6.7 Tier 2 under discussion)
 
@@ -1128,7 +1128,7 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 | B — Outbox & State Machine Integrity | Wire `@Transactional`, fix SCHEDULED cancel gap, fix double-subscribe in chat consumer, fix `goLiveFromSchedule()` bypass | 1 day | 🔴 CRITICAL |
 | C — Notification Hardening | Add smoke tests, fix fan-out blocking, implement real email or remove skeleton, fix `OutboxService.enqueue()` fire-and-forget | 2-3 days | 🔴 CRITICAL |
 | D — Observability Foundation | Wire Micrometer metrics + Prometheus endpoint, wire trace propagation, add Grafana dashboard scaffold | 2-3 days | 🟠 HIGH |
-| E — Infrastructure Maturity | Redis Lua scripting ✅ (C1), disable auto-create-topics, connection pool config, SCAN limits, SSE buffer bounds + zombie drain | 1-2 days | 🟠 HIGH |
+| E — Infrastructure Maturity | Redis Lua scripting ✅ (C1), disable auto-create-topics ✅ (C3), connection pool config, SCAN limits, SSE buffer bounds + zombie drain | 1-2 days | 🟠 HIGH |
 | F — Error Handling Standardization | Catch-all handlers in 3 services, WARN logging for security events, exception-passing convention (`.getMessage()` → pass `ex`), shared base handler in pbac-common | 1 day | 🟠 HIGH |
 | G — Test Execution | CI Docker-based test suite, minimum smoke tests for notification-service, verify existing chat/stream tests pass | Ongoing | 🟡 MEDIUM |
 

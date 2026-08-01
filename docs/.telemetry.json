@@ -10,7 +10,7 @@
     "lastSeen": "2026-08-01"
   },
   "skills.feature-commit": {
-    "count": 20,
+    "count": 21,
     "firstSeen": "2026-07-13",
     "lastSeen": "2026-08-01"
   },
@@ -20,7 +20,7 @@
     "lastSeen": "2026-07-13"
   },
   "commands.blueprint": {
-    "count": 25,
+    "count": 26,
     "firstSeen": "2026-07-14",
     "lastSeen": "2026-08-01"
   },
@@ -35,7 +35,7 @@
     "lastSeen": "2026-07-17"
   },
   "commands.commit": {
-    "count": 17,
+    "count": 18,
     "firstSeen": "2026-07-14",
     "lastSeen": "2026-08-01"
   },
@@ -55,9 +55,9 @@
     "lastSeen": "2026-07-27"
   },
   "commands.review": {
-    "count": 4,
+    "count": 5,
     "firstSeen": "2026-07-15",
-    "lastSeen": "2026-07-27"
+    "lastSeen": "2026-08-01"
   },
   "agents.code-explorer": {
     "count": 6,

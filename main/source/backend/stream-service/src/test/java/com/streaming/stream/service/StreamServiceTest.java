@@ -12,7 +12,6 @@ import com.streaming.stream.api.dto.CreateStreamRequest;
 import com.streaming.stream.api.dto.UpdateStreamRequest;
 import com.streaming.stream.config.PublishTokenProperties;
 import com.streaming.stream.config.ViewCountProperties;
-import com.streaming.stream.messaging.StreamEventPublisher;
 import com.streaming.stream.persistence.entity.OutboxEvent;
 import com.streaming.stream.persistence.entity.StreamSessionEntity;
 import com.streaming.stream.persistence.entity.StreamStatus;
@@ -70,9 +69,6 @@ class StreamServiceTest {
     private StreamAuthorization authorization;
 
     @Mock
-    private StreamEventPublisher eventPublisher;
-
-    @Mock
     private OutboxWriter outboxWriter;
 
     @Mock
@@ -99,7 +95,7 @@ class StreamServiceTest {
     void setUp() {
         service = new StreamService(repository, categoryRepository,
                 profileRepository, authorization,
-                eventPublisher, outboxWriter,
+                outboxWriter,
                 publishTokenService, publishTokenProps,
                 databaseClient, redisTemplate, viewCountProperties);
         lenient().when(redisTemplate.opsForHash()).thenReturn(hashOps);

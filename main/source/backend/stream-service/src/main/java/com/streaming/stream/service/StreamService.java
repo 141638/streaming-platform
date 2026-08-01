@@ -23,7 +23,6 @@ import com.streaming.stream.config.PublishTokenProperties;
 import com.streaming.stream.config.ViewCountProperties;
 import com.streaming.stream.sse.SseConnectionRegistry;
 import com.streaming.common.messaging.StreamEvent;
-import com.streaming.stream.messaging.StreamEventPublisher;
 import org.springframework.transaction.reactive.TransactionalOperator;
 import com.streaming.stream.persistence.entity.BroadcasterProfileEntity;
 import com.streaming.stream.persistence.entity.StreamSessionEntity;
@@ -74,7 +73,6 @@ public class StreamService {
     private final BroadcasterProfileRepository profileRepository;
     private final WatchHistoryRepository watchHistoryRepository;
     private final StreamAuthorization authorization;
-    private final StreamEventPublisher eventPublisher;
     private final OutboxWriter outboxWriter;
     private final PublishTokenService publishTokenService;
     private final PublishTokenProperties publishTokenProps;
@@ -89,7 +87,6 @@ public class StreamService {
                          BroadcasterProfileRepository profileRepository,
                          WatchHistoryRepository watchHistoryRepository,
                          StreamAuthorization authorization,
-                         StreamEventPublisher eventPublisher,
                          OutboxWriter outboxWriter,
                          PublishTokenService publishTokenService,
                          PublishTokenProperties publishTokenProps,
@@ -103,7 +100,6 @@ public class StreamService {
         this.profileRepository = profileRepository;
         this.watchHistoryRepository = watchHistoryRepository;
         this.authorization = authorization;
-        this.eventPublisher = eventPublisher;
         this.outboxWriter = outboxWriter;
         this.publishTokenService = publishTokenService;
         this.publishTokenProps = publishTokenProps;

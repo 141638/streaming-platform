@@ -2,6 +2,7 @@ package com.streaming.chat.application;
 
 import com.streaming.chat.api.dto.MessageResponse;
 import com.streaming.chat.api.dto.RoomResponse;
+import com.streaming.chat.api.ws.WebSocketFrame;
 import com.streaming.chat.domain.ChatBan;
 import com.streaming.chat.domain.ChatMessage;
 import com.streaming.chat.domain.ChatRoom;
@@ -9,6 +10,7 @@ import com.streaming.chat.infrastructure.cache.RedisMessageCache;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatBanRepository;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatMessageRepository;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatRoomRepository;
+import com.streaming.chat.infrastructure.pubsub.RoomPubSubService;
 import com.streaming.chat.security.ChatAuthorization;
 import com.streaming.pbac.AuthAction;
 import com.streaming.pbac.AuthResourceDomain;
@@ -63,6 +65,7 @@ public class ChatService {
     private final SendGuard sendGuard;
     private final ChatAuthorization chatAuthorization;
     private final ReactiveChatBanRepository banRepository;
+    private final RoomPubSubService roomPubSubService;
 
     /**
      * Send a message to a chat room.
@@ -94,7 +97,11 @@ public class ChatService {
                                 AuthAction.SEND, room.getBroadcasterSubject()))
                         .thenReturn(room))
                 .flatMap(room -> sendGuard.check(room, authorSubject).thenReturn(room))
-                .flatMap(room -> persistAndCache(room, authorSubject, authorUsername, body, now));
+                .flatMap(room -> persistAndCache(room, authorSubject, authorUsername, body, now)
+                        .flatMap(response -> {
+                            WebSocketFrame.Message frame = WebSocketFrame.Message.from(response, null);
+                            return roomPubSubService.publish(roomKey, frame).thenReturn(response);
+                        }));
     }
 
     /**
@@ -116,7 +123,11 @@ public class ChatService {
                     ChatMessage msg = ChatMessage.createSystem(room.getId(), body, now);
                     return messageRepository.save(msg)
                             .map(saved -> MessageResponse.from(saved, room.getExternalKey()))
-                            .flatMap(this::cacheWrite);
+                            .flatMap(this::cacheWrite)
+                            .flatMap(response -> {
+                                WebSocketFrame.Message frame = WebSocketFrame.Message.from(response, null);
+                                return roomPubSubService.publish(roomKey, frame).thenReturn(response);
+                            });
                 });
     }
 

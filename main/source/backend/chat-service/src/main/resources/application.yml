@@ -75,6 +75,8 @@ chat:
     # Bounds max staleness after a Redis restart with persisted-but-stale data
     # (ADR-0003). Raise for low-traffic/production rooms; lower for fresher data.
     room-ttl: ${CHAT_CACHE_ROOM_TTL:1h}
+  ws:
+    enabled: ${CHAT_WS_ENABLED:true}
   pbac:
     # Layer-1 PBAC (ent) enforcement. ChatAuthorization enforces entitlements by
     # default. The dev profile allows disabling for local testing; in any other

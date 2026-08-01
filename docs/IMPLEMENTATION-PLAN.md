@@ -1,7 +1,7 @@
 # Implementation Plan
 
-**Last updated:** 2026-08-01 (C1 Lua atomic cache + ADR-0011 chat idempotency + C3 Kafka topic provisioning shipped)
-**Current phase:** 6 — Production Hardening ⚡ (6.0a–c ✅, 6.1 ✅, 6.2 ✅, 6.2a ✅, 6.3 ✅, 6.4 ✅, 6.5–6.6 🔵 deferred, **6.7 Tier 1 ✅, Tier 2 🔵 deferred**, **C1 ✅, ADR-0011 ✅**)
+**Last updated:** 2026-08-02 (C4 fire-and-forget lifecycle fix shipped + reactive scheduled-method pattern doc)
+**Current phase:** 6 — Production Hardening ⚡ (6.0a–c ✅, 6.1 ✅, 6.2 ✅, 6.2a ✅, 6.3 ✅, 6.4 ✅, 6.5–6.6 🔵 deferred, **6.7 Tier 1 ✅, Tier 2 🔵 deferred**, **C1 ✅, ADR-0011 ✅, C4 ✅**)
 **Active blueprint:** None (Phase C quick wins + 6.7 Tier 2 under discussion)
 
 ## End Goal
@@ -1140,6 +1140,7 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 - [ ] Track D — Observability foundation 🔵 DEFERRED (2026-08-01)
 - [ ] Track E — Infrastructure maturity (E3: Redis SCAN chunked; E4: SSE backpressure bounds) 🔵 DEFERRED (2026-08-01)
 - [ ] Track F — Error handling standardization (F1: logging in handlers; F2: getMessage() → pass ex; F3: shared base handler in pbac-common) 🔵 DEFERRED (2026-08-01)
+- [x] C4 — Fire-and-forget lifecycle fix ✅ **Complete** (4 scheduled methods → blockOptional, 3 request-scoped → subscribeOn(boundedElastic), deleted StreamEventPublisher dead code). See [retro](plans/C4-fire-and-forget-subscribe-fix-retrospective.md), [pattern doc](REACTIVE-SCHEDULED-METHOD-PATTERN.md).
 - [ ] Track G — Test execution pipeline 🔵 DEFERRED (2026-08-01)
 - [x] Track A partial — A6: SRS webhook shared-secret validation (query-param secret) ✅
 - [ ] Track A remaining — A1-A5 skipped (pet project)

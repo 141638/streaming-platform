@@ -1,5 +1,5 @@
 ---
-description: End-of-session retrospective — reconcile implementation against plans, update stale ADRs and docs, capture undocumented deferrals.
+description: End-of-session retrospective — reconcile implementation against plans, update stale ADRs and docs, update architecture/reference docs per the update matrix, capture undocumented deferrals.
 argument-hint: "[feature-name] — optional, defaults to the current session's feature"
 ---
 
@@ -18,13 +18,14 @@ argument-hint: "[feature-name] — optional, defaults to the current session's f
 
 ## What It Does
 
-The **session-retro** skill performs a five-phase reconciliation:
+The **session-retro** skill performs a full reconciliation:
 
-1. **Survey** — Read all plans, ADRs, git history, and new files in parallel
+1. **Survey** — Read all plans, ADRs, git history, new files, AND architecture/reference docs in parallel
 2. **Draft Retrospective** — Write `docs/plans/<feature>-retrospective.md`
 3. **Update Stale Docs** — Accept implemented ADRs, update planning docs, refresh the implementation plan
-4. **Write New Docs** — Capture new ADRs or pattern docs for architectural decisions
-5. **Present Summary** — Table of created/updated docs + key findings
+4. **Update Architecture & Reference Docs** — Consult the embedded update matrix and refresh any `docs/*.md` files whose triggers match this session's changes (e.g., ARCHITECTURE.md after a new service, REDIS-KAFKA-PRODUCTION-GAP.md after gap closures)
+5. **Write New Docs** — Capture new ADRs or pattern docs for architectural decisions
+6. **Present Summary** — Table of created/updated docs + key findings
 
 For complex retrospects (many files to update), the skill may delegate individual doc updates to the **session-retro** agent via `Agent({subagent_type: "session-retro"})`.
 

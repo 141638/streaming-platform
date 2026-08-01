@@ -30,7 +30,7 @@ Located in `~/.claude/agents/`:
 | e2e-runner | E2E testing | Critical user flows |
 | refactor-cleaner | Dead code cleanup | Code maintenance |
 | doc-updater | Documentation | Updating docs |
-| session-retro | Session-end retrospective | End of feature-building sessions |
+| session-retro | Session-end retrospective — reconciles implementation against plans, updates stale ADRs + planning docs + architecture/reference docs, captures deferrals | End of feature-building sessions |
 | feature-commit | Feature-by-feature committing | When grouping and committing changes |
 | rust-reviewer | Rust code review | Rust projects |
 | harmonyos-app-resolver | HarmonyOS app development | HarmonyOS/ArkTS projects |

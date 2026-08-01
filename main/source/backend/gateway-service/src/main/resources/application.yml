@@ -58,6 +58,13 @@ spring:
           uri: lb://stream-service
           predicates:
             - Path=/api/streams/**
+        - id: chat-service-ws
+          uri: lb://chat-service
+          predicates:
+            - Path=/api/chat/v1/rooms/*/ws
+          metadata:
+            response-timeout: -1
+            connect-timeout: 5000
         - id: chat-service
           uri: lb://chat-service
           predicates:

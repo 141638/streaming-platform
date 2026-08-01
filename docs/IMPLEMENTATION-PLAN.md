@@ -1,9 +1,8 @@
 # Implementation Plan
 
-**Last updated:** 2026-07-31 (Phase 6.7 Tier 1 complete — 8 functional correctness fixes across stream/chat/notification services)
-**Current phase:** 6 — Production Hardening ⚡ (6.0a–c ✅, 6.1 ✅, 6.2 ✅, 6.2a ✅, 6.3 ✅, 6.4–6.6 planned, **6.7 — Gap Remediation ⚡ Tier 1 ✅, Tier 2 ⏳**)
-**Active blueprint:** [phase-2-5-gap-remediation-blueprint.md](plans/phase-2-5-gap-remediation-blueprint.md)
-**Gap analysis:** [phase-2-5-production-gap-analysis-retrospective.md](plans/phase-2-5-production-gap-analysis-retrospective.md) — 50+ findings across phases 2-5
+**Last updated:** 2026-08-01 (6.4 WebSocket shipped, architecture doc refreshed; 6.5/6.6/6.7 Tier 2 deferred)
+**Current phase:** 6 — Production Hardening ⚡ (6.0a–c ✅, 6.1 ✅, 6.2 ✅, 6.2a ✅, 6.3 ✅, 6.4 ✅, 6.5–6.6 🔵 deferred, **6.7 Tier 1 ✅, Tier 2 🔵 deferred**)
+**Active blueprint:** None (Phase C quick wins + 6.7 Tier 2 under discussion)
 
 ## End Goal
 
@@ -1081,9 +1080,9 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 | 6.2 | ✅ **Shared `pbac-common` library** — extracted duplicated `JwtProperties` + `ReactiveJwtDecoder` + `EntitlementMatcher` + `Structured401AuthenticationEntryPoint` from stream/chat/notification/gateway into a shared Gradle module (`pbac-common/`). Commit: `2f71586` (46 files, net -657 lines). | 2.2 |
 | 6.2a | ✅ **Authorization gap remediation** — closed 7 gaps (1 CRITICAL, 3 HIGH, 3 MEDIUM): SRS on_unpublish token validation, chat PBAC enabled-by-default with prod hard-fail, watch endpoint PBAC, participants endpoint PBAC, 403 handler for StreamAccessDeniedException, gateway webhook POST-only scoping, internal token audit logging. Commits: `4eeb252`..`20685e9` (6 commits, 13 files). See [retrospective](docs/plans/authorization-gap-remediation-retrospective.md). | 6.2 |
 | 6.3 | ✅ **Rate limiting** — gateway-level sliding-window-log rate limiter (`RateLimitFilter` @Order(2), Redis ZSET + Lua script, 200 req/60s per IP, fail-open, 429 structured JSON). See [retrospective](docs/plans/phase-6.3-rate-limiting-retrospective.md) and [ADR common/0002](adr/common/0002-redis-ephemeral-data-store.md). Uncommitted (3 new, 3 modified). | 6.0a |
-| 6.4 | **WebSocket upgrade for chat** — replace REST polling with WebSocket (STOMP or raw) for real-time messaging. Redis Pub/Sub for cross-instance message fan-out | 3.5 |
-| 6.5 | **Security hardening** — TLS everywhere, secrets management (env vars → vault), CSP headers, CSRF audit, dependency CVE scanning | — |
-| 6.6 | **Observability** — ~~structured JSON logging~~ ✅, Micrometer Tracing (traceId/spanId propagation), Micrometer metrics (Prometheus), Grafana dashboard, centralized log backend (Loki or ELK) | — |
+| 6.4 | ✅ **WebSocket upgrade for chat** — full-duplex WebSocket (send + receive) with Redis Pub/Sub fan-out, REST fallback. Raw WebFlux `ReactiveWebSocketHandler` (not STOMP). Gateway WS route with `response-timeout: -1`. Frontend `ChatWebSocketService` with exponential backoff reconnect. Commits: `37ab6c8`, `dd896ad`, `fa16ae9`. See [ADR-0010](adr/chat/0010-websocket-real-time-messaging.md). | 3.5 |
+| 6.5 | 🔵 **Security hardening** (DEFERRED 2026-08-01) — TLS everywhere, secrets management (env vars → vault), CSP headers, CSRF audit, dependency CVE scanning. Production hardening — revisit before deployment. | — |
+| 6.6 | 🔵 **Observability** (DEFERRED 2026-08-01) — ~~structured JSON logging~~ ✅, Micrometer Tracing (traceId/spanId propagation), Micrometer metrics (Prometheus), Grafana dashboard, centralized log backend (Loki or ELK). Production hardening — revisit before deployment. | — |
 
 ### Phase 6 Checklist
 
@@ -1094,17 +1093,17 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 - [x] 6.2 — Shared `pbac-common` library (`2f71586`)
 - [x] 6.2a — Authorization gap remediation (`4eeb252`..`20685e9`)
 - [x] 6.3 — Rate limiting (uncommitted — 3 new files, 3 modified)
-- [ ] 6.4 — WebSocket chat
-- [ ] 6.5 — Security hardening
-- [ ] 6.6 — Observability
+- [x] 6.4 — WebSocket chat (`37ab6c8`, `dd896ad`, `fa16ae9`)
+- [ ] 6.5 — Security hardening 🔵 DEFERRED (2026-08-01)
+- [ ] 6.6 — Observability 🔵 DEFERRED (2026-08-01)
   - [x] Structured JSON logging (logstash-logback-encoder, all 6 services, [ADR common/0001](adr/common/0001-structured-json-logging.md), [LOGGING-ARCHITECTURE.md](LOGGING-ARCHITECTURE.md))
   - [x] Logging architecture documentation ([LOGGING-ARCHITECTURE.md](LOGGING-ARCHITECTURE.md), [TRACE-PROPAGATION.md](TRACE-PROPAGATION.md))
   - [x] `streaming.service.instance-id` — unified instance identity across Eureka + logs
   - [x] Local dev profile — human-readable logs via `SPRING_PROFILES_ACTIVE=local`
-  - [ ] Micrometer Tracing (traceId/spanId propagation across HTTP + Kafka)
-  - [ ] Micrometer metrics (Prometheus endpoint)
-  - [ ] Grafana dashboard
-  - [ ] Centralized log backend (Loki/Grafana or ELK)
+  - [ ] Micrometer Tracing (traceId/spanId propagation across HTTP + Kafka) 🔵 DEFERRED
+  - [ ] Micrometer metrics (Prometheus endpoint) 🔵 DEFERRED
+  - [ ] Grafana dashboard 🔵 DEFERRED
+  - [ ] Centralized log backend (Loki/Grafana or ELK) 🔵 DEFERRED
 
 ---
 
@@ -1134,10 +1133,10 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 - [ ] Track A — Security triage (skipped per user directive — pet project; hardcoded secrets acceptable risk)
 - [x] Track B — Outbox & state machine integrity ✅ **Tier 1 complete** (B1: R2DBC TransactionalOperator wired; B2: SCHEDULED cancel gap fixed; B3: goLiveFromSchedule bypass fixed; B4: dropped — false alarm; B5: chat consumer refactored to Mono<Void> + blockOptional)
 - [x] Track C — Notification hardening ✅ **Tier 1 complete** (C2: fan-out offloading via subscribeOn(boundedElastic); C4: OutboxService.enqueue() returns Mono<Void>; C5: DTO validation + catch-all + WebExchangeBindException handlers)
-- [ ] Track D — Observability foundation
-- [ ] Track E — Infrastructure maturity (E3: Redis SCAN chunked; E4: SSE backpressure bounds) — Tier 2 ⏳
-- [ ] Track F — Error handling standardization (F1: logging in handlers; F2: getMessage() → pass ex; F3: shared base handler in pbac-common) — Tier 2 ⏳
-- [ ] Track G — Test execution pipeline
+- [ ] Track D — Observability foundation 🔵 DEFERRED (2026-08-01)
+- [ ] Track E — Infrastructure maturity (E3: Redis SCAN chunked; E4: SSE backpressure bounds) 🔵 DEFERRED (2026-08-01)
+- [ ] Track F — Error handling standardization (F1: logging in handlers; F2: getMessage() → pass ex; F3: shared base handler in pbac-common) 🔵 DEFERRED (2026-08-01)
+- [ ] Track G — Test execution pipeline 🔵 DEFERRED (2026-08-01)
 - [x] Track A partial — A6: SRS webhook shared-secret validation (query-param secret) ✅
 - [ ] Track A remaining — A1-A5 skipped (pet project)
 

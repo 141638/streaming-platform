@@ -1,7 +1,7 @@
 # ADR-0010: WebSocket Real-Time Messaging
 
 **Date**: 2026-08-01
-**Status**: proposed
+**Status**: accepted
 **Deciders**: 141638, Claude
 
 ## Context

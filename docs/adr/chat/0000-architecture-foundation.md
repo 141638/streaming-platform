@@ -87,14 +87,32 @@ How each external dependency is integrated into this service.
 | **Serialization** | Jackson JSON with `JavaTimeModule` |
 | **ADR** | [0001 — Cache-Aside Pattern with Redis ZSET](0001-cache-aside-redis-zset.md) |
 
-### Kafka _(planned — not yet implemented)_
+### Kafka
 
 | Aspect | Detail |
 |--------|--------|
 | **Role** | Consumer of `stream.control` topic — drives room lifecycle |
 | **Pattern** | `StreamControlListener` (reactive Kafka consumer): `STREAM_CREATED` → create room, `STREAM_ENDED` → archive room |
-| **Status** | Phase 3.3 — not yet built; documented in [IMPLEMENTATION-PLAN.md](../../IMPLEMENTATION-PLAN.md#33--room-lifecycle-from-stream-events) |
 | **Out-of-order safety** | Archive-before-create = no-op; duplicate creates are idempotent via existing `getOrCreate` |
+| **Files** | `StreamControlListener.java`, `KafkaConsumerConfig.java` |
+
+### Redis Pub/Sub
+
+| Aspect | Detail |
+|--------|--------|
+| **Role** | Cross-instance message fan-out to connected WebSocket sessions |
+| **Pattern** | `RoomPubSubService` — lazy subscribe on first session join, unsubscribe on last session leave. Channel: `chat:room:{roomKey}:messages` |
+| **Delivery** | Fire-and-forget (at-most-once over WS); PostgreSQL is the durable store for gap-fill on reconnect |
+| **ADR** | [0010 — WebSocket Real-Time Messaging](0010-websocket-real-time-messaging.md) |
+
+### WebSocket (ReactiveWebSocketHandler)
+
+| Aspect | Detail |
+|--------|--------|
+| **Role** | Full-duplex real-time messaging — primary send + receive path (REST is fallback) |
+| **Handler** | `ChatWebSocketHandler` — JWT auth via query param, PBAC check at connect, history on connect (last 50), Redis Pub/Sub fan-out |
+| **Gateway** | WS upgrade pass-through via `/api/chat/v1/rooms/*/ws` route with `response-timeout: -1` |
+| **ADR** | [0010 — WebSocket Real-Time Messaging](0010-websocket-real-time-messaging.md) |
 
 ### Service Registry (Eureka)
 
@@ -110,12 +128,13 @@ authoritative phase checklist.
 
 | Item | Phase | Description |
 |------|-------|-------------|
-| Room lifecycle from Kafka | 3.3 | `StreamControlListener` — rooms auto-created on `STREAM_CREATED`, auto-archived on `STREAM_ENDED` |
-| PBAC enforcement | 3.4 | `EntitlementMatcher` mapping `chat:room:{key}` / `chat:message:room:{key}` to `read`/`send` actions |
+| Room lifecycle from Kafka | 3.3 ✅ | `StreamControlListener` — rooms auto-created on `STREAM_CREATED`, auto-archived on `STREAM_ENDED` |
+| PBAC enforcement | 3.4 ✅ | `EntitlementMatcher` mapping `chat:room:{key}` / `chat:message:room:{key}` to `read`/`send` actions |
 | Cache integration tests | 3.6 | 8 Testcontainers-based test scenarios covering hot/cold/error paths |
 | Cache warm-up completion | 3.7 | Backfill cache from `getMessagesBefore()` PG fallback (currently only `getRecentMessages` backfills) |
-| WebSocket upgrade | 6.4 | Replace REST polling with WebSocket (STOMP or raw) + Redis Pub/Sub for cross-instance fan-out |
-| `pbac-common` extraction | 6.2 | Extract duplicated `JwtProperties`, `EntitlementMatcher`, `Persistable<UUID>` patterns into a shared Gradle module |
+| WebSocket upgrade | 6.4 ✅ | Full-duplex WebSocket (ReactiveWebSocketHandler) + Redis Pub/Sub fan-out. See [ADR-0010](0010-websocket-real-time-messaging.md). |
+| `pbac-common` extraction | 6.2 ✅ | Extracted duplicated `JwtProperties`, `EntitlementMatcher`, `Persistable<UUID>` patterns into shared Gradle module |
+| Message idempotency | 6.4+ | `client_id` unique constraint + service-layer dedup. See [ADR-0011](0011-message-idempotency-client-id.md). |
 
 ## References
 

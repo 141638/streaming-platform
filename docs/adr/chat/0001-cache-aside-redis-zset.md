@@ -65,3 +65,24 @@ The pattern is already documented as the recommendation in [`docs/SERVICE-ARCHIT
 ### Risks
 - **Cache stampede on cold start**: If Redis is empty and 100 viewers load the same room simultaneously, all 100 fall back to PG. **Mitigation**: low risk at current scale. If it becomes an issue, add a `Mono.cache()` or a small TTL-based lock around the backfill path.
 - **ZSET size drift**: If the retention trim fails (network blip), ZSETs grow unbounded. **Mitigation**: `trimToRetention` is called on every write in the same Redis pipeline; monitor ZSET cardinality via `ZCARD` in health checks.
+
+## Refinements
+
+### 2026-08-01 — Atomic Lua Script for Cache Writes (C1)
+
+The original 3-step write pipeline (ZADD → ZREMRANGEBYRANK → EXPIRE,
+three separate network round-trips with no atomicity) was replaced with
+a single EVALSHA call to `add_to_recent.lua`. The Lua script executes
+the same three operations atomically, eliminating a race window where
+two concurrent writers could interleave ZADD and ZREMRANGEBYRANK.
+
+- **Script**: `chat-service/src/main/resources/redis/add_to_recent.lua`
+- **Pattern**: `DefaultRedisScript<Long>` loaded via `ClassPathResource`
+  in the constructor, matching `gateway-service:RateLimitFilter`
+- **Fallback**: Spring Data Redis' `ScriptExecutor` transparently falls
+  back from EVALSHA to EVAL when the script SHA is missing (e.g., after
+  Redis restart)
+- **Atomicity**: With Lua, the ZADD+trim+EXPIRE sequence is one atomic
+  Redis operation — two concurrent writers each get their own script
+  execution; no interleaving is possible
+- **Plan**: [C1 — Redis Lua Atomic Cache](../../plans/C1-redis-lua-atomic-cache.md)

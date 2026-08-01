@@ -1,7 +1,7 @@
 # Implementation Plan
 
-**Last updated:** 2026-08-01 (6.4 WebSocket shipped, architecture doc refreshed; 6.5/6.6/6.7 Tier 2 deferred)
-**Current phase:** 6 — Production Hardening ⚡ (6.0a–c ✅, 6.1 ✅, 6.2 ✅, 6.2a ✅, 6.3 ✅, 6.4 ✅, 6.5–6.6 🔵 deferred, **6.7 Tier 1 ✅, Tier 2 🔵 deferred**)
+**Last updated:** 2026-08-01 (C1 Lua atomic cache + ADR-0011 chat idempotency shipped)
+**Current phase:** 6 — Production Hardening ⚡ (6.0a–c ✅, 6.1 ✅, 6.2 ✅, 6.2a ✅, 6.3 ✅, 6.4 ✅, 6.5–6.6 🔵 deferred, **6.7 Tier 1 ✅, Tier 2 🔵 deferred**, **C1 ✅, ADR-0011 ✅**)
 **Active blueprint:** None (Phase C quick wins + 6.7 Tier 2 under discussion)
 
 ## End Goal
@@ -1081,6 +1081,8 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 | 6.2a | ✅ **Authorization gap remediation** — closed 7 gaps (1 CRITICAL, 3 HIGH, 3 MEDIUM): SRS on_unpublish token validation, chat PBAC enabled-by-default with prod hard-fail, watch endpoint PBAC, participants endpoint PBAC, 403 handler for StreamAccessDeniedException, gateway webhook POST-only scoping, internal token audit logging. Commits: `4eeb252`..`20685e9` (6 commits, 13 files). See [retrospective](docs/plans/authorization-gap-remediation-retrospective.md). | 6.2 |
 | 6.3 | ✅ **Rate limiting** — gateway-level sliding-window-log rate limiter (`RateLimitFilter` @Order(2), Redis ZSET + Lua script, 200 req/60s per IP, fail-open, 429 structured JSON). See [retrospective](docs/plans/phase-6.3-rate-limiting-retrospective.md) and [ADR common/0002](adr/common/0002-redis-ephemeral-data-store.md). Uncommitted (3 new, 3 modified). | 6.0a |
 | 6.4 | ✅ **WebSocket upgrade for chat** — full-duplex WebSocket (send + receive) with Redis Pub/Sub fan-out, REST fallback. Raw WebFlux `ReactiveWebSocketHandler` (not STOMP). Gateway WS route with `response-timeout: -1`. Frontend `ChatWebSocketService` with exponential backoff reconnect. Commits: `37ab6c8`, `dd896ad`, `fa16ae9`. See [ADR-0010](adr/chat/0010-websocket-real-time-messaging.md). | 3.5 |
+| C1 | ✅ **Redis Lua atomic cache write** — Replaced 3-step `.flatMap()` pipeline in `RedisMessageCache.addToRecent()` with single atomic Lua script (ZADD + ZREMRANGEBYRANK + EXPIRE). `DefaultRedisScript<Long>` pattern from `RateLimitFilter`. Eliminates interleaving race between concurrent writers. See [plan](plans/C1-redis-lua-atomic-cache.md). | 6.0a |
+| ADR-0011 | ✅ **Chat message idempotency** — `client_id VARCHAR(64)` column + partial unique index `WHERE client_id IS NOT NULL` on `chat_message`. Two-layer protection: gateway Redis (REST) + DB constraint (all paths). WebSocket `send.clientId()`, REST `Idempotency-Key` header, and deterministic `system:{roomKey}:{eventType}:{streamId}` for system messages all flow through the same `DataIntegrityViolationException` → `findByClientId` resolution. See [ADR-0011](adr/chat/0011-message-idempotency-client-id.md), [retrospective](plans/chat-idempotency-c1-retrospective.md). | 6.1, 6.4 |
 | 6.5 | 🔵 **Security hardening** (DEFERRED 2026-08-01) — TLS everywhere, secrets management (env vars → vault), CSP headers, CSRF audit, dependency CVE scanning. Production hardening — revisit before deployment. | — |
 | 6.6 | 🔵 **Observability** (DEFERRED 2026-08-01) — ~~structured JSON logging~~ ✅, Micrometer Tracing (traceId/spanId propagation), Micrometer metrics (Prometheus), Grafana dashboard, centralized log backend (Loki or ELK). Production hardening — revisit before deployment. | — |
 
@@ -1094,6 +1096,8 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 - [x] 6.2a — Authorization gap remediation (`4eeb252`..`20685e9`)
 - [x] 6.3 — Rate limiting (uncommitted — 3 new files, 3 modified)
 - [x] 6.4 — WebSocket chat (`37ab6c8`, `dd896ad`, `fa16ae9`)
+- [x] C1 — Redis Lua atomic cache write (uncommitted)
+- [x] ADR-0011 — Chat message idempotency via client_id (uncommitted)
 - [ ] 6.5 — Security hardening 🔵 DEFERRED (2026-08-01)
 - [ ] 6.6 — Observability 🔵 DEFERRED (2026-08-01)
   - [x] Structured JSON logging (logstash-logback-encoder, all 6 services, [ADR common/0001](adr/common/0001-structured-json-logging.md), [LOGGING-ARCHITECTURE.md](LOGGING-ARCHITECTURE.md))
@@ -1124,7 +1128,7 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 | B — Outbox & State Machine Integrity | Wire `@Transactional`, fix SCHEDULED cancel gap, fix double-subscribe in chat consumer, fix `goLiveFromSchedule()` bypass | 1 day | 🔴 CRITICAL |
 | C — Notification Hardening | Add smoke tests, fix fan-out blocking, implement real email or remove skeleton, fix `OutboxService.enqueue()` fire-and-forget | 2-3 days | 🔴 CRITICAL |
 | D — Observability Foundation | Wire Micrometer metrics + Prometheus endpoint, wire trace propagation, add Grafana dashboard scaffold | 2-3 days | 🟠 HIGH |
-| E — Infrastructure Maturity | Redis Lua scripting, disable auto-create-topics, connection pool config, SCAN limits, SSE buffer bounds + zombie drain | 1-2 days | 🟠 HIGH |
+| E — Infrastructure Maturity | Redis Lua scripting ✅ (C1), disable auto-create-topics, connection pool config, SCAN limits, SSE buffer bounds + zombie drain | 1-2 days | 🟠 HIGH |
 | F — Error Handling Standardization | Catch-all handlers in 3 services, WARN logging for security events, exception-passing convention (`.getMessage()` → pass `ex`), shared base handler in pbac-common | 1 day | 🟠 HIGH |
 | G — Test Execution | CI Docker-based test suite, minimum smoke tests for notification-service, verify existing chat/stream tests pass | Ongoing | 🟡 MEDIUM |
 

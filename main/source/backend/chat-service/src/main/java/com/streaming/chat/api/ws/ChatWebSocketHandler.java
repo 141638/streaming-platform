@@ -154,7 +154,8 @@ public class ChatWebSocketHandler implements WebSocketHandler {
                                             if (frame instanceof WebSocketFrame.Send send) {
                                                 return chatService.sendMessage(
                                                                 jwt, finalRoomKey, authorSubject,
-                                                                authorUsername, send.content())
+                                                                authorUsername, send.content(),
+                                                                send.clientId())
                                                         .flatMap(response -> {
                                                             WebSocketFrame.Message msgFrame =
                                                                     WebSocketFrame.Message.from(response, null);

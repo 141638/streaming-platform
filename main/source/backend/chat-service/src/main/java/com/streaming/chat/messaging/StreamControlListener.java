@@ -92,7 +92,8 @@ public class StreamControlListener {
                         room.getExternalKey(), room.getStatus().wireValue()))
                 .doOnError(err -> log.error("Failed to create room for streamId={}: {}",
                         event.streamId(), err.getMessage()))
-                .then(chatService.sendSystemMessage(event.streamId(), "Stream started"))
+                .then(chatService.sendSystemMessage(event.streamId(), "Stream started",
+                        event.eventType() + ":" + event.streamId()))
                 .doOnSuccess(msg -> log.info("System message posted for STREAM_CREATED: roomKey={}",
                         event.streamId()))
                 .then();
@@ -106,7 +107,8 @@ public class StreamControlListener {
         // Always post a "Stream ended" system message so viewers
         // and the broadcaster see the lifecycle announcement in chat,
         // regardless of the auto-archive preference.
-        Mono<Void> systemMessage = chatService.sendSystemMessage(event.streamId(), "Stream ended")
+        Mono<Void> systemMessage = chatService.sendSystemMessage(event.streamId(), "Stream ended",
+                        event.eventType() + ":" + event.streamId())
                 .doOnSuccess(msg -> log.info(
                         "System message posted for STREAM_ENDED: roomKey={}",
                         event.streamId()))
@@ -150,7 +152,8 @@ public class StreamControlListener {
                                 "Cache evicted after scheduled archive: roomKey={}",
                                 event.streamId()))
                         .then())
-                .then(chatService.sendSystemMessage(event.streamId(), "Chat archived"))
+                .then(chatService.sendSystemMessage(event.streamId(), "Chat archived",
+                        event.eventType() + ":" + event.streamId()))
                 .doOnSuccess(msg -> log.info(
                         "System message posted for CHAT_ARCHIVE_TRIGGERED: roomKey={}",
                         event.streamId()))

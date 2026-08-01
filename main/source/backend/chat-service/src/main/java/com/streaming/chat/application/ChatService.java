@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import jakarta.annotation.Nullable;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -32,6 +33,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import org.springframework.dao.DataIntegrityViolationException;
 
 /**
  * Application service for chat message operations.
@@ -76,15 +78,23 @@ public class ChatService {
      * {@code chat:message send} is enforced after the active check; the
      * {@link SendGuard} (Layer-2 ban check) runs after PBAC and before persistence.
      *
+     * <p>Idempotency is enforced via the {@code clientId} parameter — the database
+     * unique constraint on {@code chat_message.client_id} rejects duplicate sends
+     * at the persistence layer. On a duplicate, the existing message is returned
+     * instead of creating a new one (see ADR-0011).
+     *
      * @param jwt the authenticated caller's validated access token
      * @param roomKey the room's external key
      * @param authorSubject the JWT {@code sub} claim — the authenticated user
      * @param authorUsername denormalized display name from JWT {@code attr.username}
      * @param body the message content
+     * @param clientId the idempotency key from the WebSocket frame or REST header;
+     *                 null to skip idempotency (system messages, legacy callers)
      * @return the sent message as a response DTO
      */
     public Mono<MessageResponse> sendMessage(
-            Jwt jwt, String roomKey, String authorSubject, String authorUsername, String body) {
+            Jwt jwt, String roomKey, String authorSubject, String authorUsername, String body,
+            @Nullable String clientId) {
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
 
         return roomRepository.findByExternalKey(roomKey)
@@ -97,7 +107,7 @@ public class ChatService {
                                 AuthAction.SEND, room.getBroadcasterSubject()))
                         .thenReturn(room))
                 .flatMap(room -> sendGuard.check(room, authorSubject).thenReturn(room))
-                .flatMap(room -> persistAndCache(room, authorSubject, authorUsername, body, now)
+                .flatMap(room -> persistAndCache(room, authorSubject, authorUsername, body, now, clientId)
                         .flatMap(response -> {
                             WebSocketFrame.Message frame = WebSocketFrame.Message.from(response, null);
                             return roomPubSubService.publish(roomKey, frame).thenReturn(response);
@@ -109,33 +119,65 @@ public class ChatService {
      * started, stream ended, etc.) that bypass JWT-based PBAC authorization and
      * the ban guard. The room must exist and be active.
      *
+     * <p>When {@code eventId} is non-null, a deterministic {@code clientId}
+     * ({@code system:{roomKey}:{eventId}}) is derived and stored on the message,
+     * making system-message idempotency automatic — duplicate Kafka events
+     * produce the same {@code clientId} and are rejected by the unique constraint.
+     * Pass {@code null} for non-idempotent sends (one-off admin operations).
+     *
      * @param roomKey the room's external key
      * @param body    the system message content
+     * @param eventId the deterministic event identifier ({@code eventType:streamId})
+     *                used to derive the idempotency key; null to skip
      * @return the posted message as a response DTO
      */
-    public Mono<MessageResponse> sendSystemMessage(String roomKey, String body) {
+    public Mono<MessageResponse> sendSystemMessage(String roomKey, String body, @Nullable String eventId) {
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        String clientId = eventId != null ? "system:" + roomKey + ":" + eventId : null;
         return roomRepository.findByExternalKey(roomKey)
                 .switchIfEmpty(Mono.error(new RoomNotFoundException(roomKey)))
                 .filter(ChatRoom::isActive)
                 .switchIfEmpty(Mono.error(new RoomArchivedException(roomKey)))
                 .flatMap(room -> {
                     ChatMessage msg = ChatMessage.createSystem(room.getId(), body, now);
+                    msg.setClientId(clientId);
                     return messageRepository.save(msg)
                             .map(saved -> MessageResponse.from(saved, room.getExternalKey()))
                             .flatMap(this::cacheWrite)
                             .flatMap(response -> {
                                 WebSocketFrame.Message frame = WebSocketFrame.Message.from(response, null);
                                 return roomPubSubService.publish(roomKey, frame).thenReturn(response);
+                            })
+                            .onErrorResume(DataIntegrityViolationException.class, ex -> {
+                                if (clientId == null) {
+                                    return Mono.error(ex);
+                                }
+                                log.debug("Duplicate system message clientId={}, returning existing", clientId);
+                                return messageRepository.findByClientId(clientId)
+                                        .map(existing -> MessageResponse.from(existing, room.getExternalKey()))
+                                        .switchIfEmpty(Mono.error(
+                                                new IllegalStateException("Duplicate system clientId row vanished: " + clientId)));
                             });
                 });
     }
 
+    /**
+     * Persist a message and update the hot cache.
+     *
+     * <p>Idempotency: when {@code clientId} is non-null, the database unique
+     * constraint ({@code uq_chat_message_client_id}) rejects duplicate inserts.
+     * Instead of propagating the error, we query the existing message by
+     * {@code clientId} and return it as the response — the caller sees the
+     * same confirmed message as the original send. The cache is already
+     * correct (written on the first successful persist), so we skip the
+     * cache-write step on a duplicate.
+     */
     private Mono<MessageResponse> persistAndCache(
-            ChatRoom room, String authorSubject, String authorUsername, String body, OffsetDateTime now) {
+            ChatRoom room, String authorSubject, String authorUsername, String body,
+            OffsetDateTime now, @Nullable String clientId) {
         List<String> mentionList = parseMentions(body);
         String[] mentions = mentionList.toArray(new String[0]);
-        ChatMessage msg = ChatMessage.create(room.getId(), authorSubject, authorUsername, body, now, mentions);
+        ChatMessage msg = ChatMessage.create(room.getId(), authorSubject, authorUsername, body, now, mentions, clientId);
         // DEFERRED (Phase 6 — Notification Service):
         // For each username in `mentions`:
         //   1. Resolve user subject from auth-service or local denormalization
@@ -145,7 +187,18 @@ public class ChatService {
         //   5. Email deep-link: /stream/{roomKey}?scrollTo={messageId}
         return messageRepository.save(msg)
                 .map(saved -> MessageResponse.from(saved, room.getExternalKey()))
-                .flatMap(this::cacheWrite);
+                .flatMap(this::cacheWrite)
+                .onErrorResume(DataIntegrityViolationException.class, ex -> {
+                    if (clientId == null) {
+                        // No idempotency key — this is a real integrity violation, propagate
+                        return Mono.error(ex);
+                    }
+                    log.debug("Duplicate clientId={}, returning existing message", clientId);
+                    return messageRepository.findByClientId(clientId)
+                            .map(existing -> MessageResponse.from(existing, room.getExternalKey()))
+                            .switchIfEmpty(Mono.error(
+                                    new IllegalStateException("Duplicate clientId row vanished: " + clientId)));
+                });
     }
 
     /**

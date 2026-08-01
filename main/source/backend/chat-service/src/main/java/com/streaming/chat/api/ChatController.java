@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -47,22 +48,24 @@ public class ChatController {
     }
 
     /**
-     * Send a message to a chat room.
+     * Send a message to a chat room (REST fallback path).
      *
-     * <p>
-     * The room must already exist (created from a {@code STREAM_CREATED} Kafka
-     * event) and be active — sending to a missing or archived room errors. The
-     * author is derived from {@code jwt.subject} and {@code jwt.attr.username},
-     * not from the request body.
+     * <p>The gateway's {@code IdempotencyFilter} forwards the
+     * {@code Idempotency-Key} header downstream. We read it and pass it as
+     * the {@code clientId} to {@link ChatService#sendMessage} — the same
+     * idempotency key used by the WebSocket path. If the header is absent
+     * (direct calls, legacy clients), {@code clientId} is null and the
+     * send is non-idempotent.
      */
     @PostMapping(path = "/rooms/{roomKey}/messages", consumes = MediaType.APPLICATION_JSON_VALUE)
     public Mono<MessageResponse> sendMessage(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable String roomKey,
-            @Valid @RequestBody SendMessageRequest body) {
+            @Valid @RequestBody SendMessageRequest body,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
         String authorSubject = jwt.getSubject();
         String authorUsername = JwtAttr.username(jwt);
-        return chatService.sendMessage(jwt, roomKey, authorSubject, authorUsername, body.content());
+        return chatService.sendMessage(jwt, roomKey, authorSubject, authorUsername, body.content(), idempotencyKey);
     }
 
     /**

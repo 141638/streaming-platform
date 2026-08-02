@@ -238,8 +238,9 @@ search$ = this.query$.pipe(
 );
 ```
 
-Avoid using async/await/promise in modern angular work.
-Avoid control.valueChanges subscription that will trigger effect, that will cause confused if the subscriptions increase and interlink with eachothers.
+Prefer `resource()` (v21+) and RxJS over raw `async/await` in component methods. The `resource()` API uses async loaders by design — that is the correct pattern for reactive async data. Avoid manual `await` calls directly in component logic where a reactive primitive (`resource`, `computed`, RxJS stream) would compose better with Angular's change detection.
+
+Avoid `control.valueChanges` subscriptions that trigger `effect()` — interlinked subscription chains cause confusing cascading updates and are hard to debug. Prefer `computed()` or `linkedSignal()` for derived form state.
 
 ## Forms
 

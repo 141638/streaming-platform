@@ -26,8 +26,8 @@ The primary workhorse. Three modes to match how you want to work.
 |------|--------|
 | `--tdd` | Write tests first (red-green-refactor) |
 | `--review` | Run code-reviewer after implementation |
-| `--be` | Backend-only (use Java/Spring agents) |
-| `--fe` | Frontend-only (use Angular/TypeScript agents) |
+| `--be` | Backend-only (delegates to **java-backend-developer** agent) |
+| `--fe` | Frontend-only (delegates to **angular-developer** agent) |
 
 ## Mode: Full Pipeline
 

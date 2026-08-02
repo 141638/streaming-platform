@@ -1,5 +1,61 @@
 # Agent Orchestration
 
+## Agent Design Standards
+
+When creating or modifying agents, follow these rules. They exist to prevent context overflow, skill duplication, and stale external references.
+
+### Knowledge Architecture Layering
+
+Agents must use a 3-layer knowledge model — never inline domain knowledge:
+
+```
+Foundation skills (what)     →  Project skills (how WE use it)  →  Rules (our conventions)
+─────────────────────────        ────────────────────────────        ─────────────────────
+General Java/Spring patterns     R2DBC entities, WebFlux reactive    rules/java/*.md
+Adapted for our stack            Project architecture, workflow      rules/common/*.md
+```
+
+- **Layer 1 — Foundation skills**: General technology knowledge (Java idioms, Spring patterns, security). These must be project-owned copies with adaptation headers, not external `origin: ECC` references. See `skill: conditional-skill-loading` for the rationale.
+- **Layer 2 — Project skills**: How THIS project applies the foundation (architecture decisions, R2DBC patterns, workflow). These reference foundation skills and rules — they never duplicate their content.
+- **Layer 3 — Rules**: Concise conventions that reference skills for details. Rules say *what*; skills say *how*.
+
+**Anti-pattern**: An agent with 200+ lines of inline conventions. The agent should be a thin orchestrator with a skill-loading matrix, not a knowledge dump.
+
+### Conditional Skill-Loading Matrix (MANDATORY for 4+ skills)
+
+Every agent that loads 4 or more skills MUST include a boolean task→skill matrix. This prevents context overflow by loading only the skills relevant to the current task.
+
+Reference: `skill: conditional-skill-loading` for the full pattern and design rules.
+
+```markdown
+## Skill Loading Matrix
+
+| Task | skill-a | skill-b | skill-c | skill-d |
+|------|:---:|:---:|:---:|:---:|
+| **Task type 1** | ✅ | ✅ | — | ✅ |
+| **Task type 2** | ✅ | — | ✅ | — |
+| **Surgical fix** | ✅ | — | — | — |
+
+**CRITICAL**: Never load all skills for every task. Classify the task, consult the matrix, load only checked columns.
+```
+
+Design rules for the matrix:
+- **1-2 always-loaded columns**: Skills every non-trivial task needs (coding standards, architecture)
+- **Conditional columns**: Skills gated by domain (database, auth, caching)
+- **Surgical fix row**: Minimal load for small bug fixes
+- **Greenfield row**: All columns checked — use sparingly, only when the task genuinely spans the full stack
+
+### Skill Ownership
+
+All skills an agent loads must be **project-owned** (`origin: project`). Never wire an agent to an external `origin: ECC` skill directly. Instead:
+
+1. Copy the external skill into `.claude/skills/<name>/`
+2. Change `origin` to `project`
+3. Add an adaptation header explaining what applies and what doesn't for this project's stack
+4. Add translation tables where the skill's examples use a different framework (JPA→R2DBC, MVC→WebFlux, servlet→reactive security)
+
+This ensures skills can be committed to git and survive external repo changes/deletions.
+
 ## Service Context Loading
 
 Before modifying files in any backend service, read that service's architecture ADR-0000
@@ -21,6 +77,8 @@ Located in `~/.claude/agents/`:
 
 | Agent | Purpose | When to Use |
 |-------|---------|-------------|
+| angular-developer | Angular frontend implementation — scaffolding, components, services, forms, routing, styling, and testing | Any Angular/frontend implementation work |
+| java-backend-developer | Java Spring Boot backend implementation — REST APIs, services, R2DBC repositories, domain models, Flyway migrations, Redis, Kafka | Any Java/Spring Boot backend implementation work |
 | planner | Implementation planning | Complex features, refactoring |
 | architect | System design | Architectural decisions |
 | tdd-guide | Test-driven development | New features, bug fixes |
@@ -39,10 +97,12 @@ Located in `~/.claude/agents/`:
 
 No user prompt needed:
 1. Complex feature requests - Use **planner** agent
-2. Code just written/modified - Use **code-reviewer** agent
-3. Bug fix or new feature - Use **tdd-guide** agent
-4. Architectural decision - Use **architect** agent
-5. End of feature-building session - Use **session-retro** agent (or `/retro` command)
+2. Angular/frontend implementation - Use **angular-developer** agent
+3. Java/backend implementation - Use **java-backend-developer** agent
+4. Code just written/modified - Use **code-reviewer** agent
+5. Bug fix or new feature - Use **tdd-guide** agent
+6. Architectural decision - Use **architect** agent
+7. End of feature-building session - Use **session-retro** agent (or `/retro` command)
 
 ## Parallel Task Execution
 

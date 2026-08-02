@@ -1,12 +1,14 @@
 ---
 name: java-coding-standards
-description: "Java coding standards for Spring Boot and Quarkus services: naming, immutability, Optional usage, streams, exceptions, generics, CDI, reactive patterns, and project layout. Automatically applies framework-specific conventions."
-origin: ECC
+description: "Java coding standards for Spring Boot WebFlux services: naming, immutability, Optional usage, streams, exceptions, generics, DI, reactive patterns (Mono/Flux), and project layout."
+origin: project
 ---
 
 # Java Coding Standards
 
-Standards for readable, maintainable Java (17+) code in Spring Boot and Quarkus services.
+Standards for readable, maintainable Java (17+) code in Spring Boot WebFlux services. Originally sourced from ECC's dual-framework (Spring + Quarkus) skill; adapted for this project.
+
+**Project adaptation**: This project uses **Spring Boot WebFlux + R2DBC** exclusively. Sections marked `[QUARKUS]` are preserved for reference but do NOT apply. For Quarkus `Uni`/`Multi` equivalents, see `skill: r2dbc-patterns` (WebFlux Reactive Patterns).
 
 ## When to Use
 

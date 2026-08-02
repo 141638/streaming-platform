@@ -1,12 +1,24 @@
 ---
 name: springboot-security
-description: Spring Security best practices for authn/authz, validation, CSRF, secrets, headers, rate limiting, and dependency security in Java Spring Boot services.
-origin: ECC
+description: Spring Security best practices for authn/authz, validation, CSRF, secrets, headers, rate limiting, and dependency security for this project's Spring Boot services (MVC + WebFlux).
+origin: project
 ---
 
 # Spring Boot Security Review
 
-Use when adding auth, handling input, creating endpoints, or dealing with secrets.
+Use when adding auth, handling input, creating endpoints, or dealing with secrets. Originally sourced from ECC; adapted for this project.
+
+**Project adaptation**: This project has both servlet-based (auth-service) and reactive (stream, chat, notification) security. The examples below use the servlet API (`SecurityFilterChain`, `OncePerRequestFilter`) — those apply directly to **auth-service**. For **WebFlux services**, translate:
+
+| Servlet (shown below) | WebFlux (stream/chat/notification) |
+|----------------------|-----------------------------------|
+| `SecurityFilterChain` | `SecurityWebFilterChain` |
+| `OncePerRequestFilter` | `WebFilter` |
+| `HttpServletRequest` / `HttpServletResponse` | `ServerHttpRequest` / `ServerHttpResponse` |
+| `SecurityContextHolder` | `ReactiveSecurityContextHolder` |
+| `CsrfTokenRequestHandler` | `ServerCsrfTokenRequestHandler` |
+
+`@PreAuthorize`, `@Valid`, `PasswordEncoder`, CORS config, and secrets management apply identically to both stacks. See `skill: java-backend-architecture` (Project-Specific Conventions → Reactive security).
 
 ## When to Activate
 

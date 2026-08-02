@@ -1,12 +1,25 @@
 ---
 name: springboot-patterns
-description: Spring Boot architecture patterns, REST API design, layered services, data access, caching, async processing, and logging. Use for Java Spring Boot backend work.
-origin: ECC
+description: Spring Boot architecture patterns, REST API design, layered services, R2DBC data access, caching, async processing, and logging. Adapted for this project's WebFlux + R2DBC stack.
+origin: project
 ---
 
 # Spring Boot Development Patterns
 
-Spring Boot architecture and API patterns for scalable, production-grade services.
+Spring Boot architecture and API patterns for scalable, production-grade services. Originally sourced from ECC; adapted for this project's stack.
+
+**Project adaptation**: This project uses **R2DBC + WebFlux**, not JPA/Hibernate + MVC. Code examples below show JPA patterns — translate as follows for this project:
+
+| Pattern shown | Use in this project |
+|--------------|-------------------|
+| `JpaRepository` | `ReactiveCrudRepository` or `R2dbcRepository` |
+| `@Entity` | `@Table` (Spring Data R2DBC) |
+| `Page<T>`, `List<T>` returns | `Mono<T>`, `Flux<T>` |
+| `PageRequest` | `Limit` + `Offset` in `@Query`, or `Page` from `spring-data-r2dbc` |
+| `@WebMvcTest` | `@WebFluxTest` (reactive services) or `@WebMvcTest` (auth-service only) |
+| `@DataJpaTest` | Plain JUnit 5 + Mockito (no R2DBC slice test equivalent) |
+
+See `skill: r2dbc-patterns` for the full R2DBC reference. The `@RestController` + `@Validated` structure still applies.
 
 ## When to Activate
 

@@ -16,7 +16,7 @@ public class SecurityConfig {
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .authorizeExchange(auth -> auth
                         .pathMatchers("/actuator/**").permitAll()
-                        .pathMatchers("/v1/rooms/**/ws").permitAll()
+                        .pathMatchers("/v1/rooms/ws/**").permitAll()
                         .anyExchange().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2

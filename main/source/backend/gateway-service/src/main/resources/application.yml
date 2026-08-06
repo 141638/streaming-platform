@@ -61,7 +61,7 @@ spring:
         - id: chat-service-ws
           uri: lb://chat-service
           predicates:
-            - Path=/api/chat/v1/rooms/*/ws
+            - Path=/api/chat/v1/rooms/ws/*
           metadata:
             response-timeout: -1
             connect-timeout: 5000

@@ -1,8 +1,8 @@
 {
   "agents.Explore": {
-    "count": 60,
+    "count": 66,
     "firstSeen": "2026-07-12",
-    "lastSeen": "2026-08-01"
+    "lastSeen": "2026-08-06"
   },
   "skills.session-retro": {
     "count": 17,
@@ -10,9 +10,9 @@
     "lastSeen": "2026-08-01"
   },
   "skills.feature-commit": {
-    "count": 22,
+    "count": 23,
     "firstSeen": "2026-07-13",
-    "lastSeen": "2026-08-02"
+    "lastSeen": "2026-08-06"
   },
   "agents.Plan": {
     "count": 2,
@@ -20,9 +20,9 @@
     "lastSeen": "2026-07-13"
   },
   "commands.blueprint": {
-    "count": 26,
+    "count": 28,
     "firstSeen": "2026-07-14",
-    "lastSeen": "2026-08-01"
+    "lastSeen": "2026-08-06"
   },
   "commands.retro": {
     "count": 13,
@@ -35,9 +35,9 @@
     "lastSeen": "2026-08-02"
   },
   "commands.commit": {
-    "count": 19,
+    "count": 20,
     "firstSeen": "2026-07-14",
-    "lastSeen": "2026-08-02"
+    "lastSeen": "2026-08-06"
   },
   "commands.implement": {
     "count": 3,
@@ -50,9 +50,9 @@
     "lastSeen": "2026-08-01"
   },
   "commands.consult": {
-    "count": 6,
+    "count": 7,
     "firstSeen": "2026-07-15",
-    "lastSeen": "2026-08-01"
+    "lastSeen": "2026-08-03"
   },
   "commands.review": {
     "count": 5,
@@ -93,5 +93,10 @@
     "count": 1,
     "firstSeen": "2026-08-01",
     "lastSeen": "2026-08-01"
+  },
+  "agents.architect": {
+    "count": 4,
+    "firstSeen": "2026-08-03",
+    "lastSeen": "2026-08-06"
   }
 }

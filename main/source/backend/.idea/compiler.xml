@@ -23,6 +23,9 @@
       <module name="streaming-backend.chat-service" options="-parameters" />
       <module name="streaming-backend.chat-service.main" options="-parameters" />
       <module name="streaming-backend.chat-service.test" options="-parameters" />
+      <module name="streaming-backend.common" options="-parameters" />
+      <module name="streaming-backend.common.main" options="-parameters" />
+      <module name="streaming-backend.common.test" options="-parameters" />
       <module name="streaming-backend.discovery-service" options="-parameters" />
       <module name="streaming-backend.discovery-service.main" options="-parameters" />
       <module name="streaming-backend.discovery-service.test" options="-parameters" />

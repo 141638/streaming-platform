@@ -81,6 +81,7 @@ public class StreamService {
     private final ViewCountProperties viewCountProperties;
     private final SseConnectionRegistry sseRegistry;
     private final TransactionalOperator transactionalOperator;
+    private final ViewEventProducer viewEventProducer;
 
     public StreamService(StreamSessionRepository repository,
                          StreamCategoryRepository categoryRepository,
@@ -94,7 +95,8 @@ public class StreamService {
                          ReactiveRedisTemplate<String, String> redisTemplate,
                          ViewCountProperties viewCountProperties,
                          SseConnectionRegistry sseRegistry,
-                         TransactionalOperator transactionalOperator) {
+                         TransactionalOperator transactionalOperator,
+                         ViewEventProducer viewEventProducer) {
         this.repository = repository;
         this.categoryRepository = categoryRepository;
         this.profileRepository = profileRepository;
@@ -108,6 +110,7 @@ public class StreamService {
         this.viewCountProperties = viewCountProperties;
         this.sseRegistry = sseRegistry;
         this.transactionalOperator = transactionalOperator;
+        this.viewEventProducer = viewEventProducer;
     }
 
     // ── Create ──────────────────────────────────────────────────────────────
@@ -319,6 +322,8 @@ public class StreamService {
                 .flatMap(entity -> {
                     if (!viewerId.equals(entity.getBroadcasterSubject())) {
                         return trackViewEvent(entity.getId(), viewerId)
+                                .doOnSuccess(unused -> viewEventProducer.sendViewEvent(
+                                        entity.getId(), viewerId, entity))
                                 .thenReturn(entity);
                     }
                     return Mono.just(entity);
@@ -356,10 +361,10 @@ public class StreamService {
      * <p>Categories are derived from the capped rail rather than all sessions,
      * so this endpoint never performs a full table scan.
      */
-    public Mono<ChannelHomeResponse> getChannelHome(String username) {
+    public Mono<ChannelHomeResponse> getChannelHome(String username, Jwt jwt) {
         return repository.findPublicSessionsByUsername(username, CHANNEL_HOME_SESSION_CAP)
                 .collectList()
-                .map(sessions -> {
+                .flatMap(sessions -> {
                     List<StreamSummaryResponse> rail = sessions.stream()
                             .map(StreamSummaryResponse::from)
                             .collect(Collectors.toCollection(ArrayList::new));
@@ -370,7 +375,19 @@ public class StreamService {
                             .distinct()
                             .collect(Collectors.toCollection(ArrayList::new));
 
-                    return ChannelHomeResponse.of(rail, recentCategories);
+                    // Emit a single view event for the channel page visit (non-owner only).
+                    // Uses the first session's broadcaster info since all sessions in
+                    // the rail belong to the same channel.
+                    String viewerSubject = jwt.getSubject();
+                    if (!sessions.isEmpty()) {
+                        StreamSessionEntity first = sessions.get(0);
+                        if (!viewerSubject.equals(first.getBroadcasterSubject())) {
+                            viewEventProducer.sendViewEvent(
+                                    first.getId(), viewerSubject, first);
+                        }
+                    }
+
+                    return Mono.just(ChannelHomeResponse.of(rail, recentCategories));
                 });
     }
 

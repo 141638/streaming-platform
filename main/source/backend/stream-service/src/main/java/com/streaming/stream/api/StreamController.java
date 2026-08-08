@@ -155,7 +155,7 @@ public class StreamController {
     public Mono<ResponseEntity<ChannelHomeResponse>> getChannelHome(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable String username) {
-        return streamService.getChannelHome(username).map(ResponseEntity::ok);
+        return streamService.getChannelHome(username, jwt).map(ResponseEntity::ok);
     }
 
     @GetMapping("/channels/{username}/about")

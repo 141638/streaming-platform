@@ -18,6 +18,8 @@ import com.streaming.stream.persistence.entity.StreamStatus;
 import com.streaming.stream.persistence.repository.BroadcasterProfileRepository;
 import com.streaming.stream.persistence.repository.StreamCategoryRepository;
 import com.streaming.stream.persistence.repository.StreamSessionRepository;
+import com.streaming.stream.persistence.repository.WatchHistoryRepository;
+import com.streaming.stream.sse.SseConnectionRegistry;
 import com.streaming.pbac.AuthAction;
 import com.streaming.pbac.AuthResourceDomain;
 import com.streaming.pbac.AuthResourceKind;
@@ -42,6 +44,7 @@ import org.springframework.data.redis.core.ReactiveHashOperations;
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -83,6 +86,18 @@ class StreamServiceTest {
     @Mock
     private ReactiveHashOperations<String, Object, Object> hashOps;
 
+    @Mock
+    private WatchHistoryRepository watchHistoryRepository;
+
+    @Mock
+    private SseConnectionRegistry sseRegistry;
+
+    @Mock
+    private TransactionalOperator transactionalOperator;
+
+    @Mock
+    private ViewEventProducer viewEventProducer;
+
     private final PublishTokenProperties publishTokenProps = new PublishTokenProperties(
             Duration.ofHours(2), "rtmp://srs:1935", "http://srs:8080");
 
@@ -94,10 +109,11 @@ class StreamServiceTest {
     @BeforeEach
     void setUp() {
         service = new StreamService(repository, categoryRepository,
-                profileRepository, authorization,
+                profileRepository, watchHistoryRepository, authorization,
                 outboxWriter,
                 publishTokenService, publishTokenProps,
-                databaseClient, redisTemplate, viewCountProperties);
+                databaseClient, redisTemplate, viewCountProperties,
+                sseRegistry, transactionalOperator, viewEventProducer);
         lenient().when(redisTemplate.opsForHash()).thenReturn(hashOps);
         lenient().when(hashOps.put(any(), any(), any())).thenReturn(Mono.just(true));
         lenient().when(hashOps.putIfAbsent(any(), any(), any())).thenReturn(Mono.just(true));

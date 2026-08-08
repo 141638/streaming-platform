@@ -1,5 +1,6 @@
 package com.streaming.notification.application;
 
+import com.streaming.common.messaging.ModerationEvent;
 import com.streaming.common.messaging.StreamEvent;
 import com.streaming.notification.domain.Notification;
 import com.streaming.notification.domain.NotificationCategory;
@@ -119,6 +120,133 @@ public class NotificationService {
                 "{\"streamId\":\"" + event.streamId() + "\"}",
                 OffsetDateTime.now(ZoneOffset.UTC));
         return Mono.just(n);
+    }
+
+    /**
+     * Create a notification for the banned user from a moderation event.
+     *
+     * <p>Recipient is {@code event.subject()} (the banned user). The action
+     * key is {@code chat.banned} or {@code chat.unbanned} depending on the
+     * event type, so the frontend can decide rendering and deep-link targets.
+     *
+     * @param event the moderation event from Kafka
+     * @return empty Mono that completes when the notification is persisted and delivered
+     */
+    public Mono<Void> createModerationNotification(ModerationEvent event) {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        String action = "UNBANNED".equals(event.eventType()) ? "chat.unbanned" : "chat.banned";
+
+        String title;
+        String body;
+        if ("UNBANNED".equals(event.eventType())) {
+            title = "Ban lifted";
+            body = "Your ban in room " + event.roomKey() + " has been lifted.";
+        } else if (event.expiresAt() != null) {
+            title = "You have been banned";
+            body = "You have been temporarily banned from room " + event.roomKey()
+                    + (event.reason() != null ? " for: " + event.reason() : "") + ".";
+        } else {
+            title = "You have been permanently banned";
+            body = "You have been permanently banned from room " + event.roomKey()
+                    + (event.reason() != null ? " for: " + event.reason() : "") + ".";
+        }
+
+        String metadata = moderationMetadata(event);
+
+        Notification n = Notification.create(
+                event.subject(),
+                NotificationCategory.CHAT_MODERATION,
+                action,
+                title,
+                body,
+                metadata,
+                now);
+        return dispatcher.deliver(n);
+    }
+
+    /**
+     * Create a moderator alert for the room owner (broadcaster).
+     *
+     * <p>Recipient is {@code event.broadcasterSubject()}. The action key is
+     * {@code chat.moderator_alert} so the frontend can navigate to the room
+     * when the card is clicked.
+     *
+     * @param event the moderation event from Kafka
+     * @return empty Mono that completes when the alert is persisted and delivered
+     */
+    public Mono<Void> createModeratorAlert(ModerationEvent event) {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+
+        String bannedName = event.bannedUsername() != null
+                ? event.bannedUsername()
+                : event.subject();
+        String moderatorName = event.bannedByUsername() != null
+                ? event.bannedByUsername()
+                : event.bannedBy();
+
+        String title;
+        String body;
+        if ("UNBANNED".equals(event.eventType())) {
+            title = moderatorName + " unbanned " + bannedName;
+            body = bannedName + " has been unbanned from your room.";
+        } else if (event.expiresAt() != null) {
+            title = moderatorName + " banned " + bannedName;
+            body = "Temporary ban"
+                    + (event.reason() != null ? " for: " + event.reason() : "") + ".";
+        } else {
+            title = moderatorName + " permanently banned " + bannedName;
+            body = "Permanent ban"
+                    + (event.reason() != null ? " for: " + event.reason() : "") + ".";
+        }
+
+        String metadata = moderationMetadata(event);
+
+        Notification n = Notification.create(
+                event.broadcasterSubject(),
+                NotificationCategory.CHAT_MODERATION,
+                "chat.moderator_alert",
+                title,
+                body,
+                metadata,
+                now);
+        return dispatcher.deliver(n);
+    }
+
+    // ── helpers ─────────────────────────────────────────────────────────
+
+    /**
+     * Build the metadata JSON payload shared by both the banned-user
+     * notification and the moderator alert.
+     */
+    private static String moderationMetadata(ModerationEvent event) {
+        StringBuilder json = new StringBuilder(256);
+        json.append("{\"roomKey\":\"").append(escapeJson(event.roomKey())).append('"');
+        if (event.reason() != null) {
+            json.append(",\"reason\":\"").append(escapeJson(event.reason())).append('"');
+        }
+        if (event.expiresAt() != null) {
+            json.append(",\"expiresAt\":\"").append(escapeJson(event.expiresAt())).append('"');
+        }
+        json.append(",\"bannedByUsername\":\"")
+                .append(escapeJson(event.bannedByUsername() != null ? event.bannedByUsername() : ""))
+                .append('"');
+        json.append(",\"bannedBySubject\":\"")
+                .append(escapeJson(event.bannedBy() != null ? event.bannedBy() : ""))
+                .append('"');
+        if (event.bannedUsername() != null) {
+            json.append(",\"bannedUsername\":\"").append(escapeJson(event.bannedUsername())).append('"');
+        }
+        json.append(",\"bannedSubject\":\"").append(escapeJson(event.subject())).append('"');
+        json.append('}');
+        return json.toString();
+    }
+
+    private static String escapeJson(String value) {
+        return value.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t");
     }
 
     // ── Read ────────────────────────────────────────────────────────────

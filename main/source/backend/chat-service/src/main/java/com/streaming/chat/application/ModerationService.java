@@ -6,10 +6,13 @@ import com.streaming.chat.domain.ChatBan;
 import com.streaming.chat.domain.ChatRoom;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatBanRepository;
 import com.streaming.chat.infrastructure.persistence.ReactiveChatRoomRepository;
+import com.streaming.chat.messaging.ModerationEventPublisher;
 import com.streaming.chat.security.ChatAuthorization;
+import com.streaming.common.messaging.ModerationEvent;
 import com.streaming.pbac.AuthAction;
 import com.streaming.pbac.AuthResourceDomain;
 import com.streaming.pbac.AuthResourceKind;
+import com.streaming.pbac.JwtAttr;
 import com.streaming.pbac.RequiredAuthority;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -27,6 +30,11 @@ import reactor.core.publisher.Mono;
  * against the room owner ({@code broadcasterSubject}) before mutating state.
  * PBAC enforcement is gated by {@code chat.pbac.enabled} inside
  * {@link ChatAuthorization} (ships dark).
+ *
+ * <p>After persisting a ban/unban/duration-change, a {@link ModerationEvent} is
+ * published to the {@code chat.moderation} Kafka topic for real-time push to
+ * the banned user and room owner. Event emission is fire-and-forget — the ban
+ * row in PostgreSQL is the authoritative source of truth.
  */
 @Service
 @RequiredArgsConstructor
@@ -35,6 +43,7 @@ public class ModerationService {
     private final ReactiveChatRoomRepository roomRepository;
     private final ReactiveChatBanRepository banRepository;
     private final ChatAuthorization chatAuthorization;
+    private final ModerationEventPublisher publisher;
 
     /**
      * Ban a user from a room. Idempotent: an existing ban for the same
@@ -58,7 +67,13 @@ public class ModerationService {
                         .deleteByRoomIdAndBannedSubject(room.getId(), targetSubject)
                         .then(banRepository.save(ChatBan.create(
                                 room.getId(), targetSubject, bannedUsername,
-                                jwt.getSubject(), bannedByUsername, reason, now, expiresAt))))
+                                jwt.getSubject(), bannedByUsername, reason, now, expiresAt)))
+                        .flatMap(saved -> publisher.publish(ModerationEvent.banned(
+                                roomKey, targetSubject, bannedUsername,
+                                jwt.getSubject(), bannedByUsername,
+                                room.getBroadcasterSubject(), room.getBroadcasterUsername(),
+                                reason, toIsoString(expiresAt)))
+                                .thenReturn(saved)))
                 .map(BanResponse::from);
     }
 
@@ -79,12 +94,14 @@ public class ModerationService {
                         .switchIfEmpty(Mono.error(new BanNotFoundException(roomKey, targetSubject)))
                         .flatMap(ban -> {
                             ban.setExpiresAt(expiresAt);
-                            // A loaded entity has isNew=false → save() issues an UPDATE,
-                            // keeping the same row (unique (room_id, banned_subject) holds).
-                            // Wave 2 (ADR-0007): emit a chat.moderation duration-delta event
-                            // here so the banned user learns the new / lifted expiry.
                             return banRepository.save(ban);
-                        }))
+                        })
+                        .flatMap((ChatBan saved) -> publisher.publish(ModerationEvent.durationChanged(
+                                roomKey, targetSubject, saved.getBannedUsername(),
+                                jwt.getSubject(), JwtAttr.username(jwt),
+                                room.getBroadcasterSubject(), room.getBroadcasterUsername(),
+                                saved.getReason(), toIsoString(expiresAt)))
+                                .thenReturn(saved)))
                 .map(BanResponse::from);
     }
 
@@ -93,7 +110,12 @@ public class ModerationService {
      */
     public Mono<Void> unban(Jwt jwt, String roomKey, String targetSubject) {
         return authorizedRoom(jwt, roomKey)
-                .flatMap(room -> banRepository.deleteByRoomIdAndBannedSubject(room.getId(), targetSubject));
+                .flatMap(room -> banRepository
+                        .deleteByRoomIdAndBannedSubject(room.getId(), targetSubject)
+                        .then(publisher.publish(ModerationEvent.unbanned(
+                                roomKey, targetSubject, null,
+                                jwt.getSubject(), JwtAttr.username(jwt),
+                                room.getBroadcasterSubject(), room.getBroadcasterUsername()))));
     }
 
     /**
@@ -122,6 +144,12 @@ public class ModerationService {
                                 AuthResourceDomain.CHAT, AuthResourceKind.MODERATION,
                                 AuthAction.MODERATE, room.getBroadcasterSubject()))
                         .thenReturn(room));
+    }
+
+    // -- helpers ------------------------------------------------------------
+
+    private static String toIsoString(OffsetDateTime dt) {
+        return dt == null ? null : dt.toString();
     }
 
     // -- exceptions --------------------------------------------------------

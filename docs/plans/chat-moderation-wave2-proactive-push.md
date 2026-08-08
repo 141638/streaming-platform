@@ -1,6 +1,6 @@
 # Plan: Chat Moderation — Wave 2 (Proactive Moderation Push)
 
-**Status:** Planned — **dependency-gated, not scheduled** (see [ADR-0007](../adr/chat/0007-proactive-push-infrastructure-gated.md)) · **Branch:** TBD (off `feat/chat-moderation-ux` once Wave 1 merges) · **Date:** 2026-07-12 · **Updated:** 2026-07-12 — notification cadence / de-spam design added (§ *Notification cadence & de-spam*)
+**Status:** Implemented — Wave 2 backend pipeline + frontend click actions shipped 2026-08-08 (see [retrospective](chat-moderation-wave2-retrospective.md)). Proactive chat-panel disable and semantic tiering (Layer 3 de-spam) deferred. · **Branch:** TBD (off `feat/chat-moderation-ux` once Wave 1 merges) · **Date:** 2026-07-12 · **Updated:** 2026-08-08 — Wave 2 implemented; retrospective written
 
 > Wave 1 (moderator UI + reactive ban floor) shipped and is committed. This plan
 > is the forward design for Wave 2 — the *proactive* banned-user experience

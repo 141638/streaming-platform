@@ -1,6 +1,6 @@
 # Implementation Plan
 
-**Last updated:** 2026-08-08 (fan-out job queue implemented — inline fan-out → async two-phase job queue)
+**Last updated:** 2026-08-08 (Wave 2 moderation push + fan-out job queue implemented; retrospective written)
 **Current phase:** 6 — Production Hardening ⚡ (6.0a–c ✅, 6.1 ✅, 6.2 ✅, 6.2a ✅, 6.3 ✅, 6.4 ✅, 6.5–6.6 🔵 deferred, **6.7 Tier 1 ✅, Tier 2 🔵 deferred**, **C1 ✅, ADR-0011 ✅, C4 ✅**)
 **Active blueprint:** None
 
@@ -1047,6 +1047,7 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 | 5.3 | **Email adapter** — (Merged into 5.1b — outbox-driven email via Spring Mail, dispatched by `OutboxPoller`) | 5.1b |
 | 5.4 | **Frontend: Notification settings + follow button + bell dropdown** — Channel page Follow button (stateful: loading/following/follow, checkSubscription on load, optimistic UI), notification bell dropdown (cursor-paginated history, skeleton/empty/load-more states, mark-as-read), notification settings page (`/settings/notifications`, lazy-loaded, following list + delivery channel toggles), subscription service (8 HTTP methods for subscription + preference APIs), `broadcasterSubject` added to channel identity endpoint (ADR-0007 amendment). Wire click actions on notification cards (`stream.started` → `/channel/:id`). See [blueprint](plans/notification-5.4-frontend-subscription-ui-blueprint.md), [retrospective](plans/notification-5.4-frontend-implementation-retrospective.md). 9 new files, 11 modified. Implemented 2026-07-16 (uncommitted). | 5.1 |
 | 5.5 | ✅ **Fan-out job queue (async two-phase)** — Replaced inline `deliverToMany()` fan-out in `StreamControlListener.onStreamStarted()` with PostgreSQL-backed async job queue. V6 migration (`fan_out_job` table + 3 indexes), `FanOutJob` entity (5-state: PENDING→PROCESSING→COMPLETED/FAILED/DEAD), `ReactiveFanOutJobRepository` (`FOR UPDATE SKIP LOCKED`), `FanOutService` (enqueue with dedup via unique index), `FanOutPoller` (`@Scheduled` worker with chunked dispatch, retry/DLQ, visibility timeout). 11 unit tests. See [blueprint](plans/fanout-job-queue-blueprint.md), [detail design](plans/fanout-job-queue-detail-design.md), [retrospective](plans/fanout-job-queue-retrospective.md). 7 files created, 2 modified. Implemented 2026-08-08. | 5.2b |
+| 5.6 | ✅ **Wave 2 — Chat moderation push notifications** — `ModerationEvent` record (12 fields, 3 factories) in `common`, `chat.moderation` Kafka topic, `ModerationEventPublisher` (reactive Kafka bridge in chat-service), `ModerationEventListener` (consumer with Redis SETNX dedup + coalescer gate), `ModerationEventCoalescer` (5s Redis window for burst suppression), `NotificationService.createModerationNotification()` + `createModeratorAlert()` (two-notification split), frontend `actionFromNotification` (3 new cases: `chat.banned`, `chat.unbanned`, `chat.moderator_alert`) + `senderFromMetadata()` (moderator avatar derivation). `broadcasterUsername` denormalized on `ChatRoom` (V8 migration). Uncommitted (11 new files, 8 modified). See [blueprint](plans/chat-moderation-wave2-proactive-push.md), [retrospective](plans/chat-moderation-wave2-retrospective.md). **Deferred:** proactive chat-panel disable, semantic tiering (Layer 3 de-spam), integration tests (per user instruction). | 5.1a, 5.2a |
 
 ### Phase 5 Checklist
 
@@ -1062,6 +1063,7 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 - [x] 5.4 — Frontend notification settings + follow button + bell dropdown (implemented 2026-07-16; see [blueprint](plans/notification-5.4-frontend-subscription-ui-blueprint.md), [retrospective](plans/notification-5.4-frontend-implementation-retrospective.md))
 - [x] 5.4b — mark-all-as-read button (backend: `POST /v1/notifications/mark-all-read` bulk endpoint `d96bed3`; frontend: button in dropdown `a8b708d`)
 - [x] 5.5 — Fan-out job queue (async two-phase): V6 migration + FanOutJob entity + FanOutService + FanOutPoller + StreamControlListener mod + 11 unit tests. Implemented 2026-08-08.
+- [x] 5.6 — Chat moderation push notifications (Wave 2): ModerationEvent contract + Kafka topic + producer + consumer + coalescer + NotificationService methods + frontend click actions. Implemented 2026-08-08. See [blueprint](plans/chat-moderation-wave2-proactive-push.md), [retrospective](plans/chat-moderation-wave2-retrospective.md).
 
 ---
 

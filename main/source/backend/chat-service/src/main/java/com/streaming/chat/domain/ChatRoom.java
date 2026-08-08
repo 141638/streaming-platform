@@ -39,6 +39,14 @@ public class ChatRoom implements Persistable<UUID> {
     @Column("broadcaster_subject")
     private String broadcasterSubject;
 
+    /**
+     * Denormalized display name of the streamer, set from the STREAM_CREATED
+     * event at room creation time. {@code null} for pre-existing rooms —
+     * the frontend falls back to a DiceBear avatar from {@code broadcasterSubject}.
+     */
+    @Column("broadcaster_username")
+    private String broadcasterUsername;
+
     private RoomStatus status;
 
     @Column("created_at")
@@ -50,15 +58,21 @@ public class ChatRoom implements Persistable<UUID> {
     // -- factory -----------------------------------------------------------
 
     public static ChatRoom create(String externalKey, OffsetDateTime now) {
-        return create(externalKey, null, now);
+        return create(externalKey, null, null, now);
     }
 
     public static ChatRoom create(String externalKey, String broadcasterSubject, OffsetDateTime now) {
+        return create(externalKey, broadcasterSubject, null, now);
+    }
+
+    public static ChatRoom create(String externalKey, String broadcasterSubject,
+                                  String broadcasterUsername, OffsetDateTime now) {
         ChatRoom room = new ChatRoom();
         room.setId(UUID.randomUUID());
         room.setNew(true);
         room.setExternalKey(externalKey);
         room.setBroadcasterSubject(broadcasterSubject);
+        room.setBroadcasterUsername(broadcasterUsername);
         room.setStatus(RoomStatus.ACTIVE);
         room.setCreatedAt(now);
         return room;

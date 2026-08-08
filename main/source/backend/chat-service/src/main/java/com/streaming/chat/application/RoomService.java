@@ -38,20 +38,26 @@ public class RoomService {
      * Create a chat room for the given external key.
      *
      * <p>Idempotent — if a room with the key already exists, it is returned
-     * as-is rather than failing. The {@code broadcasterSubject} is set at
-     * creation time and ignored on subsequent calls (the first writer wins).
+     * as-is rather than failing. The {@code broadcasterSubject} and
+     * {@code broadcasterUsername} are set at creation time and ignored on
+     * subsequent calls (the first writer wins).
      *
      * @param externalKey the stream session external key
      * @param broadcasterSubject the streamer's JWT sub (from STREAM_CREATED event)
+     * @param broadcasterUsername the streamer's display name (from STREAM_CREATED event;
+     *                            nullable — pre-existing rooms or tokens without the
+     *                            username claim)
      * @return the new or existing room
      */
-    public Mono<ChatRoom> getOrCreate(String externalKey, String broadcasterSubject) {
+    public Mono<ChatRoom> getOrCreate(String externalKey, String broadcasterSubject,
+                                      String broadcasterUsername) {
         return roomRepository.findByExternalKey(externalKey)
                 .switchIfEmpty(Mono.defer(() -> {
-                    log.info("Creating chat room for externalKey={} broadcasterSubject={}",
-                            externalKey, broadcasterSubject);
+                    log.info("Creating chat room for externalKey={} broadcasterSubject={} broadcasterUsername={}",
+                            externalKey, broadcasterSubject, broadcasterUsername);
                     return roomRepository.save(
-                            ChatRoom.create(externalKey, broadcasterSubject, OffsetDateTime.now(ZoneOffset.UTC)));
+                            ChatRoom.create(externalKey, broadcasterSubject, broadcasterUsername,
+                                    OffsetDateTime.now(ZoneOffset.UTC)));
                 }));
     }
 

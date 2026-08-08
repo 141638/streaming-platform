@@ -87,7 +87,8 @@ public class StreamControlListener {
     // ── Event handlers (each returns Mono<Void>) ────────────────────────────
 
     private Mono<Void> handleStreamCreated(StreamEvent event) {
-        return roomService.getOrCreate(event.streamId(), event.broadcasterSubject())
+        return roomService.getOrCreate(event.streamId(), event.broadcasterSubject(),
+                        event.broadcasterUsername())
                 .doOnSuccess(room -> log.info("Room ready for stream: roomKey={} status={}",
                         room.getExternalKey(), room.getStatus().wireValue()))
                 .doOnError(err -> log.error("Failed to create room for streamId={}: {}",

@@ -80,6 +80,10 @@ spring:
           uri: lb://notification-service
           predicates:
             - Path=/api/notifications/**
+        - id: insight-service
+          uri: lb://insight-service
+          predicates:
+            - Path=/api/insights/**
 
 eureka:
   client:

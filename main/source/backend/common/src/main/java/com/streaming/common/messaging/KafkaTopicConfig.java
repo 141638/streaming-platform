@@ -39,6 +39,22 @@ public class KafkaTopicConfig {
     }
 
     /**
+     * Moderation event topic for real-time ban/unban push notifications.
+     * <ul>
+     *   <li>Producer: chat-service (via {@code ModerationEventPublisher})</li>
+     *   <li>Consumer: notification-service ({@code notification-service} group)</li>
+     *   <li>Partition key: {@code subject} (banned user's JWT sub)</li>
+     * </ul>
+     */
+    @Bean
+    public NewTopic chatModerationTopic() {
+        return TopicBuilder.name("chat.moderation")
+                .partitions(1)
+                .replicas(1)
+                .build();
+    }
+
+    /**
      * Dead-letter topic for poison-pill messages after 3 failed retries.
      * <ul>
      *   <li>Producers (to DLQ): chat-service, notification-service (via

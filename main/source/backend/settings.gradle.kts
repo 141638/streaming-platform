@@ -23,4 +23,5 @@ include(
     "stream-service",
     "chat-service",
     "notification-service",
+    "insight-service",
 )

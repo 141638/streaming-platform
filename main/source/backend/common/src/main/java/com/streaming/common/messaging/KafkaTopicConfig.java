@@ -69,4 +69,21 @@ public class KafkaTopicConfig {
                 .replicas(1)
                 .build();
     }
+
+    /**
+     * Engagement telemetry topic for viewer analytics.
+     * <ul>
+     *   <li>Producer: stream-service (via {@code ViewEventProducer})</li>
+     *   <li>Consumer: insight-service ({@code insight-service} group)</li>
+     *   <li>Partition key: {@code streamId}</li>
+     *   <li>Delivery: fire-and-forget — views are telemetry, not transactions</li>
+     * </ul>
+     */
+    @Bean
+    public NewTopic streamViewTopic() {
+        return TopicBuilder.name("stream.view")
+                .partitions(1)
+                .replicas(1)
+                .build();
+    }
 }

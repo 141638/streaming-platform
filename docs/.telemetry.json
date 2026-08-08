@@ -5,12 +5,12 @@
     "lastSeen": "2026-08-06"
   },
   "skills.session-retro": {
-    "count": 17,
+    "count": 18,
     "firstSeen": "2026-07-12",
-    "lastSeen": "2026-08-01"
+    "lastSeen": "2026-08-08"
   },
   "skills.feature-commit": {
-    "count": 24,
+    "count": 25,
     "firstSeen": "2026-07-13",
     "lastSeen": "2026-08-08"
   },
@@ -20,14 +20,14 @@
     "lastSeen": "2026-07-13"
   },
   "commands.blueprint": {
-    "count": 29,
+    "count": 31,
     "firstSeen": "2026-07-14",
     "lastSeen": "2026-08-08"
   },
   "commands.retro": {
-    "count": 13,
+    "count": 14,
     "firstSeen": "2026-07-14",
-    "lastSeen": "2026-08-01"
+    "lastSeen": "2026-08-08"
   },
   "commands.learn-eval": {
     "count": 4,
@@ -35,7 +35,7 @@
     "lastSeen": "2026-08-02"
   },
   "commands.commit": {
-    "count": 21,
+    "count": 22,
     "firstSeen": "2026-07-14",
     "lastSeen": "2026-08-08"
   },

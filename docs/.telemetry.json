@@ -10,9 +10,9 @@
     "lastSeen": "2026-08-01"
   },
   "skills.feature-commit": {
-    "count": 23,
+    "count": 24,
     "firstSeen": "2026-07-13",
-    "lastSeen": "2026-08-06"
+    "lastSeen": "2026-08-08"
   },
   "agents.Plan": {
     "count": 2,
@@ -20,9 +20,9 @@
     "lastSeen": "2026-07-13"
   },
   "commands.blueprint": {
-    "count": 28,
+    "count": 29,
     "firstSeen": "2026-07-14",
-    "lastSeen": "2026-08-06"
+    "lastSeen": "2026-08-08"
   },
   "commands.retro": {
     "count": 13,
@@ -35,9 +35,9 @@
     "lastSeen": "2026-08-02"
   },
   "commands.commit": {
-    "count": 20,
+    "count": 21,
     "firstSeen": "2026-07-14",
-    "lastSeen": "2026-08-06"
+    "lastSeen": "2026-08-08"
   },
   "commands.implement": {
     "count": 3,
@@ -50,9 +50,9 @@
     "lastSeen": "2026-08-01"
   },
   "commands.consult": {
-    "count": 7,
+    "count": 8,
     "firstSeen": "2026-07-15",
-    "lastSeen": "2026-08-03"
+    "lastSeen": "2026-08-08"
   },
   "commands.review": {
     "count": 5,
@@ -70,9 +70,9 @@
     "lastSeen": "2026-07-17"
   },
   "commands.learn": {
-    "count": 4,
+    "count": 5,
     "firstSeen": "2026-07-27",
-    "lastSeen": "2026-07-27"
+    "lastSeen": "2026-08-08"
   },
   "agents.silent-failure-hunter": {
     "count": 1,
@@ -98,5 +98,10 @@
     "count": 4,
     "firstSeen": "2026-08-03",
     "lastSeen": "2026-08-06"
+  },
+  "agents.java-backend-developer": {
+    "count": 1,
+    "firstSeen": "2026-08-08",
+    "lastSeen": "2026-08-08"
   }
 }

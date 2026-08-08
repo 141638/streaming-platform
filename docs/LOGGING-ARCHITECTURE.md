@@ -66,6 +66,7 @@ Every service emits a single JSON object per log line to stdout:
 | stream-service | `stream-service` | ✅ deployed |
 | chat-service | `chat-service` | ✅ deployed |
 | notification-service | `notification-service` | ✅ deployed |
+| insight-service | `insight-service` | ❌ pending — needs `logback-spring.xml` copied from template |
 
 ### Local Usage
 

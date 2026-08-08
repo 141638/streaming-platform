@@ -33,6 +33,7 @@ flowchart TB
         Chat["Chat service"]
         Noti["Notification service"]
         Disc["Discovery (Eureka)"]
+        Insight["Insight service"]
         subgraph Shared["Shared libraries"]
             PBAC["pbac-common"]
         end
@@ -55,6 +56,7 @@ flowchart TB
     GW --> Stream
     GW --> Chat
     GW --> Noti
+    GW --> Insight
     OBS -->|"RTMP"| SRS
     SRS --> HLS
     Browser -->|"HLS playback (planned / hls.js)"| SRS
@@ -63,6 +65,7 @@ flowchart TB
     Stream -.-> Disc
     Chat -.-> Disc
     Noti -.-> Disc
+    Insight -.-> Disc
     Stream --> PG
     Stream --> KF
     Stream --> RD
@@ -74,6 +77,9 @@ flowchart TB
     Noti --> PG
     Noti --> RD
     Noti --> KF
+    Insight --> PG
+    Insight --> KF
+    Insight --> RD
 ```
 
 **Takeaway for the client.** Business logic and media delivery are **separated**: the browser talks to your **API gateway** for product features (REST, WebSocket, SSE), while **live video** is delivered from the **media path** (SRS / HLS) without forcing all video bytes through Spring.
@@ -93,11 +99,7 @@ flowchart TB
 | **Notification service** | Platform notification hub. Consumes **Kafka** domain events (stream lifecycle, moderation actions), persists notifications to **PostgreSQL**, and delivers via **REST** (bell list) and **SSE** (real-time push). Uses the **outbox pattern** (`notification_outbox`) for multi-channel delivery (in-app, future email/push). Kafka dedup via **Redis SETNX**. |
 | **pbac-common** | Shared library extracted from cross-service PBAC duplication. Provides `@Entitled` annotation, `AuthorizationService`, and PBAC grammar used by auth, stream, chat, and gateway services. |
 
-**Planned but not yet implemented:**
-
-| Component | Role |
-|-----------|------|
-| **Insight service** | Two-sub-domain bounded context: **Analytics & Engagement** (view/like/sub events, trending aggregations, suggestions) and **AI / LLM** (moderation classification, chat summarization, semantic search, RAG with pgvector). ADRs [0000](../adr/insight/0000-architecture-foundation.md)–[0004](../adr/insight/0004-capability-ladder.md) define the architecture; Gradle module not yet scaffolded. |
+| **Insight service** | Two-sub-domain bounded context: **Analytics & Engagement** (view events, trending aggregations, suggestions, stream analytics — Phase A ✅) and **AI / LLM** (moderation classification, chat summarization, semantic search, RAG with pgvector — planned). Consumes `stream.view` Kafka topic; exposes REST endpoints via gateway. ADRs [0000](adr/insight/0000-architecture-foundation.md)–[0004](adr/insight/0004-capability-ladder.md). |
 
 **Supporting infrastructure (Compose).**
 

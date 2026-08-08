@@ -1,6 +1,6 @@
 # Implementation Plan
 
-**Last updated:** 2026-08-08 (Wave 2 moderation push + fan-out job queue implemented; retrospective written)
+**Last updated:** 2026-08-08 (Phase A insight-service analytics shipped + retrospective written)
 **Current phase:** 6 — Production Hardening ⚡ (6.0a–c ✅, 6.1 ✅, 6.2 ✅, 6.2a ✅, 6.3 ✅, 6.4 ✅, 6.5–6.6 🔵 deferred, **6.7 Tier 1 ✅, Tier 2 🔵 deferred**, **C1 ✅, ADR-0011 ✅, C4 ✅**)
 **Active blueprint:** None
 
@@ -1155,18 +1155,24 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 
 ## Phase 7 — AI / LLM Layer (`insight-service`) ○
 
-**Status:** Planned — final phase. **Scaffolding only exists today** (ADRs + design
-sketch); no code, no Gradle module, no build impact. This phase is intentionally
-deferred so it doesn't add complexity to the core streaming phases, while the design
-decisions are captured now to make the eventual build fast and consistent.
+**Status:** In Progress — **Phase A (analytics sub-domain) shipped 2026-08-08.** The
+Gradle module is scaffolded, event-driven analytics pipeline is live (Kafka produce →
+consume → dedup → persist → aggregate → serve), and two REST endpoints serve
+suggestions and stream analytics. AI/LLM rungs 1-4 (chat summary, moderation
+classification, semantic search, RAG) remain planned — implemented when pgvector,
+ASR transcripts, and an LLM provider are in place.
 
-**Goal:** Add LLM-powered capabilities — chat/stream summarization, chat moderation,
-semantic search, and retrieval-augmented Q&A ("ask this stream") — as a new,
-isolated control-plane service.
+**Goal:** Two sub-domains: **(A) Analytics & Engagement** — capture viewer events,
+compute trending suggestions and streamer analytics from aggregated engagement data
+(data foundation for all AI features). **(B) AI / LLM** — chat/stream summarization,
+moderation classification, semantic search, and retrieval-augmented Q&A ("ask this
+stream") as an isolated control-plane service.
 
 **Guiding principle: a 4-rung capability ladder, delivered in order.** RAG is the
 *destination* (rung 4), not the starting point. Each rung ships one working feature and
-teaches one new concept. See [ADR-0004](adr/insight/0004-capability-ladder.md).
+teaches one new concept. Phase A (analytics) teaches the event-driven pipeline
+end-to-end first — Kafka produce, consume, dedup, persist, aggregate, and serve —
+before any LLM complexity enters. See [ADR-0004](adr/insight/0004-capability-ladder.md).
 
 ### Design Decisions (all **Proposed** — see [docs/adr/insight/](adr/insight/))
 
@@ -1199,9 +1205,16 @@ teaches one new concept. See [ADR-0004](adr/insight/0004-capability-ladder.md).
 - Embedding model + vector dimension → decided with the pgvector schema at rung 3.
 - Cost ceilings and per-feature rate limits → set when the first billed feature ships.
 
+### Phase A — Analytics & Engagement ✅ Complete
+
+| # | Item | New concept | Depends on |
+|---|------|-------------|-----------|
+| 7.0a | **Phase A: Event-driven analytics** — `EngagementEvent` contract (common), `stream.view` Kafka topic, `ViewEventProducer` (fire-and-forget), `EngagementEventListener` (Redis SETNX dedup consumer), `EngagementEventEntity` (Persistable<UUID>), `EngagementEventRepository` (4 aggregation queries), `SuggestionService` (trending channels/categories), `AnalyticsService` (stream stats), REST endpoints (`GET /v1/suggestions`, `GET /v1/analytics/streams/{id}`). 20 new files, 7 modified across 4 modules. See [retrospective](plans/insight-service-phase-a-retrospective.md), [blueprint](plans/insight-service-phase-a-blueprint.md). | Kafka produce/consume, R2DBC aggregation, Redis dedup | 2.3 (stream events) |
+
 ### Phase 7 Checklist
 
-- [ ] 7.0 — Infrastructure: module, discovery/gateway wiring, pgvector image, `insight` schema
+- [x] 7.0 — Infrastructure: module ✅, discovery/gateway wiring ✅, `insight` schema ✅ (Flyway V1). pgvector image deferred to Rung 3.
+- [x] 7.0a — Phase A: Event-driven analytics ✅ Complete (2026-08-08)
 - [ ] 7.1 — Rung 1: plain LLM call (summary + title/tags, streaming, fallback)
 - [ ] 7.2 — Rung 2: classification (moderation via Kafka)
 - [ ] 7.3 — Rung 3: embeddings + semantic search (pgvector)

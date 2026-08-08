@@ -21,6 +21,7 @@ These are **pragmatic defaults** for Spring Boot — not dogma. You can blend st
 | **stream-service** | **Layered reactive** + **ports & adapters (hexagonal)** | Core use cases: create/validate session, emit events. **Adapters**: R2DBC (persistence), Kafka (outbound events), HTTP (SRS webhooks). Keeps SRS/Kafka/test doubles swappable. |
 | **chat-service** | **Layered reactive** + **application services with cache-aside** | High read/write rate: orchestration layer decides **Redis vs Postgres** (see §2). Optional **DDD** for `ChatRoom` / `Message` if rules get richer. |
 | **notification-service** | **Layered consumer** + **adapters** | Kafka listener → domain/service → optional JDBC/R2DBC outbox + external gateways (email/push). |
+| **insight-service** | **Layered reactive** + **ports & adapters (hexagonal)** | Two sub-domains: **analytics** (Kafka consumer → aggregate → REST) and future **AI/LLM** (LLM provider + vector store behind hexagonal ports). Mirrors stream-service conventions. |
 
 **Notes.**
 
@@ -58,12 +59,12 @@ This matches **high request volume + fast response** without making Redis the on
 
 Each owning service ships versioned scripts under `src/main/resources/db/migration/` (default Flyway location):
 
-- `V1__bootstrap_*_schema.sql` — `CREATE SCHEMA` + baseline tables for **`auth`**, **`stream`**, **`chat`**, or **`notification`**.
+- `V1__bootstrap_*_schema.sql` — `CREATE SCHEMA` + baseline tables for **`auth`**, **`stream`**, **`chat`**, **`notification`**, or **`insight`**.
 - **gateway** and **discovery** have no Flyway.
 
 **Runtime:** **No** `spring.datasource` / `spring-boot-starter-jdbc` on reactive services. **Flyway** uses its own blocking JDBC connection configured through **`spring.flyway.url`** / **`user`** / **`password`** (plus **`spring.flyway.schemas`** so each service’s schema holds its own **`flyway_schema_history`**). Reactive code continues to use **R2DBC** with `search_path` on the `r2dbc:postgresql` URL. The plain **PostgreSQL JDBC driver** is still a dependency so Flyway can open that connection; it is **not** wired as the application’s primary `DataSource` bean.
 
-**Schemas:** `auth`, `stream`, `chat`, `notification` on the same database (`POSTGRES_DB=streaming` in local Compose). Cross-schema **foreign keys are avoided** across services; within `chat`, room↔message FKs are allowed.
+**Schemas:** `auth`, `stream`, `chat`, `notification`, `insight` on the same database (`POSTGRES_DB=streaming` in local Compose). Cross-schema **foreign keys are avoided** across services; within `chat`, room↔message FKs are allowed.
 
 ---
 

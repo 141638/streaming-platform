@@ -1,25 +1,26 @@
-# Insight Service — Design Sketch (Phase 7, not yet built)
+# Insight Service — Design Sketch (Phase 7, in progress)
 
-> **Status: rough sketch, deferred to [Phase 7](IMPLEMENTATION-PLAN.md#phase-7--ai--llm-layer-insight-service-).**
-> Nothing here is implemented. This document captures the *shape* of the future
-> `insight-service` — module layout, ports, data flow, and per-rung deltas — so the
-> eventual build starts from an agreed structure. Code blocks are **illustrative
-> pseudocode, not compilable Java**. Decisions live in
-> [docs/adr/insight/](adr/insight/); this is the picture that ties them together.
+> **Status: Phase A (analytics) shipped 2026-08-08. AI/LLM rungs 1-4 remain planned.**
+> The Gradle module is scaffolded and the analytics sub-domain (event capture →
+> aggregate → serve) is live. The AI/LLM sub-domain (rungs 1-4) is still a sketch —
+> code blocks for those sections are **illustrative pseudocode, not compilable Java**.
+> Decisions live in [docs/adr/insight/](adr/insight/); this is the picture that ties them together.
 
 ## Why this exists now
 
-We deliberately deferred *implementation* to the final phase but wrote the *scaffolding*
-(ADRs + this sketch) early, while the design context is fresh. The goal is to make the
-future real build faster and more consistent — not to add complexity to the current
-phases. See [ADR-0004](adr/insight/0004-capability-ladder.md) for the rationale and the
-delivery order.
+Phase A (analytics) shipped in 2026-08-08 — the Gradle module is scaffolded and the
+event-driven analytics pipeline is live. The AI/LLM sub-domain (rungs 1-4) remains
+planned — the ADRs + this sketch were written early so the eventual build starts from
+an agreed structure. See [ADR-0004](adr/insight/0004-capability-ladder.md) for the
+rationale and delivery order.
 
 ## The one-paragraph summary
 
-`insight-service` is a new control-plane service that adds LLM-powered features:
+`insight-service` is a control-plane service with **two sub-domains**: **(A) Analytics &
+Engagement** — capture viewer events via Kafka, compute trending suggestions and
+streamer analytics from aggregated engagement data (shipped). **(B) AI / LLM** —
 summarization, classification (moderation), semantic search, and retrieval-augmented
-Q&A. It is built in **four rungs** — plain LLM call → classification → embeddings →
+Q&A, built in **four rungs** — plain LLM call → classification → embeddings →
 full RAG — each independently shippable ([ADR-0004](adr/insight/0004-capability-ladder.md)).
 The LLM provider and the vector store are both **hexagonal ports** so they stay
 swappable ([ADR-0002](adr/insight/0002-llm-provider-port.md)). Vectors live in
@@ -165,6 +166,126 @@ understood — which is the entire point of the ladder ordering.
 
 ---
 
+---
+
+## Phase A — Analytics & Engagement (shipped 2026-08-08)
+
+The analytics sub-domain is the data foundation for all future AI/LLM features. It
+teaches the event-driven pipeline end-to-end before any LLM complexity enters.
+
+### What was built (20 new files, 7 modified across 4 modules)
+
+```
+insight-service/src/main/java/com/streaming/insight/
+├── api/
+│   ├── SuggestionController.java        # GET /v1/suggestions
+│   ├── AnalyticsController.java         # GET /v1/analytics/streams/{streamId}
+│   └── dto/
+│       ├── SuggestionResponse.java
+│       └── StreamAnalyticsResponse.java
+├── application/
+│   ├── EngagementService.java           # Entity conversion + repository.save()
+│   ├── SuggestionService.java           # Trending channels/categories (configurable window)
+│   └── AnalyticsService.java            # Stream stats: views, unique viewers, peak hour
+├── domain/model/
+│   ├── EngagementEventEntity.java       # Persistable<UUID>, static create() factory
+│   ├── ChannelSuggestion.java
+│   ├── CategorySuggestion.java
+│   └── StreamAnalytics.java
+├── infrastructure/
+│   ├── messaging/
+│   │   └── EngagementEventListener.java # @KafkaListener, Redis SETNX dedup (24h)
+│   └── persistence/
+│       └── EngagementEventRepository.java  # 4 @Query methods, nested projection records
+└── config/
+    ├── SecurityConfig.java              # JWT + Structured401AuthenticationEntryPoint
+    ├── InsightProperties.java           # @ConfigurationProperties("insight")
+    └── R2dbcConfig.java                 # TransactionalOperator only (all Tier 1 types)
+
+common/src/main/java/.../messaging/
+└── EngagementEvent.java                 # Immutable record, viewed() factory
+
+stream-service/src/main/java/.../service/
+└── ViewEventProducer.java               # Fire-and-forget KafkaTemplate.send()
+```
+
+### Schema (`insight.engagement_event`)
+
+```sql
+CREATE TABLE insight.engagement_event (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id       VARCHAR(64) NOT NULL,       -- Kafka event ID (dedup)
+    event_type     VARCHAR(32) NOT NULL,        -- "VIEW" (Phase A), LIKE/SUBSCRIBE (Phase B)
+    stream_id      UUID NOT NULL,
+    actor_subject  VARCHAR(128) NOT NULL,       -- JWT sub of the viewer
+    target_type    VARCHAR(32) NOT NULL DEFAULT 'CHANNEL',
+    target_id      VARCHAR(128) NOT NULL,       -- broadcaster_username or category name
+    category       VARCHAR(128),
+    occurred_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- 4 indexes: target+time, actor+time, stream+time, UNIQUE(event_id)
+```
+
+All columns are Tier 1 types — no JSONB, arrays, or custom ENUMs. No R2DBC converters needed.
+
+### Data flow
+
+```
+Browser → GET /streams/{id}
+  → stream-service.getStream()
+    → trackViewEvent (Redis per-user dedup, existing)
+    → viewEventProducer.sendViewEvent()    # Kafka: fire-and-forget
+  → Kafka topic stream.view
+    → insight-service.EngagementEventListener
+      → JSON deserialize → EngagementEvent
+      → Redis SETNX dedup (24h TTL)
+      → EngagementService.persistView()
+        → EngagementEventEntity.create()
+        → repository.save()
+          → INSERT INTO insight.engagement_event
+
+GET /api/insights/v1/suggestions
+  → SuggestionService: findTrendingChannels(windowHours, limit)
+  → SuggestionService: findTrendingCategories(windowHours, limit)
+  → SuggestionResponse { channels, categories }
+
+GET /api/insights/v1/analytics/streams/{streamId}
+  → AnalyticsService: findStreamViewStats + findHourlyDistribution
+  → StreamAnalyticsResponse { totalViews, uniqueViewers, peakHour, hourlyDistribution }
+```
+
+### Key design decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| Fire-and-forget producer (no outbox) | Views are telemetry, not transactions — a missed event loses one data point; a blocked REST call loses a user action |
+| `EngagementEvent` in `common` module | Both stream-service (producer) and insight-service (consumer) share the contract — mirrors `StreamEvent` pattern |
+| Redis SETNX + UNIQUE index dual dedup | Redis prevents INSERT attempt; UNIQUE(event_id) is defense-in-depth |
+| UUID internal PK + VARCHAR event_id | Internal PK independent of external event identifier format |
+
+### REST API contracts
+
+```
+GET /v1/suggestions
+→ 200 { channels: [{ channelUsername, viewCount, score }],
+        categories: [{ category, viewCount, score }] }
+
+GET /v1/analytics/streams/{streamId}
+→ 200 { streamId, totalViews, uniqueViewers, peakHour, category,
+        hourlyDistribution: { "14": 25, "15": 30, "20": 45 } }
+→ 404 if no data
+```
+
+### Deferred to Phase B
+
+- LIKE / SUBSCRIBE event types (requires channel-service)
+- Personalized suggestions (requires LIKE/SUBSCRIBE data)
+- Stream time suggestions ("best time to stream")
+- Consumer-side dedup window (1 VIEW per user-channel per hour)
+- Notification integration
+
+---
+
 ## Deliberately open (decide at Phase 7 start)
 
 These are intentionally **not** decided now, to reflect the landscape at build time:
@@ -178,9 +299,13 @@ These are intentionally **not** decided now, to reflect the landscape at build t
 
 ## Related
 
-- [ADR-0004 — Capability ladder](adr/insight/0004-capability-ladder.md) *(read first)*
+- [Phase A Blueprint](plans/insight-service-phase-a-blueprint.md) — original implementation plan (21 tasks)
+- [Phase A Retrospective](plans/insight-service-phase-a-retrospective.md) — what shipped, deferrals, gaps
+- [ADR-0000 — Architecture foundation](adr/insight/0000-architecture-foundation.md) — analytics + AI/LLM bounded contexts
 - [ADR-0001 — Standalone hexagonal service](adr/insight/0001-insight-service-architecture.md)
 - [ADR-0002 — LLM provider port](adr/insight/0002-llm-provider-port.md)
 - [ADR-0003 — pgvector over dedicated vector DB](adr/insight/0003-pgvector-over-dedicated-vector-db.md)
+- [ADR-0004 — Capability ladder](adr/insight/0004-capability-ladder.md) *(read first)*
+- [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md) — master plan, Phase 7
 - [SERVICE-ARCHITECTURE.md](SERVICE-ARCHITECTURE.md) — per-service style guidance
 - [ARCHITECTURE.md](ARCHITECTURE.md) — dual-plane system overview

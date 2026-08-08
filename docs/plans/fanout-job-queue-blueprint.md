@@ -1,7 +1,7 @@
 # Blueprint: Fan-Out Job Queue
 
 **Date**: 2026-08-03
-**Status**: draft
+**Status**: Implemented (2026-08-08)
 **Deciders**: hieuht, Claude
 
 ## Summary

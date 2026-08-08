@@ -1,8 +1,8 @@
 # Implementation Plan
 
-**Last updated:** 2026-08-02 (C4 fire-and-forget lifecycle fix shipped + reactive scheduled-method pattern doc)
+**Last updated:** 2026-08-08 (fan-out job queue implemented — inline fan-out → async two-phase job queue)
 **Current phase:** 6 — Production Hardening ⚡ (6.0a–c ✅, 6.1 ✅, 6.2 ✅, 6.2a ✅, 6.3 ✅, 6.4 ✅, 6.5–6.6 🔵 deferred, **6.7 Tier 1 ✅, Tier 2 🔵 deferred**, **C1 ✅, ADR-0011 ✅, C4 ✅**)
-**Active blueprint:** None (Phase C quick wins + 6.7 Tier 2 under discussion)
+**Active blueprint:** None
 
 ## End Goal
 
@@ -1019,7 +1019,7 @@ ADR-0003 §Deferred).
 
 ## Phase 5 — Notifications ✅
 
-**Status:** Complete — notification-service foundation: domain entity, persistence, REST API (cursor-paginated bell list, unread count, mark-as-read, mark-all-as-read), SSE delivery (`SseConnectionRegistry`, 30s heartbeat, gateway timeout exclusion), Kafka consumer with Redis SETNX dedup + DLQ (3-retry backoff), subscription model (follow/unfollow with DB-constraint idempotency, polymorphic targets), delivery preferences (per-channel toggles), `NotificationDispatcher` facade (persist → SSE → outbox), outbox + email skeleton (mirrors stream-service `FOR UPDATE SKIP LOCKED`). Frontend: toast/bell prebuild (5.0), follow button on channel page, bell dropdown with history + mark-all-as-read, notification settings page (5.4). Follower fan-out ✅ — `StreamControlListener.onStreamStarted()` wired with `getSubscribers()` → `createForFollower()` → `deliverToMany()` (inline for MVP). Dedup key scoping ✅ — `dedup:{topic}:{consumerGroupId}:{eventId}` per ADR common/0003. **Deferred:** email template rendering, subscribe (paid membership) button.
+**Status:** Complete — notification-service foundation: domain entity, persistence, REST API (cursor-paginated bell list, unread count, mark-as-read, mark-all-as-read), SSE delivery (`SseConnectionRegistry`, 30s heartbeat, gateway timeout exclusion), Kafka consumer with Redis SETNX dedup + DLQ (3-retry backoff), subscription model (follow/unfollow with DB-constraint idempotency, polymorphic targets), delivery preferences (per-channel toggles), `NotificationDispatcher` facade (persist → SSE → outbox), outbox + email skeleton (mirrors stream-service `FOR UPDATE SKIP LOCKED`). Frontend: toast/bell prebuild (5.0), follow button on channel page, bell dropdown with history + mark-all-as-read, notification settings page (5.4). Follower fan-out ✅ — async two-phase job queue: `FanOutService.enqueue()` (one INSERT, ~2ms) → `FanOutPoller` (scheduled worker, `FOR UPDATE SKIP LOCKED` claims, chunked dispatch, retry/DLQ). Replaces the original inline `getSubscribers()`→`createForFollower()`→`deliverToMany()` path. See [blueprint](plans/fanout-job-queue-blueprint.md), [detail design](plans/fanout-job-queue-detail-design.md), [retrospective](plans/fanout-job-queue-retrospective.md). Dedup key scoping ✅ — `dedup:{topic}:{consumerGroupId}:{eventId}` per ADR common/0003. **Deferred:** email template rendering, subscribe (paid membership) button.
 
 **Goal:** Users get notified about followed streamers going live, chat mentions, moderation actions, etc. The notification service is the platform's general notification hub — moderation push is its first client, not its only shape.
 
@@ -1046,6 +1046,7 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 | 5.2b | **Follower fan-out + SSE delivery** — ~~subscription lookup on stream events → notify all followers~~ (deferred); ✅ `SseConnectionRegistry` (in-memory, multi-tab `CopyOnWriteArraySet<Sinks.Many>`), ✅ `GET /v1/notifications/stream` (`text/event-stream`, JWT-scoped, 30s heartbeat), ✅ `NotificationService` wired to push via SSE after persist, ✅ gateway per-route `response-timeout: -1`, ✅ frontend DTO reconciliation + REST wiring + SSE `fetch-event-source` connection + bell unread badge | 5.1b, 5.2a |
 | 5.3 | **Email adapter** — (Merged into 5.1b — outbox-driven email via Spring Mail, dispatched by `OutboxPoller`) | 5.1b |
 | 5.4 | **Frontend: Notification settings + follow button + bell dropdown** — Channel page Follow button (stateful: loading/following/follow, checkSubscription on load, optimistic UI), notification bell dropdown (cursor-paginated history, skeleton/empty/load-more states, mark-as-read), notification settings page (`/settings/notifications`, lazy-loaded, following list + delivery channel toggles), subscription service (8 HTTP methods for subscription + preference APIs), `broadcasterSubject` added to channel identity endpoint (ADR-0007 amendment). Wire click actions on notification cards (`stream.started` → `/channel/:id`). See [blueprint](plans/notification-5.4-frontend-subscription-ui-blueprint.md), [retrospective](plans/notification-5.4-frontend-implementation-retrospective.md). 9 new files, 11 modified. Implemented 2026-07-16 (uncommitted). | 5.1 |
+| 5.5 | ✅ **Fan-out job queue (async two-phase)** — Replaced inline `deliverToMany()` fan-out in `StreamControlListener.onStreamStarted()` with PostgreSQL-backed async job queue. V6 migration (`fan_out_job` table + 3 indexes), `FanOutJob` entity (5-state: PENDING→PROCESSING→COMPLETED/FAILED/DEAD), `ReactiveFanOutJobRepository` (`FOR UPDATE SKIP LOCKED`), `FanOutService` (enqueue with dedup via unique index), `FanOutPoller` (`@Scheduled` worker with chunked dispatch, retry/DLQ, visibility timeout). 11 unit tests. See [blueprint](plans/fanout-job-queue-blueprint.md), [detail design](plans/fanout-job-queue-detail-design.md), [retrospective](plans/fanout-job-queue-retrospective.md). 7 files created, 2 modified. Implemented 2026-08-08. | 5.2b |
 
 ### Phase 5 Checklist
 
@@ -1060,6 +1061,7 @@ Notification ADR — see [docs/adr/notification/](adr/notification/):
 - [x] 5.3 — Email adapter skeleton (merged into 5.1b — outbox-driven email via Spring Mail, `EmailAdapter` skeleton, actual SMTP dispatch deferred to Phase 5.3 proper)
 - [x] 5.4 — Frontend notification settings + follow button + bell dropdown (implemented 2026-07-16; see [blueprint](plans/notification-5.4-frontend-subscription-ui-blueprint.md), [retrospective](plans/notification-5.4-frontend-implementation-retrospective.md))
 - [x] 5.4b — mark-all-as-read button (backend: `POST /v1/notifications/mark-all-read` bulk endpoint `d96bed3`; frontend: button in dropdown `a8b708d`)
+- [x] 5.5 — Fan-out job queue (async two-phase): V6 migration + FanOutJob entity + FanOutService + FanOutPoller + StreamControlListener mod + 11 unit tests. Implemented 2026-08-08.
 
 ---
 

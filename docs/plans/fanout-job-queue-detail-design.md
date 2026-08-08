@@ -1,7 +1,7 @@
 # Detail Design: Fan-Out Job Queue
 
 **Date**: 2026-08-06  
-**Status**: draft — living document, expect updates during implementation  
+**Status**: Implemented (2026-08-08) — see [retrospective](fanout-job-queue-retrospective.md) for deviations  
 **Deciders**: hieuht, Claude  
 **Reference**: [fanout-job-queue-blueprint.md](fanout-job-queue-blueprint.md)
 

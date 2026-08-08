@@ -108,6 +108,9 @@ export function severityFromCategory(category: string): NotificationSeverity {
  * <ul>
  *   <li>{@code stream.started} → navigate to the stream detail page
  *   <li>{@code stream.ended} → navigate to the stream detail page
+ *   <li>{@code chat.banned} → no navigation (user is banned from the room)
+ *   <li>{@code chat.unbanned} → navigate to the chat room
+ *   <li>{@code chat.moderator_alert} → navigate to the chat room (broadcaster)
  * </ul>
  *
  * <p>Navigation targets will change after fan-out wiring (5.2b):
@@ -124,6 +127,25 @@ export function actionFromNotification(
       const streamId = parseField(metadata, 'streamId');
       if (streamId) {
         return { type: 'navigate', route: `/watch/${streamId}` };
+      }
+      return { type: 'none' };
+    }
+    case 'chat.banned':
+      // Banned users cannot access the room — no navigation.
+      return { type: 'none' };
+    case 'chat.unbanned': {
+      // User can rejoin the room after the ban is lifted.
+      const roomKey = parseField(metadata, 'roomKey');
+      if (roomKey) {
+        return { type: 'navigate', route: `/chat/${roomKey}` };
+      }
+      return { type: 'none' };
+    }
+    case 'chat.moderator_alert': {
+      // Broadcaster clicks to navigate to the room for context.
+      const roomKey = parseField(metadata, 'roomKey');
+      if (roomKey) {
+        return { type: 'navigate', route: `/chat/${roomKey}` };
       }
       return { type: 'none' };
     }
@@ -158,5 +180,35 @@ export function mapNotificationResponse(dto: NotificationResponseDto): Notificat
     createdAt: dto.createdAt,
     severity: severityFromCategory(dto.category),
     clickAction: actionFromNotification(dto.action, dto.metadata),
+    sender: senderFromMetadata(dto.category, dto.action, dto.metadata),
   };
+}
+
+/**
+ * Derive a sender object from notification metadata so the card can show
+ * who performed a moderation action or sent a chat mention.
+ *
+ * <p>Returns {@code undefined} for system-generated notifications
+ * (stream lifecycle, system announcements) — the card hides the avatar slot.
+ */
+function senderFromMetadata(
+  category: string,
+  _action: string,
+  metadata: string | null,
+): NotificationSender | undefined {
+  if (category === 'CHAT_MODERATION') {
+    const username = parseField(metadata, 'bannedByUsername');
+    if (username) {
+      return { username, isSystem: false };
+    }
+    return { username: 'Moderator', isSystem: true };
+  }
+  if (category === 'CHAT_MENTION') {
+    const username = parseField(metadata, 'mentionedBy');
+    if (username) {
+      return { username, isSystem: false };
+    }
+    return { username: 'Someone', isSystem: true };
+  }
+  return undefined;
 }

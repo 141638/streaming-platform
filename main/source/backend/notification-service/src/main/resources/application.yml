@@ -65,6 +65,12 @@ notification:
     poll-interval: ${NOTIFICATION_OUTBOX_POLL_INTERVAL:5000}
     batch-size: ${NOTIFICATION_OUTBOX_BATCH_SIZE:50}
     max-retries: ${NOTIFICATION_OUTBOX_MAX_RETRIES:3}
+  fanout:
+    poll-interval: ${NOTIFICATION_FANOUT_POLL_INTERVAL:5000}
+    batch-size: ${NOTIFICATION_FANOUT_BATCH_SIZE:100}
+    max-concurrency: ${NOTIFICATION_FANOUT_MAX_CONCURRENCY:4}
+    max-retries: ${NOTIFICATION_FANOUT_MAX_RETRIES:3}
+    processing-timeout-seconds: ${NOTIFICATION_FANOUT_PROCESSING_TIMEOUT:60}
   email:
     from: ${NOTIFICATION_EMAIL_FROM:noreply@streaming.local}
 

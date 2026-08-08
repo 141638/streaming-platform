@@ -2,9 +2,8 @@ package com.streaming.notification.messaging;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.streaming.common.messaging.StreamEvent;
-import com.streaming.notification.application.NotificationDispatcher;
+import com.streaming.notification.application.FanOutService;
 import com.streaming.notification.application.NotificationService;
-import com.streaming.notification.application.SubscriptionService;
 import java.io.IOException;
 import java.time.Duration;
 import org.slf4j.Logger;
@@ -40,8 +39,7 @@ public class StreamControlListener {
     private final ObjectMapper objectMapper;
     private final ReactiveRedisTemplate<String, String> redisTemplate;
     private final NotificationService notificationService;
-    private final SubscriptionService subscriptionService;
-    private final NotificationDispatcher dispatcher;
+    private final FanOutService fanOutService;
 
     @Value("${STREAM_CONTROL_TOPIC:stream.control}")
     private String topic;
@@ -52,13 +50,11 @@ public class StreamControlListener {
     public StreamControlListener(ObjectMapper objectMapper,
                                  ReactiveRedisTemplate<String, String> redisTemplate,
                                  NotificationService notificationService,
-                                 SubscriptionService subscriptionService,
-                                 NotificationDispatcher dispatcher) {
+                                 FanOutService fanOutService) {
         this.objectMapper = objectMapper;
         this.redisTemplate = redisTemplate;
         this.notificationService = notificationService;
-        this.subscriptionService = subscriptionService;
-        this.dispatcher = dispatcher;
+        this.fanOutService = fanOutService;
     }
 
     @KafkaListener(
@@ -122,35 +118,23 @@ public class StreamControlListener {
     /**
      * STREAM_STARTED → broadcast self-notification + fan out to followers.
      *
-     * <p>Fan-out is inline for MVP (per ADR-0002 §4). When subscriber counts
-     * warrant it, this switches to outbox-driven {@code FanOutJob}.
+     * <p>Fan-out is enqueued as a {@code FanOutJob} and processed
+     * asynchronously by {@code FanOutPoller} — the Kafka consumer thread
+     * returns after a single INSERT instead of blocking on N deliveries.
      */
     private Mono<Void> onStreamStarted(StreamEvent event) {
         log.info("STREAM_STARTED: streamId={} broadcaster={} username={}",
                 event.streamId(), event.broadcasterSubject(),
                 event.broadcasterUsername());
 
-        // 1. Broadcaster self-notification
+        // 1. Broadcaster self-notification — unchanged
         Mono<Void> broadcasterNotification = notificationService
                 .createFromStreamEvent(event);
 
-        // 2. Fan-out to followers — query active subscribers, create
-        //    follower notifications, dispatch via deliverToMany
-        Mono<Void> fanOut = subscriptionService
-                .getSubscribers("CHANNEL", event.broadcasterSubject())
-                .flatMap(sub -> notificationService.createForFollower(
-                        event, sub.getSubscriberSubject()))
-                .collectList()
-                .flatMap(notifications -> {
-                    if (notifications.isEmpty()) {
-                        log.debug("No followers to notify: broadcaster={}",
-                                event.broadcasterSubject());
-                        return Mono.empty();
-                    }
-                    log.info("Fan-out to {} followers: broadcaster={}",
-                            notifications.size(), event.broadcasterSubject());
-                    return dispatcher.deliverToMany(notifications, 8);
-                });
+        // 2. Fan-out to followers — enqueue a FanOutJob instead of
+        //    processing inline. FanOutPoller handles the heavy work
+        //    asynchronously on a separate scheduler thread.
+        Mono<Void> fanOut = fanOutService.enqueue(event);
 
         return broadcasterNotification.then(fanOut);
     }
